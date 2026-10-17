@@ -1,4 +1,4 @@
-import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
+import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useColorScheme, useEffect, useMemo, useRef, useState } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
@@ -17,6 +17,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
 }) {
   const baseline = useRef(file)
   const lock = useRef(false)
+  const scheme = useColorScheme()
   const alive = useRef(true)
   const editor = useMemo(() => {
     // 二进制/超限文件不创建不使用的原生编辑器；构造失败留在页面报告，不逃逸 render。
@@ -132,9 +133,9 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const added = diff?.lines.filter(line => line.type === "add").length ?? 0
   const deleted = diff?.lines.filter(line => line.type === "del").length ?? 0
 
-  return <NavigationStack preferredColorScheme="dark" background="#242424">
-    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background="#242424" foregroundStyle="white" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
-      toolbarBackground={{ style: "#242424", bars: ["navigationBar"] }}
+  return <NavigationStack background={{ light: "white", dark: "#242424" }}>
+    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} foregroundStyle="label" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+      toolbarBackground={{ style: { light: "white", dark: "#242424" }, bars: ["navigationBar"] }}
       toolbarBackgroundVisibility={{ visibility: "visible", bars: ["navigationBar"] }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
       toolbar={{
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
@@ -146,7 +147,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
         content={<LocalCodeEditor controller={controller} onBack={back} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-          background="#242424" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+          background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}
           simultaneousGesture={DragGesture({ minDistance: 20, coordinateSpace: "local" }).onEnded(details => {
             if (details.startLocation.x <= 24 && details.translation.width >= 80 && details.translation.width > Math.abs(details.translation.height) * 1.5) void back()
           })}>
@@ -157,7 +158,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
                 <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL}>−{deleted} +{added}</Text>
                 {added === 0 && deleted === 0 && controller.content !== versionRef.current?.original ?
                   <Text foregroundStyle={COLOR_SECONDARY_LABEL}>仅换行或文件格式发生变化，无行级增删。</Text> :
-                  <DiffViewer key={diffRevision} diff={diff} compact />}
+                  <DiffViewer key={diffRevision} diff={diff} compact appearance={scheme} />}
               </>}
           </VStack>
         </ScrollView> : <Text />}

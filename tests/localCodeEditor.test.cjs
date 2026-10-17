@@ -95,7 +95,7 @@ if (process.argv[2] === '--html') {
       const first=mount();assert.equal(first.tree.children[0].children[0].type,'ProgressView');await c.start();first.render()
       const w=c.webController;first.unmount();w.text='unmounted latest';w.revision=2;w.handlers.localCodeEditorChange({content:w.text,revision:2})
       const second=mount();assert.equal(c.webController,w);assert.equal(c.content,'unmounted latest');assert.equal(w.disposed,undefined)
-      assert.equal(second.tree.props.background,'#242424');assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,Infinity)
+      assert.deepEqual(second.tree.props.background,{light:'white',dark:'#242424'});assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,Infinity)
       assert.ok(second.tree.children.some(n=>n.type==='WebView'));assert.equal(second.tree.children.find(n=>n.type==='WebView').props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.children.some(n=>n.type==='Editor'),false)
       second.unmount();c.dispose();assert.equal(w.disposed,true)
     })

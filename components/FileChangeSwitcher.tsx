@@ -29,7 +29,7 @@ export function FileChangeSwitcher({ selection, content, changes, disabled, stat
     return () => { alive = false }
   }, [stamp])
   return <TabView tabIndex={selection.value} onTabIndexChanged={value => selection.setValue(value)} disabled={disabled}
-    background="#242424" preferredColorScheme="dark"
+    background={{ light: "white", dark: "#242424" }}
     ignoresSafeArea={{ regions: "container", edges: "bottom" }}
     toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["tabBar"] }}>
     <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} tag={0}

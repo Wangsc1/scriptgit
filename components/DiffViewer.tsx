@@ -41,9 +41,9 @@ interface DiffColors {
  * light: line #e6ffec / #ffebe9，word #abf2bc / rgba(255,129,130,0.4)
  * dark:  line #2ea04326 / #f8514926，word #2ea04366 / #f8514966
  */
-function useDiffColors(): DiffColors {
+function useDiffColors(appearance?: "light" | "dark"): DiffColors {
   const scheme = useColorScheme()
-  const isDark = scheme === "dark"
+  const isDark = (appearance ?? scheme) === "dark"
   return {
     // dark 行底 alpha 从 GitHub 0.15 提到 0.22（OLED 纯黑更可辨）
     addBg: (isDark ? "rgba(46, 160, 67, 0.22)" : "#e6ffec") as ShapeStyle,
@@ -60,9 +60,9 @@ function useDiffColors(): DiffColors {
     addFg: (isDark ? "#3fb950" : "#1a7f37") as Color,
     delFg: (isDark ? "#f85149" : "#cf222e") as Color,
     gutter: (isDark ? "rgba(120,120,120,0.25)" : "rgba(180,180,180,0.25)") as ShapeStyle,
-    lineNoFg: "secondaryLabel" as Color,
+    lineNoFg: (appearance ? (isDark ? "#8b949e" : "#656d76") : "secondaryLabel") as Color,
     // 正文用默认色（与 GitHub 一致，不整行染绿/红）
-    codeFg: "label" as Color,
+    codeFg: (appearance ? (isDark ? "#e6edf3" : "#24292f") : "label") as Color,
   }
 }
 
@@ -265,13 +265,15 @@ export function DiffViewer({
   diff,
   onOpenImage,
   compact = false,
+  appearance,
 }: {
   diff: FileDiff
   compact?: boolean
+  appearance?: "light" | "dark"
   /** 点击图片时上抛 data URL，由页面全屏展示 */
   onOpenImage?: (dataUrl: string) => void
 }) {
-  const colors = useDiffColors()
+  const colors = useDiffColors(appearance)
   // 用 lines state 实现展开：点击 skip 时将其 hiddenLines 插入并移除 skip
   const [lines, setLines] = useState(diff.lines)
 

@@ -7,7 +7,7 @@ let controllers=[],writes=[],closed=0,fail=false,versionCalls=0,diffCalls=0,wait
 const versions={filepath:'test.json',original:'{\n"value": 1\n}\n',current:'{\n"value": 2\n}\n',added:false,deleted:false,binary:false}
 global.EditorController=class {constructor(opts){Object.assign(this,opts);controllers.push(this)}dispose(){this.disposed=true}}
 const {LocalFileEditor}=load('pages/LocalFileEditor.tsx',{
- scripting:ui,'../constants/colors':{},'../services/gitService':{
+ scripting:new Proxy(ui,{get:(target,key)=>key==='useColorScheme'?()=> 'light':target[key]}),'../constants/colors':{},'../services/gitService':{
   saveLocalWorktreeFile:async(_,base,content)=>{writes.push(content);return {...base,text:content}},
   readLocalWorktreeFile:async()=>{throw Error('unused')},
  },
@@ -25,10 +25,10 @@ async function main(){
  await pause();let bar=find(h,'FileChangeSwitcher');assert.equal(bar.props.selection.value,0)
  assert.equal(versionCalls,0);assert.equal(diffCalls,0);assert.equal(h.tree.children[0].props.safeAreaInset,undefined)
  assert.equal(h.tree.children[0].props.frame.maxHeight,Infinity)
- assert.equal(h.tree.props.preferredColorScheme,'dark');assert.equal(h.tree.props.background,'#242424')
- assert.equal(h.tree.children[0].props.background,'#242424');assert.equal(h.tree.children[0].props.ignoresSafeArea.edges,'bottom')
- assert.deepEqual(h.tree.children[0].props.toolbarBackground,{style:'#242424',bars:['navigationBar']})
- bar.props.selection.value=1;await pause();const diff=find(h,'DiffViewer');assert.equal(diff.props.compact,true);assert.ok(diff.props.diff.lines.some(l=>l.type==='del'));assert.ok(diff.props.diff.lines.some(l=>l.type==='add'&&l.segments.some(s=>s.type==='changed')))
+ assert.equal(h.tree.props.preferredColorScheme,undefined);assert.deepEqual(h.tree.props.background,{light:'white',dark:'#242424'})
+ assert.deepEqual(h.tree.children[0].props.background,{light:'white',dark:'#242424'});assert.equal(h.tree.children[0].props.ignoresSafeArea.edges,'bottom')
+ assert.deepEqual(h.tree.children[0].props.toolbarBackground,{style:{light:'white',dark:'#242424'},bars:['navigationBar']})
+ bar.props.selection.value=1;await pause();const diff=find(h,'DiffViewer');assert.equal(diff.props.compact,true);assert.equal(diff.props.appearance,'light');assert.ok(diff.props.diff.lines.some(l=>l.type==='del'));assert.ok(diff.props.diff.lines.some(l=>l.type==='add'&&l.segments.some(s=>s.type==='changed')))
  assert.equal(writes.length,0);assert.equal(c.disposed,undefined)
  bar.props.selection.value=0;assert.equal(find(h,'LocalCodeEditor').props.controller,c);assert.equal(controllers.length,1)
  c.content='{\n"value": 333\n}\n';c.onContentChanged();const before=diffCalls;await pause();assert.equal(diffCalls,before)
@@ -76,6 +76,12 @@ async function main(){
  const nodes=all(expand(compact.tree));assert.ok(nodes.some(n=>n.props.background==='#ffebe9'));assert.ok(nodes.some(n=>n.props.background==='#e6ffec'))
  assert.ok(nodes.some(n=>n.props.background==='#abf2bc'));assert.equal(nodes.some(n=>n.props.frame?.width===28),false)
  const standard=mount(DiffViewer,{diff:sample});assert.ok(all(expand(standard.tree)).some(n=>n.props.frame?.width===28));compact.unmount();standard.unmount()
+ const darkView=mount(DiffViewer,{diff:sample,compact:true,appearance:'dark'})
+ const darkNodes=all(expand(darkView.tree))
+ for(const bg of ['rgba(46, 160, 67, 0.22)','rgba(248, 81, 73, 0.22)','rgba(46, 160, 67, 0.48)'])assert.ok(darkNodes.some(n=>n.props.background===bg))
+ assert.ok(darkNodes.some(n=>n.props.foregroundStyle==='#e6edf3'))
+ assert.equal(darkNodes.some(n=>['#e6ffec','#ffebe9'].includes(n.props.background)),false)
+ darkView.unmount()
  const labels=[]
  const tabUi=new Proxy(ui,{get:(target,key)=>key==='useColorScheme'?()=> 'light':key==='ImageRenderer'?{toUIImage:async node=>{labels.push(node);return {withTintColor:(color,mode)=>({label:node.children.join(''),color,mode})}}}:target[key]})
  const {FileChangeSwitcher}=load('components/FileChangeSwitcher.tsx',{scripting:tabUi,'../constants/colors':{COLOR_ORANGE:'systemOrange'}})
@@ -83,7 +89,7 @@ async function main(){
  const switcher=mount(FileChangeSwitcher,{stats:{added:1,deleted:1},selection,content:__jsx('Editor',{}),changes:__jsx('Text',{},'diff'),disabled:false})
  await tick();switcher.render()
  assert.equal(switcher.tree.type,'TabView');assert.equal(switcher.tree.props.tabIndex,0)
- assert.equal(switcher.tree.props.background,'#242424');assert.equal(switcher.tree.props.ignoresSafeArea.edges,'bottom')
+ assert.deepEqual(switcher.tree.props.background,{light:'white',dark:'#242424'});assert.equal(switcher.tree.props.ignoresSafeArea.edges,'bottom')
  assert.deepEqual(switcher.tree.props.toolbarBackgroundVisibility,{visibility:'hidden',bars:['tabBar']})
  switcher.tree.props.onTabIndexChanged(1);assert.equal(selection.value,1)
  const items=all(switcher.tree).filter(n=>n.props.tabItem)

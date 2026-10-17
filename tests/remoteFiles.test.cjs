@@ -53,6 +53,7 @@ global.__fragment = 'Fragment'
 global.__jsx = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(x => x !== null && x !== false && x !== undefined) })
 let active
 const ui = new Proxy({}, { get(_, name) {
+  if (name === 'useColorScheme') return () => 'light'
   if (name === 'DragGesture') return options => ({ onEnded: onEnded => ({ kind: 'drag', options, onEnded }) })
   if (name === 'useObservable') return (initial) => {
     const h = active, i = h.cursor++

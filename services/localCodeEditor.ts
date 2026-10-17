@@ -31,7 +31,8 @@ export function localCodeEditorHTML(options: {content: string; ext: string; read
   // Any closing script sequence in third-party strings/comments must not end the HTML element.
   const bundle = localCodeEditorBundle.replace(/<\/script/gi, "<\\/script")
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'"><style>
-html,body,#editor{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#242424;color-scheme:dark}
+html,body,#editor{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#ffffff;color-scheme:light dark}
+@media(prefers-color-scheme:dark){html,body,#editor{background:#242424}}
 .cm-editor{height:100%}.cm-scroller{overscroll-behavior:contain}
 </style></head><body><div id="editor"></div><script>window.__localCodeEditorConfig=${encodeLocalEditorValue(options)};</script><script>${bundle}</script></body></html>`
 }
