@@ -206,7 +206,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>}>
       {directoryError ? <Text foregroundStyle="red">{hideSystemDetails(directoryError)}</Text> : null}
-      <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} tint="black" />
+      <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} tint="label" />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
     </Section>
     <Section header={<Text>单个仓库</Text>}>
