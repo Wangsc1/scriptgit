@@ -139,29 +139,44 @@ async function main(){
  await test('UI save single-flight; errors preserve latest draft; typed-during-save remains dirty; close cancellation/protection and disposal',async()=>{
   await disk('ui.txt','old');const file=await service.readLocalWorktreeFile('repo','ui.txt');let closed=0,changed=0
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++}),controller=controllers.at(-1)
-  controller.content='draft';await disk('ui.txt','external');await node(h,'Button','保存到本地').props.action();assert.match(text(h),/外部修改/);assert.equal(controller.content,'draft');assert.equal(changed,0)
+  controller.content='draft';await disk('ui.txt','external');await node(h,'Button','保存').props.action();assert.match(text(h),/外部修改/);assert.equal(controller.content,'draft');assert.equal(changed,0)
   confirm=false;await node(h,'Button','关闭').props.action();assert.equal(closed,0);assert.equal(controller.content,'draft');confirm=true;await node(h,'Button','关闭').props.action();assert.equal(closed,1);h.unmount();assert.ok(controller.disposed)
   await disk('ui.txt','base');const fresh=await service.readLocalWorktreeFile('repo','ui.txt'),gate=deferred();const native=FileManager.writeAsData;let call=0;const started=deferred()
   FileManager.writeAsData=async(p,data)=>{call++;started.resolve();await gate.promise;await native(p,data)}
   const second=mount(Editor,{bookmarkName:'repo',file:fresh,onClose:()=>closed++,onReload(){},onChanged:()=>changed++}),c=controllers.at(-1);c.content='saved'
-  const save=node(second,'Button','保存到本地').props.action();await started.promise;await node(second,'Button','保存到本地').props.action();await node(second,'Button','关闭').props.action();assert.equal(call,1);assert.equal(closed,1)
+  const save=node(second,'Button','保存').props.action();await started.promise;await node(second,'Button','保存').props.action();await node(second,'Button','关闭').props.action();assert.equal(call,1);assert.equal(closed,1)
+  second.render();assert.equal(second.tree.children[0].props.toolbar.topBarTrailing.props.disabled,true);await node(second,'List').props.refreshable();assert.equal(call,1)
   c.content='typed later';gate.resolve();await save;assert.equal(fs.readFileSync(dir+'/ui.txt','utf8'),'saved');assert.equal(c.content,'typed later');assert.match(text(second),/新的未保存/);assert.equal(changed,1);second.unmount();FileManager.writeAsData=native
  })
- await test('native write/remove errors keep file and editor draft; retry only writes after success',async()=>{
+ await test('native write errors keep file and editor draft; retry only writes after success',async()=>{
   await disk('io-error.txt','old');const file=await service.readLocalWorktreeFile('repo','io-error.txt');let changed=0,closed=0
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++}),c=controllers.at(-1);c.content='important draft'
-  const write=FileManager.writeAsData,remove=FileManager.remove
-  FileManager.writeAsData=async()=>{throw Error('permission denied')};await node(h,'Button','保存到本地').props.action();assert.equal(c.content,'important draft');assert.match(text(h),/permission denied/);assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'old');assert.equal(changed,0)
-  FileManager.remove=async()=>{throw Error('delete failed')};confirm=true;await node(h,'Button','删除文件').props.action();assert.equal(c.content,'important draft');assert.equal(closed,0);assert.ok(fs.existsSync(dir+'/io-error.txt'))
-  FileManager.writeAsData=write;FileManager.remove=remove;await node(h,'Button','保存到本地').props.action();assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'important draft');assert.equal(changed,1);h.unmount()
+  const write=FileManager.writeAsData
+  FileManager.writeAsData=async()=>{throw Error('permission denied')};await node(h,'Button','保存').props.action();assert.equal(c.content,'important draft');assert.match(text(h),/permission denied/);assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'old');assert.equal(changed,0)
+  FileManager.writeAsData=write;await node(h,'Button','保存').props.action();assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'important draft');assert.equal(changed,1);h.unmount()
  })
- await test('UI delete requires explicit confirmation including binary; cancel leaves bytes, confirm deletes once; reload draft protection',async()=>{
-  await disk('ui-delete.bin',Buffer.from([0,255]));let closed=0,changed=0,reloaded=0;const file=await service.readLocalWorktreeFile('repo','ui-delete.bin')
-  const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload:()=>reloaded++,onChanged:(_,d)=>{assert.equal(d,true);changed++}})
-  assert.equal(all(h.tree).some(n=>n.props?.title==='保存到本地'),false);confirm=false;await node(h,'Button','删除文件').props.action();assert.ok(fs.existsSync(dir+'/ui-delete.bin'));assert.match(confirmations.at(-1).message,/只删除当前工作区这个文件/)
-  confirm=true;await node(h,'Button','删除文件').props.action();assert.equal(changed,1);assert.equal(closed,1);assert.ok(!fs.existsSync(dir+'/ui-delete.bin'));h.unmount()
-  await disk('reload.txt','initial');const fresh=await service.readLocalWorktreeFile('repo','reload.txt'),r=mount(Editor,{bookmarkName:'repo',file:fresh,onClose(){},onReload:f=>{assert.equal(f.text,'disk new');reloaded++},onChanged(){}}),c=controllers.at(-1);c.content='draft';await disk('reload.txt','disk new')
-  confirm=false;await node(r,'Button','重新加载文件').props.action();assert.equal(reloaded,0);assert.equal(c.content,'draft');confirm=true;await node(r,'Button','重新加载文件').props.action();assert.equal(reloaded,1);r.unmount()
+ await test('editor compact independent refresh List; same toolbar close/save; reload cancellation, busy single-flight and errors preserve draft',async()=>{
+  await disk('embyicon.json','initial');let reloaded=0,changed=0,closed=0;const fresh=await service.readLocalWorktreeFile('repo','embyicon.json')
+  const r=mount(Editor,{bookmarkName:'repo',file:fresh,onClose:()=>closed++,onReload:f=>{assert.equal(f.text,'disk new');reloaded++},onChanged:()=>changed++}),c=controllers.at(-1)
+  const toolbar=()=>{r.render();assert.equal(r.tree.type,'NavigationStack');return r.tree.children[0].props.toolbar}
+  const refresh=()=>node(r,'List').props.refreshable()
+  assert.equal(r.tree.children[0].props.navigationTitle,'embyicon.json');assert.equal(toolbar().topBarLeading.props.title,'关闭');assert.equal(toolbar().topBarTrailing.props.title,'保存');assert.equal(toolbar().topBarTrailing.props.systemImage,undefined)
+  const body=r.tree.children[0].children
+  assert.equal(all(body).some(n=>n.type==='Button'),false)
+  assert.equal(all(body).some(n=>n.type==='Text'&&n.children.includes('embyicon.json')),false)
+  assert.doesNotMatch(text(r),/保存到本地|删除文件|重新加载文件|修改仅保存到本地工作区。请到「改动」页手动暂存、提交，再推送。/)
+  const strip=body.find(n=>n.type==='List'),nativeEditor=body.find(n=>n.type==='Editor')
+  assert.equal(strip.props.listStyle,'plain');assert.equal(strip.props.frame.height,64);assert.equal(strip.props.clipped,true);assert.equal(all(strip.children).some(n=>n.type==='Editor'),false);assert.equal(nativeEditor.props.refreshable,undefined);assert.equal(body.at(-1),nativeEditor);assert.match(text(r),/下拉刷新/)
+  c.content='draft';await disk('embyicon.json','disk new');confirm=false;await refresh();assert.equal(reloaded,0);assert.equal(c.content,'draft');assert.match(confirmations.at(-1).title,/重新加载并放弃草稿/);assert.equal(changed,0);assert.equal(node(r,'List').props.disabled,false)
+  const confirmGate=deferred();let prompts=0;global.Dialog.confirm=async()=>{prompts++;return confirmGate.promise}
+  const pending=refresh();assert.ok(pending instanceof Promise);await tick();assert.equal(toolbar().topBarLeading.props.disabled,true);assert.equal(toolbar().topBarTrailing.props.disabled,true);assert.equal(node(r,'List').props.disabled,true)
+  await refresh();await toolbar().topBarTrailing.props.action();await toolbar().topBarLeading.props.action();assert.equal(prompts,1);assert.equal(closed,0);assert.equal(changed,0)
+  confirmGate.resolve(true);await pending;assert.equal(reloaded,1);assert.equal(toolbar().topBarTrailing.props.disabled,false);assert.equal(node(r,'List').props.disabled,false);assert.equal(changed,0)
+  // Reload I/O failure preserves the same controller and unsaved text, and settles refresh.
+  global.Dialog.confirm=async input=>{confirmations.push(input);return true};const read=FileManager.readAsData;FileManager.readAsData=async()=>{throw Error('reload denied')};await refresh();FileManager.readAsData=read
+  assert.match(text(r),/reload denied/);assert.equal(c.content,'draft');assert.equal(c.disposed,undefined);assert.equal(reloaded,1);assert.equal(toolbar().topBarTrailing.props.disabled,false);assert.equal(node(r,'List').props.disabled,false)
+  global.Dialog.confirm=async()=>{throw Error('confirm failed')};await refresh();assert.match(text(r),/confirm failed/);assert.equal(c.content,'draft');assert.equal(node(r,'List').props.disabled,false)
+  r.unmount();assert.equal(c.disposed,true);global.Dialog.confirm=async input=>{confirmations.push(input);return confirm}
  })
  await test('FilesTab actual tree dispatches current worktree to parent; directories retained, deleted leaf disabled and opening does not trigger mutation refresh',async()=>{
   const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0,opened=null
