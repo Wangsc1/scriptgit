@@ -2,6 +2,8 @@ import {
   AccessoryWidgetBackground,
   HStack,
   Image,
+  Path,
+  Script,
   Spacer,
   Text,
   VStack,
@@ -24,6 +26,27 @@ import {
   type WidgetSummary,
 } from "./utils/widget"
 
+const BRAND_ICON_PATH = Path.join(Script.directory, "icon-white.png")
+
+/** 品牌图标：与 App 一致的 GitHub 猫图（透明底，无方形背景，黑色）；文件缺失时退回原系统符号。 */
+function BrandIcon({ size, tinted = false }: { size: number; tinted?: boolean }) {
+  const fallbackFont = Math.round(size * 0.8)
+  if (!FileManager.existsSync(BRAND_ICON_PATH)) {
+    return <Image systemName="point.topleft.down.to.point.bottomright.curvepath" font={fallbackFont} foregroundStyle={COLOR_ACCENT} widgetAccentable />
+  }
+  return (
+    <Image
+      filePath={BRAND_ICON_PATH}
+      resizable
+      scaleToFit
+      frame={{ width: size, height: size }}
+      widgetAccentedRenderingMode={tinted ? "accented" : "fullColor"}
+      foregroundStyle="black"
+      renderingMode="template"
+    />
+  )
+}
+
 function Header({
   summary,
   showsUpdatedAt = false,
@@ -33,11 +56,7 @@ function Header({
 }) {
   return (
     <HStack alignment="center" spacing={6}>
-      <Image
-        systemName="point.topleft.down.to.point.bottomright.curvepath"
-        foregroundStyle={COLOR_ACCENT}
-        widgetAccentable
-      />
+      <BrandIcon size={18} />
       <Text font={15} fontWeight="semibold" foregroundStyle={COLOR_LABEL}>
         {summary.parameter || "scriptgit"}
       </Text>
@@ -323,10 +342,7 @@ function AccessoryWidget({ summary }: { summary: WidgetSummary }) {
     return (
       <VStack alignment="center" spacing={0}>
         <AccessoryWidgetBackground />
-        <Image
-          systemName="point.topleft.down.to.point.bottomright.curvepath"
-          font={11}
-        />
+        <BrandIcon size={12} tinted />
         <Text font={18} fontWeight="semibold">
           {String(summary.uncommitted)}
         </Text>
@@ -338,11 +354,7 @@ function AccessoryWidget({ summary }: { summary: WidgetSummary }) {
   return (
     <VStack alignment="leading" spacing={3} frame={{ maxWidth: Infinity, alignment: "topLeading" }}>
       <HStack alignment="center" spacing={4}>
-        <Image
-          systemName="point.topleft.down.to.point.bottomright.curvepath"
-          font={12}
-          widgetAccentable
-        />
+        <BrandIcon size={14} tinted />
         <Text font={13} fontWeight="semibold" lineLimit={1}>
           {title}
         </Text>
