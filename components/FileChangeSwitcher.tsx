@@ -18,7 +18,13 @@ export function FileChangeSwitcher({ selection, content, changes, disabled, stat
     setFailed(false)
     ImageRenderer.toUIImage(<Text font={{ name: "Menlo", size: 13 }} fontWeight="semibold"
       foregroundStyle={COLOR_ORANGE} padding={{ horizontal: 2, vertical: 3 }}>{label}</Text>)
-      .then(image => { if (alive) setRendered({ stamp, image }) })
+      .then(image => {
+        // Native tab bars can template UIImage even when Image asks for original.
+        // Bake the shared status orange into the native image itself.
+        const original = image.withTintColor(COLOR_ORANGE, "alwaysOriginal")
+        if (!original) throw new Error("无法生成原色改动数量")
+        if (alive) setRendered({ stamp, image: original })
+      })
       .catch(e => { console.warn("改动数量标签渲染失败: " + String(e)); if (alive) setFailed(true) })
     return () => { alive = false }
   }, [stamp])
@@ -33,7 +39,7 @@ export function FileChangeSwitcher({ selection, content, changes, disabled, stat
       ignoresSafeArea={{ regions: "container", edges: "bottom" }}
       toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["tabBar"] }}
       tabItem={<VStack>
-        {rendered?.stamp === stamp ? <Image image={rendered.image} renderingMode="original" /> : null}
+        {rendered?.stamp === stamp ? <Image image={rendered.image} renderingMode="original" foregroundStyle={COLOR_ORANGE} /> : null}
         <Text>{failed ? `改动项 ${label}` : "改动项"}</Text>
       </VStack>}>
       {changes}

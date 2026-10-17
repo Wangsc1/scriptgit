@@ -74,7 +74,7 @@ async function main(){
  assert.ok(nodes.some(n=>n.props.background==='#abf2bc'));assert.equal(nodes.some(n=>n.props.frame?.width===28),false)
  const standard=mount(DiffViewer,{diff:sample});assert.ok(all(expand(standard.tree)).some(n=>n.props.frame?.width===28));compact.unmount();standard.unmount()
  const labels=[]
- const tabUi=new Proxy(ui,{get:(target,key)=>key==='useColorScheme'?()=> 'light':key==='ImageRenderer'?{toUIImage:async node=>{labels.push(node);return {label:node.children.join('')}}}:target[key]})
+ const tabUi=new Proxy(ui,{get:(target,key)=>key==='useColorScheme'?()=> 'light':key==='ImageRenderer'?{toUIImage:async node=>{labels.push(node);return {withTintColor:(color,mode)=>({label:node.children.join(''),color,mode})}}}:target[key]})
  const {FileChangeSwitcher}=load('components/FileChangeSwitcher.tsx',{scripting:tabUi,'../constants/colors':{COLOR_ORANGE:'systemOrange'}})
  const selection={value:0,setValue(value){this.value=value}}
  const switcher=mount(FileChangeSwitcher,{stats:{added:1,deleted:1},selection,content:__jsx('Editor',{}),changes:__jsx('Text',{},'diff'),disabled:false})
@@ -89,6 +89,9 @@ async function main(){
  assert.equal(changedLabel.find(n=>n.type==='Image').props.renderingMode,'original')
  assert.equal(changedLabel.find(n=>n.type==='Image').props.image.label,'-1 +1')
  assert.equal(labels[0].props.foregroundStyle,'systemOrange')
+ assert.equal(changedLabel.find(n=>n.type==='Image').props.image.color,'systemOrange')
+ assert.equal(changedLabel.find(n=>n.type==='Image').props.image.mode,'alwaysOriginal')
+ assert.equal(changedLabel.find(n=>n.type==='Image').props.foregroundStyle,'systemOrange')
  assert.equal(changedLabel.some(n=>n.props.systemName),false)
  assert.equal(switcher.tree.props.safeAreaInset,undefined);assert.equal(switcher.tree.props.padding,undefined)
  switcher.unmount()

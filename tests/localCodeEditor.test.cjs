@@ -20,7 +20,7 @@ if (process.argv[2] === '--html') {
   global.WebViewController = class {
     constructor(){this.handlers={};this.text='';this.revision=0;this.calls=[];instances.push(this)}
     async addScriptMessageHandler(name,handler){this.handlers[name]=handler;if(mode.handlerWait)await mode.handlerWait.promise}
-    async loadHTML(html){this.html=html; if(mode.loadWait)await mode.loadWait.promise; if(mode.loadError)throw Error('load failed');return mode.loaded!==false}
+    async loadHTML(html,baseURL){this.html=html;this.baseURL=baseURL;if(this.shouldAllowRequest && !await this.shouldAllowRequest({url:'applewebdata://internal/editor'}))throw Error('WKWebView internal navigation blocked'); if(mode.loadWait)await mode.loadWait.promise; if(mode.loadError)throw Error('load failed');return mode.loaded!==false}
     async evaluateJavaScript(code){
       this.calls.push(code)
       if(mode.evalError)throw Error('read failed')
@@ -47,6 +47,9 @@ if (process.argv[2] === '--html') {
       let events=0;const off=c.subscribe(()=>events++);await c.start();assert.equal(c.phase,'ready');assert.ok(events>=3)
       assert.equal(await c.getContent(),'草稿');assert.equal(await c.webController.shouldAllowRequest({url:'https://example.com'}),false)
       assert.equal(await c.webController.shouldAllowRequest({url:'about:blank'}),true)
+      assert.equal(await c.webController.shouldAllowRequest({url:'applewebdata://internal/editor'}),true)
+      assert.equal(c.webController.baseURL,'about:blank')
+      for(const url of ['http://example.com','file:///etc/passwd','javascript:alert(1)','about:blank.evil'])assert.equal(await c.webController.shouldAllowRequest({url}),false)
       off();c.dispose();assert.equal(c.phase,'disposed');await assert.rejects(c.getContent(),/关闭/)
     })
     await test('getContent directly reads newest browser draft even without bridge; stale messages rejected',async()=>{

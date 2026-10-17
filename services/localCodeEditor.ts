@@ -114,8 +114,10 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
       starting = (async () => {
         try {
           web = new WebViewController()
-          // A self-contained HTML document needs no navigation or outgoing request.
-          web.shouldAllowRequest = async request => /^about:(blank|srcdoc)(?:#|$)/.test(request.url)
+          // WKWebView may give loadHTML documents an applewebdata: origin.
+          // Rejecting that internal navigation can leave loadHTML pending forever.
+          // Keep external requests blocked; CSP independently disallows resources.
+          web.shouldAllowRequest = async request => /^(?:about:(?:blank|srcdoc)(?:[?#]|$)|applewebdata:)/i.test(request.url)
           publish()
           await timed(web.addScriptMessageHandler("localCodeEditorChange", (value: unknown) => {
             if (!alive() || writing) return
@@ -129,7 +131,7 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
           }), "连接返回手势")
           if (!alive()) return
           const html = localCodeEditorHTML({content: draft, ext: options.ext, readOnly: options.readOnly})
-          const loaded = await timed(web.loadHTML(html), "初始化本地编辑器", 15000)
+          const loaded = await timed(web.loadHTML(html, "about:blank"), "初始化本地编辑器", 15000)
           if (!alive()) return
           if (!loaded) throw new Error("本地编辑器加载失败；初始草稿仍保留")
           // Bootstrap was read-only. From here on, a failed read must never fall back to draft.
