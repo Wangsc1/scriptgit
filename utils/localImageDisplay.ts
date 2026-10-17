@@ -2,10 +2,12 @@
  * source file and writes nothing. Official UIImage has no public hasAlpha; the
  * only alpha probe (getPixelData) would copy a full RGBA buffer into JS, so we
  * decide by the source extension: JPEG files cannot contain alpha and may use
- * JPEG; every other format (PNG/HEIC/HEIF/...) keeps fidelity with PNG
+ * JPEG; every other fallback format is encoded as PNG
  * (toPNGBase64String) and, if too large, shrinks the thumbnail (official
- * preparingThumbnail) instead of converting to JPEG, so transparency is never
- * flattened to white. */
+ * preparingThumbnail) instead of converting to JPEG. This avoids deliberate
+ * alpha flattening, but cannot recover alpha already lost by the native
+ * decoder/thumbnail. Native alpha preservation is not guaranteed by the docs.
+ * Browser-compatible originals bypass this helper entirely. */
 export const LOCAL_IMAGE_DATA_URL_MAX_CHARS = 6 * 1024 * 1024
 type DisplayImage = {
   width?: number; height?: number

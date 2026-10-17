@@ -11,6 +11,7 @@
  */
 
 import { List, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
+import { FileDropDiagnosticZone, type FileDropDiagnosticBridge } from "./FilesTab"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -64,7 +65,7 @@ export function RepoDetailPage({
   }
   function openLocalFile(file: LocalWorktreeFile) {
     const id = ++localSession.current
-    if (file.previewImage) {
+    if (file.previewDataUrl || file.previewImage) {
       activeImage.current = id
       setLocalImage({ file, id })
     } else {
@@ -223,10 +224,13 @@ export function RepoDetailPage({
           }
         : null
 
+  const dropDiagnosticBridge = useRef<FileDropDiagnosticBridge["current"]>(null)
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
   return (
     <List
+      // Official safeAreaInset: outside List rows, without replacing List or its swipe host.
+      safeAreaInset={data.tab === 0 ? { bottom: { spacing: 0, content: <FileDropDiagnosticZone bridge={dropDiagnosticBridge} /> } } : undefined}
       fullScreenCover={[{
         isPresented: localFile !== null,
         // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
@@ -462,6 +466,7 @@ export function RepoDetailPage({
 
       <RepoDetailTabContent
         tab={data.tab}
+        dropDiagnosticBridge={dropDiagnosticBridge}
         onTabChange={data.handleTabChange}
         bookmarkName={bookmarkName}
         changes={data.changes}

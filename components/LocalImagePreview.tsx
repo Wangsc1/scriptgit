@@ -10,8 +10,8 @@ import { localImageDisplayDataUrl } from "../utils/localImageDisplay"
 export function LocalImagePreview({ file, sessionId, onClose }: {
   file: LocalWorktreeFile; sessionId?: number; onClose(): void
 }) {
-  // In-memory display copy of the existing bounded native thumbnail (PNG keeps alpha).
-  const display = useMemo(() => file.previewImage ? localImageDisplayDataUrl(file.previewImage, file.path) : { error: "图片预览不可用" }, [file.previewImage, file.path])
+  // Prefer verified original browser image bytes; native fallback only for other formats.
+  const display = useMemo(() => file.previewDataUrl ? { url: file.previewDataUrl } : file.previewImage ? localImageDisplayDataUrl(file.previewImage, file.path) : { error: "图片预览不可用" }, [file.previewDataUrl, file.previewImage, file.path])
   if (!("url" in display)) return <VStack spacing={12} padding frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
     <Text foregroundStyle="red">{display.error}；文件未修改，可关闭后重试或删除。</Text>
     <Button title="关闭" action={onClose} />

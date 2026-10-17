@@ -29,6 +29,37 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 const DRAG_CALLBACKS = ["onDrag", "validateDrop", "dropEntered", "dropUpdated", "dropExited", "performDrop"] as const
 function newDragCounts(): Record<string, number> { return { onDrag: 0, validateDrop: 0, dropEntered: 0, dropUpdated: 0, dropExited: 0, performDrop: 0 } }
 
+const DROP_ZONE_CALLBACKS = ["dropZone.validate", "dropZone.entered", "dropZone.updated", "dropZone.exited", "dropZone.perform"] as const
+interface DropZoneTrace { entries: string[]; counts: Record<string, number>; lastCallback: string; lastDecision: string }
+export interface FileDropDiagnosticBridge { current: DropZoneTrace | null }
+
+/** List safe-area sibling, not a list row. Ref-only probe: never load or move payload. */
+export function FileDropDiagnosticZone({ bridge }: { bridge: FileDropDiagnosticBridge }) {
+  function record(name: string): boolean {
+    const trace = bridge.current
+    if (!trace) return false
+    trace.counts[name] = (trace.counts[name] || 0) + 1
+    if (trace.lastCallback !== name) {
+      trace.lastCallback = name
+      trace.entries = [...trace.entries, `拖动：${name} 入口（仅诊断，不移动）`].slice(-8)
+    }
+    return true
+  }
+  return <VStack padding={8} spacing={2} frame={{ maxWidth: "infinity", minHeight: 60 }}
+    background="systemGray5" contentShape={{ kind: "interaction", shape: "rect" }}
+    onDrop={{
+      types: ["public.utf8-plain-text", "public.plain-text"],
+      validateDrop: (_info: DropInfo) => record("dropZone.validate"),
+      dropEntered: (_info: DropInfo) => { record("dropZone.entered") },
+      dropUpdated: (_info: DropInfo) => record("dropZone.updated") ? "copy" : "forbidden",
+      dropExited: (_info: DropInfo) => { record("dropZone.exited") },
+      performDrop: (_info: DropInfo) => { record("dropZone.perform"); return false },
+    }}>
+    <Text font="caption">拖放接收区（诊断）</Text>
+    <Text font="caption2">拖到这里松手，不移动；再点菜单查看拖动记录</Text>
+  </VStack>
+}
+
 /** 文件列表：左滑 提交(push)/还原/删除 */
 function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
@@ -98,7 +129,8 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry, dropDiagnosticBridge }: {
+  dropDiagnosticBridge?: FileDropDiagnosticBridge
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
@@ -123,6 +155,11 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [dragStatus, setDragStatus] = useState("")
   // Ref-only bounded trace: native drag callbacks never set state or dispatch UI work for diagnostics.
   const dragTrace = useRef({ entries: [] as string[], counts: newDragCounts(), lastCallback: "", lastDecision: "" })
+  useEffect(() => {
+    if (!dropDiagnosticBridge) return
+    dropDiagnosticBridge.current = dragTrace.current
+    return () => { if (dropDiagnosticBridge.current === dragTrace.current) dropDiagnosticBridge.current = null }
+  }, [dropDiagnosticBridge])
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -334,7 +371,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }
   function dragLogSnapshot(): string {
     const trace = dragTrace.current
-    const counts = DRAG_CALLBACKS.map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
+    const counts = [...DRAG_CALLBACKS, ...DROP_ZONE_CALLBACKS].map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
     return `拖动记录（查看时快照）：回调计数 ${counts}` + (trace.entries.length ? "\n" + trace.entries.join("\n") : "\n尚无拖动记录")
   }
   // Counts every native entry; only distinct consecutive callbacks add a trace line.

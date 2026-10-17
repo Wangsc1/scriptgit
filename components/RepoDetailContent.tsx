@@ -2,7 +2,7 @@ import { Button, Picker, Section, Text } from "scripting"
 import type { LocalWorktreeFile } from "../services/gitService"
 import type { CommitEntry, FileChange, StashEntry } from "../types/git"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
-import { FilesTab } from "../pages/FilesTab"
+import { FilesTab, type FileDropDiagnosticBridge } from "../pages/FilesTab"
 import { HistoryTab } from "../pages/HistoryTab"
 import { StashTab } from "../pages/StashTab"
 
@@ -43,7 +43,7 @@ export function MergeConflictSection({
 }
 
 export function RepoDetailTabContent({
-  tab,
+  tab, dropDiagnosticBridge,
   onTabChange,
   bookmarkName,
   changes,
@@ -78,6 +78,7 @@ export function RepoDetailTabContent({
   creationActive, onCreateLocalEntry,
 }: {
   tab: RepoDetailTab
+  dropDiagnosticBridge?: FileDropDiagnosticBridge
   onTabChange: (tab: RepoDetailTab) => void | Promise<void>
   bookmarkName: string
   changes: FileChange[]
@@ -127,7 +128,7 @@ export function RepoDetailTabContent({
         </Picker>
       </Section>
       {tab === 0 ? (
-        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />
+        <FilesTab dropDiagnosticBridge={dropDiagnosticBridge} creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}

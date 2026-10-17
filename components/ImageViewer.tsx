@@ -42,6 +42,15 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
     opacity: 0;
     transition: opacity 0.2s ease;
   }
+  ${compactImage ? `/* Local-only alpha visualization; attached to image bounds, not stage. */
+  img {
+    background-color: #fff;
+    background-image: conic-gradient(#bbb 25%, #fff 0 50%, #bbb 0 75%, #fff 0);
+    background-size: 16px 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    img { background-color: #666; background-image: conic-gradient(#444 25%, #777 0 50%, #444 0 75%, #777 0); }
+  }` : ""}
   img.ready {
     opacity: 1;
   }

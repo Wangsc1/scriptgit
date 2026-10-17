@@ -62,7 +62,7 @@ async function main(){
  const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1)
  assert.equal(compact.tree.type,'ZStack');assert.equal(compact.tree.props.frame.maxHeight,'infinity');assert.equal(compact.tree.props.ignoresSafeArea.regions,'all')
  assert.match(local.html,/max-width: 80%/);assert.match(local.html,/max-height: 60%/);assert.match(local.html,/width: auto; height: auto; object-fit: contain/);assert.match(local.html,/box-sizing: border-box; padding: env\(safe-area-inset-top/);assert.match(local.html,/viewport-fit=cover/)
- assert.match(local.html,/background: #fff/);assert.match(local.html,/prefers-color-scheme: dark\) \{ html, body \{ background: #242424/);assert.match(local.html,/scale <= 1\.01 && \(edgeBack \|\| pullDown\)/);assert.match(local.html,/startX <= 24 && dx >= 80/);assert.match(local.html,/multiTouch/);assert.deepEqual(compact.tree.props.background,{light:'white',dark:'#242424'})
+ assert.match(local.html,/background: #fff/);assert.match(local.html,/conic-gradient\(#bbb/);assert.match(local.html,/background-size: 16px 16px/);assert.match(local.html,/img \{ background-color: #666/);assert.match(local.html,/prefers-color-scheme: dark\) \{ html, body \{ background: #242424/);assert.match(local.html,/scale <= 1\.01 && \(edgeBack \|\| pullDown\)/);assert.match(local.html,/startX <= 24 && dx >= 80/);assert.match(local.html,/multiTouch/);assert.deepEqual(compact.tree.props.background,{light:'white',dark:'#242424'})
  assert.match(local.html,/initial-scale=1, minimum-scale=1, maximum-scale=6, user-scalable=yes/);assert.match(local.html,/图片加载失败/)
  // Execute the delivered touch handlers: edge right-back only, not ordinary panning/zoom/diagonal/multitouch.
  const vm=require('node:vm')
@@ -94,7 +94,7 @@ async function main(){
  repeat.unmount()
  const normal=mount(ImageViewer,{url:'https://example.invalid/image.png',onClose(){}});await tick();const original=controllers.at(-1)
  assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
- assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
+ assert.doesNotMatch(original.html,/conic-gradient|background-size: 16px|Local-only alpha/);assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
  for(const name of ['DiffPage','CommitDiffPage','GitHubItemDetailPage'])assert.doesNotMatch(fs.readFileSync(root+'/pages/'+name+'.tsx','utf8'),/compactImage/)
  console.log('PASS compact local image HTML caps 80%/60% inside safe-area stage, intrinsic small-image sizing, full-screen container, unchanged close/zoom/error script and shared default mode.')
  console.log('PASS real RepoDetailPage keeps text cover, presents image in its own fullScreenCover entry (editor cover untouched) with close cleanup, refresh/stale/unmount guards and unrelated routes unchanged; no added Navigation.present/Script.exit path. Native lifecycle requires device validation.')

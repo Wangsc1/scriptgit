@@ -7,8 +7,10 @@ export interface LocalWorktreeFile {
   path: string
   text: string | null
   readOnlyReason?: string
-  /** Native in-memory display thumbnail; no Data/base64 or file:// WebView. */
+  /** Bounded native fallback thumbnail for formats WebKit cannot reliably decode. */
   previewImage?: UIImage
+  /** Original browser-compatible bytes, only after bounded safe/version-checked read. */
+  previewDataUrl?: string
   image?: boolean
   version: { root: string; size: number; modified: number; bytes?: string }
 }
@@ -94,13 +96,25 @@ export async function deleteLocalFileInternal(bookmarkName: string, file: LocalW
 }
 
 /** Official TF ui_image/en.md: UIImage.fromFile(path), preparingThumbnail(size).
- * Native file decoding + bounded DISPLAY bitmap only; never encode/write source.
+ * Browser image originals use a bounded checked read. Other formats use native
+ * decoding + bounded DISPLAY bitmap only; never encode/write source.
  * HEIC/HEIF decoding is delegated to iOS; null/unsupported decoder is explicit.
  */
+export const LOCAL_BROWSER_IMAGE_LIMIT = 8 * 1024 * 1024
+const browserImageMime: Record<string, string> = { png: "image/png", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon", jpg: "image/jpeg", jpeg: "image/jpeg" }
 export async function readLocalFileForOpenInternal(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
   const file = await readLocalFileInternal(bookmarkName, path)
   if (!file.image) return file
   const absolute = await checkCurrent(bookmarkName, file)
+  const mime = browserImageMime[path.split(".").pop()?.toLowerCase() || ""]
+  if (mime) {
+    if (file.version.size > LOCAL_BROWSER_IMAGE_LIMIT) throw new Error("图片超过 8 MiB 显示上限；未读取或修改原文件")
+    const data = await FileManager.readAsData(absolute)
+    await checkCurrent(bookmarkName, file)
+    if (data.size !== file.version.size || data.size > LOCAL_BROWSER_IMAGE_LIMIT) throw new Error("读取期间图片大小已变化，请重新打开")
+    // No UIImage/thumbnail/encoding: alpha and the entire encoded image survive.
+    return { ...file, previewDataUrl: `data:${mime};base64,${data.toBase64String()}` }
+  }
   const previewImage = await localImportStep("图片原生预览", () => {
     const source = UIImage.fromFile(absolute)
     if (!source) throw new Error("图片预览失败：系统无法解码此图片；文件未修改，可返回列表删除")
