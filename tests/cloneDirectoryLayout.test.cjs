@@ -30,18 +30,18 @@ async function main(){
   assert.ok(!text(h).includes('iCloud 未启用'));assert.ok(e.fm.files.has('/cloud/Scripting/git'))
   h.render()
   all(h.tree).find(n=>n.type==='FormRow'&&n.props.label==='用户名').props.onChanged('bob')
-  await node(h,'Button','加载全部仓库').props.action()
+  await new Promise(resolve=>setTimeout(resolve,700));await tick()
   let confirmation
   global.Dialog={confirm:async input=>{confirmation=input;return false}}
-  await node(h,'Button','批量克隆所选 1 个仓库').props.action()
+  await node(h,'Button','克隆所选仓库').props.action()
   assert.match(confirmation.message,/目标：\/cloud\/Scripting\/git\/<repo>/)
   assert.equal(e.clones.length,0)
   h.unmount()
   const root=path.join(__dirname,'..')
   const source=ts.createSourceFile('ClonePage.tsx',fs.readFileSync(path.join(root,'pages/ClonePage.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
   assert.equal(source.parseDiagnostics.length,0)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.2.4')
-  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.2\.4\*\*/)
-  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; ClonePage TSX syntax; 1.2.4 versions.')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.2.5')
+  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.2\.5\*\*/)
+  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; ClonePage TSX syntax; 1.2.5 versions.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

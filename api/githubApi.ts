@@ -144,9 +144,18 @@ async function githubFetch(
   if (!res.ok) {
     // 解析 GitHub 返回的错误信息
     let msg = `HTTP ${res.status}`
+    let accessBlocked = false
+    let blockReason = ""
     try {
       const err = await res.json()
       if (err.message) msg = err.message
+      accessBlocked = res.status === 403 && /^Repository access blocked\b/i.test(String(err.message || ""))
+      if (accessBlocked) {
+        // 只映射已知原因，不拼接服务端任意字段/链接，也不把封禁误报成限流。
+        const reasons: Record<string, string> = { tos: "服务条款限制", dmca: "版权投诉限制", legal: "法律限制" }
+        const reason = typeof err.block?.reason === "string" ? err.block.reason.toLowerCase() : ""
+        blockReason = Object.prototype.hasOwnProperty.call(reasons, reason) ? reasons[reason] : "原因未明确"
+      }
       // 字段级错误更可读
       if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
         const details = err.errors
@@ -158,7 +167,8 @@ async function githubFetch(
       // 响应不是 JSON 时保留 HTTP 状态信息
     }
     let hint = ""
-    if (res.status === 401) hint = token ? "Token 无效或已过期，请在设置更新；未降级为匿名访问。" : "匿名访问被拒绝，请检查仓库是否公开。"
+    if (accessBlocked) hint = `GitHub 已阻止访问此仓库（${blockReason}），并非普通 API 限流。配置或更换 Token 不保证解除限制，请查看 GitHub 仓库状态或联系 GitHub 支持。`
+    else if (res.status === 401) hint = token ? "Token 无效或已过期，请在设置更新；未降级为匿名访问。" : "匿名访问被拒绝，请检查仓库是否公开。"
     else if (res.status === 429 || (res.status === 403 && /rate.?limit/i.test(msg))) hint = token ? "GitHub API 限流，请稍后重试；未降级为匿名访问。" : "匿名 GitHub API 限流，请稍后重试或配置 Token 提高限额。"
     else if (res.status === 403) hint = token ? "请检查 Token 权限、组织策略或 API 限流；未降级为匿名访问。" : "匿名访问受限或触发限流，请稍后重试或配置 Token。"
     else if (res.status === 404) hint = "用户名/仓库不存在或当前凭据无权访问。"
@@ -362,7 +372,7 @@ export async function listMyRepos(
   const data = await ghFetch(
     `/user/repos?sort=updated&per_page=${perPage}&page=${page}`
   )
-  return (data as any[]).map(mapRepo)
+  return (data as any[]).filter(item => item.disabled !== true).map(mapRepo)
 }
 
 /** 获取仓库详情；fork 仓库包含 parent/source 信息 */
@@ -915,6 +925,7 @@ export async function listOwnedRepos(username: string): Promise<GitHubRepo[]> {
       const data = await ghFetch(`${base}&per_page=100&page=${page}`, { requireToken: authenticated })
       if (!Array.isArray(data)) throw new Error("仓库列表响应格式无效")
       for (const item of data) {
+        if (item.disabled === true) continue
         if (String(item.owner?.login || String(item.full_name || "").split("/")[0]).toLowerCase() !== login.toLowerCase()) continue
         const repo = mapRepo(item)
         owned.set(repo.fullName.toLowerCase(), repo)

@@ -89,14 +89,14 @@ async function main(){
   })
   await test('anonymous UI -> API -> queue -> cloneInternal -> HTTP transport succeeds',async()=>{
     const e=integration(),registered=[]
-    const calls=network(url=>url.includes('/users/Wangsc1/repos')?{data:[rawRepo('Wangsc1','public')]}:url.endsWith('/repos/Wangsc1/public')?{data:rawRepo('Wangsc1','public')}:url.includes('/info/refs')?{data:null}:(()=>{throw new Error('Unexpected '+url)})())
+    const calls=network(url=>url.includes('/search/users?')?{data:{items:[],total_count:0,incomplete_results:false}}:url.includes('/users/Wangsc1/repos')?{data:[rawRepo('Wangsc1','public')]}:url.endsWith('/repos/Wangsc1/public')?{data:rawRepo('Wangsc1','public')}:url.includes('/info/refs')?{data:null}:(()=>{throw new Error('Unexpected '+url)})())
     const h=mount(page(e),{onCloned:(r,keep)=>registered.push([r,keep])});await tick();assert.match(text(h),/未配置 Token：仅公开仓库/)
-    setForm(h,'用户名','Wangsc1');await node(h,'Button','加载全部仓库').props.action();assert.match(text(h),/本次列表仅包含公开仓库/)
+    setForm(h,'用户名','Wangsc1');await new Promise(resolve=>setTimeout(resolve,700));await tick();assert.match(text(h),/本次列表仅包含公开仓库/)
     let confirm;global.Dialog={confirm:async input=>{confirm=input;return true}}
-    await node(h,'Button','批量克隆所选 1 个仓库').props.action()
+    await node(h,'Button','克隆所选仓库').props.action()
     assert.match(confirm.message,/仅公开仓库/);assert.match(text(h),/成功 1/);assert.equal(e.engineCalls.length,1)
     assert.deepEqual(e.engineCalls[0].onAuth(),{username:'anonymous',password:''});assert.equal(registered.length,1);assert.equal(registered[0][1],true)
-    assert.ok(e.fm.files.has('/cloud/Scripting/git/public/README.md'));assert.equal(calls.length,3);assert.ok(calls.every(c=>!c.options.headers.Authorization));h.unmount()
+    assert.ok(e.fm.files.has('/cloud/Scripting/git/public/README.md'));assert.equal(calls.length,4);assert.equal(calls.filter(c=>c.url.includes('/search/users?')).length,1);assert.ok(calls.every(c=>!c.options.headers.Authorization));h.unmount()
   })
   await test('single public URL clone has no credential gate or Authorization header',async()=>{
     const e=integration(),registered=[];const calls=network(url=>{assert.ok(url.includes('/info/refs'));return {data:null}})

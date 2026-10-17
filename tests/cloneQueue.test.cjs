@@ -168,12 +168,12 @@ async function main(){
   function form(h,label){h.render();const found=all(h.tree).find(n=>n.type==='FormRow'&&n.props.label===label);assert.ok(found);return found}
   await test('UI defaults un-cloned selected (empty registry); unselect/select, count+directory confirmation, per-item results and keep-open registration',async()=>{
     const e=env(),registered=[];const h=mount(page(e),{onCloned:(r,keepOpen)=>registered.push([r,keepOpen])});await tick()
-    form(h,'用户名').props.onChanged('bob');await node(h,'Button','加载全部仓库').props.action()
-    assert.match(text(h),/已选\s+2\s+个/);await node(h,'Button','取消全选').props.action();assert.equal(node(h,'Button','批量克隆所选 0 个仓库').props.disabled,true)
+    form(h,'用户名').props.onChanged('bob');await new Promise(resolve=>setTimeout(resolve,700));await tick()
+    assert.match(text(h),/已选\s+2\s+个/);await node(h,'Button','取消全选').props.action();assert.equal(node(h,'Button','克隆所选仓库').props.disabled,true)
     await node(h,'Button','全选').props.action();await node(h,'Button','☑ bob/a').props.action();assert.match(text(h),/已选\s+1\s+个/)
     let confirmation;global.Dialog={confirm:async options=>{confirmation=options;return false}}
-    await node(h,'Button','批量克隆所选 1 个仓库').props.action();assert.equal(e.clones.length,0);assert.match(confirmation.title,/1/);assert.match(confirmation.message,/\/cloud\/Scripting\/git/)
-    global.Dialog.confirm=async()=>true;await node(h,'Button','批量克隆所选 1 个仓库').props.action()
+    await node(h,'Button','克隆所选仓库').props.action();assert.equal(e.clones.length,0);assert.match(confirmation.title,/1/);assert.match(confirmation.message,/\/cloud\/Scripting\/git/)
+    global.Dialog.confirm=async()=>true;await node(h,'Button','克隆所选仓库').props.action()
     assert.equal(e.rows.length,1);assert.equal(registered[0][1],true);assert.match(text(h),/成功 1/);assert.match(text(h),/bob\/b/)
     await node(h,'Button','更改目录').props.action();assert.ok(e.fm.files.has('/external/git'));assert.ok(!text(h).includes('/external/git'));h.unmount()
   })
@@ -186,13 +186,13 @@ async function main(){
     const e=env();e.fm.isiCloudEnabled=false
     const wait=deferred();const h=mount(page(e,{listOwnedRepos:()=>wait.promise}),{onCloned:()=>{}});await tick();assert.match(text(h),/iCloud 未启用/)
     form(h,'Git URL').props.onChanged('https://github.com/bob/a.git');await node(h,'Button','克隆').props.action();assert.equal(e.clones.length,0);h.render();assert.match(h.tree.props.toast.content.children.join(''),/iCloud/)
-    form(h,'用户名').props.onChanged('bob');const pending=node(h,'Button','加载全部仓库').props.action();assert.equal(node(h,'Button','正在分页加载全部仓库…').props.disabled,true)
-    wait.reject(new Error('page 2 failed'));await pending;assert.match(text(h),/加载失败，未开始克隆/);assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('批量克隆所选')));h.unmount()
+    form(h,'用户名').props.onChanged('bob');await new Promise(resolve=>setTimeout(resolve,700));await tick();assert.match(text(h),/正在自动分页加载全部仓库/)
+    wait.reject(new Error('page 2 failed'));await tick();assert.match(text(h),/加载失败，未开始克隆/);assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('克隆所选仓库')));h.unmount()
   })
   await test('UI cancellation is wired to active queue; batch stops and results remain visible',async()=>{
     const wait=deferred();const e=env({clone:async(_url,_dir,_id,options)=>{await wait.promise;options.cancelToken.throwIfCancelled()}})
-    const h=mount(page(e),{onCloned:()=>{}});await tick();form(h,'用户名').props.onChanged('bob');await node(h,'Button','加载全部仓库').props.action();global.Dialog={confirm:async()=>true}
-    const pending=node(h,'Button','批量克隆所选 2 个仓库').props.action();await tick();h.render();assert.equal(h.tree.props.navigationBarBackButtonHidden,true)
+    const h=mount(page(e),{onCloned:()=>{}});await tick();form(h,'用户名').props.onChanged('bob');await new Promise(resolve=>setTimeout(resolve,700));await tick();global.Dialog={confirm:async()=>true}
+    const pending=node(h,'Button','克隆所选仓库').props.action();await tick();h.render();assert.equal(h.tree.props.navigationBarBackButtonHidden,true)
     node(h,'BusyOverlay').props.onCancel();assert.equal(node(h,'BusyOverlay').props.cancelling,true);wait.resolve();await pending;assert.match(text(h),/取消 2/);assert.equal(e.rows.length,0);h.unmount()
   })
   await test('rename keeps original storage/keychain/merge keys and all visible release names are scriptgit',async()=>{

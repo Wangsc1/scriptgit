@@ -83,10 +83,10 @@ async function main(){
       const candidate=all(h.tree).find(n=>n.type==='Button'&&all(n).some(c=>c.type==='AvatarView'&&c.props.url==='https://avatars.example/Wangsc1'))
       assert.ok(candidate);assert.ok(all(candidate).some(c=>c.type==='Text'&&c.children.includes('Wangsc1')))
       assert.match(text(h),/1000/);assert.match(text(h),/不完整/);assert.ok(node(h,'Button','加载更多用户候选'))
-      candidate.props.action();assert.equal(form(h).props.value,'Wangsc1');assert.equal(owners.length,0);assert.equal(all(h.tree).filter(n=>n.type==='AvatarView').length,0)
-      await node(h,'Button','加载全部仓库').props.action();assert.deepEqual(owners,['Wangsc1']);assert.match(text(h),/仅包含公开仓库/)
-      const oldAction=node(h,'Button','批量克隆所选 1 个仓库').props.action
-      form(h).props.onChanged('someone');h.render();assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('批量克隆所选')))
+      candidate.props.action();assert.equal(form(h).props.value,'Wangsc1');assert.ok(owners.includes('Wangsc1'));assert.equal(all(h.tree).filter(n=>n.type==='AvatarView').length,0)
+      await tick();assert.equal(owners.filter(owner=>owner==='Wangsc1').length,1);assert.match(text(h),/仅包含公开仓库/)
+      const oldAction=node(h,'Button','克隆所选仓库').props.action
+      form(h).props.onChanged('someone');h.render();assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('克隆所选仓库')))
       global.Dialog={confirm:async()=>true};await oldAction();assert.equal(e.clones.length,0)
       form(h).props.onChanged('');assert.equal(form(h).props.value,'');assert.equal(timer.pending.size,0)
     }finally{h?.unmount();timer.restore()}
@@ -95,9 +95,9 @@ async function main(){
     const timer=fakeTimers();let h
     try{
       const e=env(),wait=deferred();h=mount(page(e,{searchGitHubUsers:async()=>result([]),listOwnedRepos:()=>wait.promise}),{onCloned:()=>{}});await tick()
-      form(h).props.onChanged('olduser');const pending=node(h,'Button','加载全部仓库').props.action()
-      form(h).props.onChanged('newuser');wait.resolve([repo('olduser','old-repo')]);await pending
-      assert.equal(form(h).props.value,'newuser');h.render();assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('批量克隆所选')));assert.ok(!text(h).includes('old-repo'))
+      form(h).props.onChanged('olduser');await timer.flush()
+      form(h).props.onChanged('newuser');wait.resolve([repo('olduser','old-repo')]);await tick()
+      assert.equal(form(h).props.value,'newuser');h.render();assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('克隆所选仓库')));assert.ok(!text(h).includes('old-repo'))
     }finally{h?.unmount();timer.restore()}
   })
   console.log(`\n${count} user-search regression groups passed; timers, HTTP and filesystem mocked.`)

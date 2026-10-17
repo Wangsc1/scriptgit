@@ -20,7 +20,7 @@ import { registeredGithubRepos } from "../utils/clonedGithubRepos"
 
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
-export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void }) {
+export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; initialUsername?: string }) {
   const [url, setUrl] = useState("")
   const [destination, setDestination] = useState<CloneDestination>({ kind: "icloud" })
   const [rootLabel, setRootLabel] = useState("iCloud Drive/Scripting/git")
@@ -31,7 +31,7 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
   const [myRepos, setMyRepos] = useState<GitHubRepo[]>([])
   const [loadingMyRepos, setLoadingMyRepos] = useState(false)
   const [myReposError, setMyReposError] = useState("")
-  const [username, setUsername] = useState("")
+  const [username, setUsername] = useState(initialUsername)
   const [loadedUser, setLoadedUser] = useState("")
   const [publicOnly, setPublicOnly] = useState(!hasToken())
   const [ownedRepos, setOwnedRepos] = useState<GitHubRepo[]>([])
@@ -43,7 +43,8 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
   const alive = useRef(true)
   const locked = useRef(false)
   const listRequest = useRef(0)
-  const usernameRef = useRef("")
+  const usernameRef = useRef(initialUsername)
+  const autoLoad = useRef({ timer: null as ReturnType<typeof setTimeout> | null, busy: false, requestId: 0, loaded: "", ready: null as { target: string; id: number } | null })
   const directoryRequest = useRef(0)
   const cancelRef = useRef<RemoteCancelToken | null>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
@@ -52,7 +53,12 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
   useEffect(() => {
     configureDestination({ kind: "icloud" })
     if (hasToken()) loadMyRepos()
-    return () => { alive.current = false; listRequest.current++; directoryRequest.current++; cancelRef.current?.cancel() }
+    changeUsername(initialUsername)
+    return () => {
+      alive.current = false; listRequest.current++; directoryRequest.current++; cancelRef.current?.cancel()
+      if (autoLoad.current.timer !== null) clearTimeout(autoLoad.current.timer)
+      autoLoad.current.ready = null
+    }
   }, [])
 
   async function loadMyRepos() {
@@ -90,30 +96,53 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
 
   function changeUsername(value: string, selectedCandidate = false) {
     if (locked.current) return
+    const target = value.trim()
+    const current = autoLoad.current
+    if (selectedCandidate) {
+      userSearch.selectUser(value)
+      // 重复点同一候选不清空结果，也不堆叠全量请求。
+      if (target.toLowerCase() === usernameRef.current.trim().toLowerCase() && ((current.busy && current.requestId === listRequest.current) || current.ready?.id === listRequest.current || current.loaded === target.toLowerCase())) return
+    } else userSearch.changeQuery(value)
     usernameRef.current = value
-    listRequest.current++
-    setUsername(value); setOwnedRepos([]); setSelected([]); setLoadedUser(""); setLoadingRepos(false); setListError(""); setResults([])
-    if (selectedCandidate) userSearch.selectUser(value)
-    else userSearch.changeQuery(value)
+    const id = ++listRequest.current
+    if (current.timer !== null) clearTimeout(current.timer)
+    current.timer = null; current.ready = null; current.loaded = ""
+    const valid = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(target)
+    setUsername(value); setOwnedRepos([]); setSelected([]); setLoadedUser(""); setLoadingRepos(valid); setListError(""); setResults([])
+    if (!valid) return
+    if (selectedCandidate) void loadUser(target, id)
+    else current.timer = setTimeout(() => { current.timer = null; void loadUser(target, id) }, 650)
   }
 
-  async function loadUser() {
-    if (locked.current || loadingRepos) return
-    const id = ++listRequest.current
-    const target = usernameRef.current.trim()
-    userSearch.selectUser(target)
+  async function loadUser(target: string, id: number) {
+    const current = autoLoad.current
+    if (!alive.current || locked.current || id !== listRequest.current) return
+    // 无法取消的旧分页完成前只记住最新用户名，最多一个全量分页请求在途。
+    if (current.busy) { current.ready = { target, id }; return }
+    current.busy = true; current.requestId = id
     const onlyPublic = !hasToken()
-    setLoadingRepos(true); setListError(""); setOwnedRepos([]); setSelected([]); setLoadedUser("")
+    setLoadingRepos(true); setListError("")
     try {
       const repos = await listOwnedRepos(target)
       if (!alive.current || id !== listRequest.current) return
       // 用户主动加载完成后只读一次注册表；首屏/render 不为标记读 Storage 或工作区。
       const cloned = registeredGithubRepos(listRepos())
       setClonedRepos(cloned)
+      current.loaded = target.toLowerCase()
       setOwnedRepos(repos); setSelected(repos.filter(repo => !cloned.has(repo.fullName.toLowerCase())).map(repo => repo.fullName)); setLoadedUser(target); setPublicOnly(onlyPublic)
     } catch (e: any) {
       if (alive.current && id === listRequest.current) setListError("加载失败，未开始克隆：" + String(e?.message || e))
-    } finally { if (alive.current && id === listRequest.current) setLoadingRepos(false) }
+    } finally {
+      current.busy = false
+      if (alive.current && id === listRequest.current) setLoadingRepos(false)
+      const ready = current.ready; current.ready = null
+      if (ready && alive.current && ready.id === listRequest.current) void loadUser(ready.target, ready.id)
+    }
+  }
+
+  function retryUser() {
+    if (autoLoad.current.busy || !usernameRef.current.trim()) return
+    void loadUser(usernameRef.current.trim(), listRequest.current)
   }
 
   async function execute(requests: CloneRequest[], batch: boolean) {
@@ -182,19 +211,20 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
     <Section header={<Text>按 GitHub 用户名批量添加</Text>} footer={<Text>无 Token 时加载该用户全部公开仓库并匿名克隆；配置 Token 时还包含当前凭据可访问的私有仓库，认证失败不会降级。未克隆默认勾选，已克隆仍可手动选择；加载完整列表后才能开始。</Text>}>
       {!hasToken() ? <Text>未配置 Token：仅公开仓库，可匿名加载与克隆。</Text> : null}
       <FormRow label="用户名" prompt="输入至少 2 个字符搜索用户，或填写完整 login" value={username} onChanged={(value: string) => changeUsername(value)} />
-      <Text font="caption">搜索的是公开 GitHub 用户名，不是关联账号。点候选填写 login 后，再点「加载全部仓库」。</Text>
+      <Text font="caption">搜索的是公开 GitHub 用户名，不是关联账号。点候选立即自动加载全部仓库；手工填写完整 login 后停顿片刻自动加载。</Text>
       {userSearch.loading ? <Text>搜索用户中…</Text> : null}
       {userSearch.error ? <Text foregroundStyle="red">{userSearch.error}</Text> : null}
       {userSearch.error ? <Button title="重试用户搜索" action={userSearch.retry} disabled={cloning || userSearch.loading} /> : null}
-      {userSearch.candidates.map(candidate => <Button key={candidate.login} action={() => changeUsername(candidate.login, true)} disabled={cloning || loadingRepos}>
+      {userSearch.candidates.map(candidate => <Button key={candidate.login} action={() => changeUsername(candidate.login, true)} disabled={cloning}>
         <HStack spacing={8}><AvatarView url={candidate.avatarUrl} size={28} /><Text>{candidate.login}</Text></HStack>
       </Button>)}
-      {userSearch.hasMore ? <Button title="加载更多用户候选" action={userSearch.loadMore} disabled={cloning || userSearch.loading || loadingRepos} /> : null}
+      {userSearch.hasMore ? <Button title="加载更多用户候选" action={userSearch.loadMore} disabled={cloning || userSearch.loading} /> : null}
       {userSearch.total === 0 ? <Text>没有匹配用户，可继续输入更完整的 login。</Text> : null}
       {userSearch.limited ? <Text>GitHub 搜索最多显示前 1000 个匹配结果，请细化用户名。</Text> : null}
       {userSearch.incomplete ? <Text>GitHub 返回了不完整的搜索结果，可细化关键词后重试。</Text> : null}
-      <Button title={loadingRepos ? "正在分页加载全部仓库…" : "加载全部仓库"} action={loadUser} disabled={cloning || loadingRepos || !username.trim()} />
+      {loadingRepos ? <Text>正在自动分页加载全部仓库…</Text> : null}
       {listError ? <Text foregroundStyle="red">{listError}</Text> : null}
+      {listError ? <Button title="重试仓库加载" action={retryUser} disabled={cloning || loadingRepos} /> : null}
       {loadedUser ? <>
         <Text>{loadedUser} · 共 {ownedRepos.length} 个 · 已选 {selectedRepos.length} 个</Text>
         <Text>{publicOnly ? "本次列表仅包含公开仓库" : "本次列表包含当前 Token 已授权的仓库"}</Text>
@@ -202,7 +232,7 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
         <Button title="取消全选" action={() => setSelected([])} disabled={cloning} />
         {ownedRepos.map(repo => <Button key={repo.fullName} title={`${selected.includes(repo.fullName) ? "☑" : "☐"} ${repo.fullName}${clonedRepos.has(repo.fullName.toLowerCase()) ? "（已克隆）" : ""}${repo.private ? "（私有）" : ""}`}
           action={() => setSelected(current => current.includes(repo.fullName) ? current.filter(name => name !== repo.fullName) : [...current, repo.fullName])} disabled={cloning} />)}
-        <Button title={`批量克隆所选 ${selectedRepos.length} 个仓库`} action={() => execute(selectedRepos.map(repo => ({ name: repo.name, url: repo.url, githubRepo: repo })), true)} disabled={cloning || loadingRepos || !selectedRepos.length || loadedUser !== username.trim()} />
+        <Button title="克隆所选仓库" action={() => execute(selectedRepos.map(repo => ({ name: repo.name, url: repo.url, githubRepo: repo })), true)} disabled={cloning || loadingRepos || !selectedRepos.length || loadedUser !== username.trim()} />
       </> : null}
     </Section>
     {results.length ? <Section header={<Text>本次结果</Text>} footer={<Text>失败可重跑；已完成项目与现有目录自动跳过，不覆盖也不重复注册。取消为协作式，可能等待当前请求结束。</Text>}>
