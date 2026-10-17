@@ -54,6 +54,8 @@ global.__jsx = (type, props, ...children) => ({ type, props: props || {}, childr
 let active
 const ui = new Proxy({}, { get(_, name) {
   if (name === 'useColorScheme') return () => 'light'
+  if (name === 'MagnifyGesture') return minScaleDelta => ({ kind: 'magnify', minScaleDelta,
+    onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; return this } })
   if (name === 'DragGesture') return options => ({ onEnded: onEnded => ({ kind: 'drag', options, onEnded }) })
   if (name === 'useObservable') return (initial) => {
     const h = active, i = h.cursor++

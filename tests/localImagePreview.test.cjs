@@ -1,6 +1,7 @@
 /* Real service classification + real native-preview view wiring, native decoder modeled. */
 const assert=require('node:assert/strict')
 const {load,mount,ui,all,tick,deferred}=require('./remoteFiles.test.cjs')
+function viewportNodes(h){const geometry=all(h.tree).find(n=>n.type==='GeometryReader');return geometry?all(geometry.children[0]({size:{width:320,height:520}})):all(h.tree)}
 const execution=load('services/localImportExecution.ts')
 let bytesReads=0,writes=0,decodes=[],thumbs=[],fail='',changed=false
 const files=new Map(),links=new Set()
@@ -16,7 +17,7 @@ global.FileManager={
 global.UIImage={fromFile:p=>{decodes.push(p);if(fail==='throw')throw Error('native decode failed');if(fail==='decode')return null;return {preparingThumbnail:size=>{thumbs.push(size);if(fail==='thumb')return null;if(fail==='change')changed=true;return {native:true,width:size.width,height:size.height}}}}}
 const service=load('services/git/localFileService.ts',{'../repoStore':{resolveWorkdir:()=>root},'../localImportExecution':execution})
 let opened=[],readFailure=false,gate=null
-const page=load('components/LocalImagePreview.tsx',{scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(_,path)=>{opened.push(path);if(gate)await gate.promise;if(readFailure)throw Error('reopen failed');return service.readLocalFileForOpenInternal('repo',path)}}}).LocalImagePreview
+const page=load('components/LocalImagePreview.tsx',{'../utils/localImageZoom':load('utils/localImageZoom.ts'),scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(_,path)=>{opened.push(path);if(gate)await gate.promise;if(readFailure)throw Error('reopen failed');return service.readLocalFileForOpenInternal('repo',path)}}}).LocalImagePreview
 async function main(){
  for(const name of ['camera.HEIC','camera.heic','camera.HeIf','camera.HEIF','photo.PNG','photo.JPEG','photo.jpg','small.png']){
   files.set(root+'/'+name,{size:name==='small.png'?15:3*1024*1024})
@@ -35,10 +36,10 @@ async function main(){
  const file=await service.readLocalFileForOpenInternal('repo','camera.HEIC');let closes=0,reloaded=[]
  const h=mount(page,{bookmarkName:'repo',file,onReload:f=>reloaded.push(f)})
  const bar=()=>{h.render();return all(h.tree).find(n=>n.type==='VStack').props.toolbar}
- assert.equal(all(h.tree).find(n=>n.type==='Image').props.image,file.previewImage)
+ assert.equal(viewportNodes(h).find(n=>n.type==='Image').props.image,file.previewImage)
  assert.ok(!all(h.tree).some(n=>n.type==='LocalCodeEditor'||n.type==='WebView'))
  await bar().topBarTrailing.props.action();assert.equal(reloaded.length,1);assert.ok(reloaded[0].previewImage)
- readFailure=true;await bar().topBarTrailing.props.action();h.render();assert.match(JSON.stringify(h.tree),/图片刷新失败/);assert.equal(reloaded.length,1);assert.equal(all(h.tree).find(n=>n.type==='Image').props.image,file.previewImage);readFailure=false
+ readFailure=true;await bar().topBarTrailing.props.action();h.render();assert.match(JSON.stringify(h.tree),/图片刷新失败/);assert.equal(reloaded.length,1);assert.equal(viewportNodes(h).find(n=>n.type==='Image').props.image,file.previewImage);readFailure=false
  assert.equal(h.tree.type,'VStack');assert.equal(bar().topBarLeading,undefined,'retain the system navigation back button, no custom override');assert.equal(h.tree.props.navigationBarBackButtonHidden,false);assert.ok(!JSON.stringify(h.tree).includes('显示缩略图'));assert.ok(!JSON.stringify(h.tree).includes('图片只读'))
  gate=deferred();const loading=bar().topBarTrailing.props.action();await tick();await bar().topBarTrailing.props.action();assert.equal(opened.length,3,'duplicate refresh locked');h.unmount();gate.resolve();await loading;assert.equal(h.lateWrites,0);assert.equal(reloaded.length,1)
  const absent=mount(page,{bookmarkName:'repo',file:{...file,previewImage:undefined},onClose(){},onReload(){}});assert.match(JSON.stringify(absent.tree),/图片预览不可用/);absent.unmount()

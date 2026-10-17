@@ -1,6 +1,7 @@
-import { Button, Image, Text, VStack, useEffect, useRef, useState } from "scripting"
+import { Button, GeometryReader, Image, MagnifyGesture, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import { openLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { localImportOnMain } from "../services/localImportExecution"
+import { localImageZoomLayout, localImageZoomScale } from "../utils/localImageZoom"
 
 /** Native display only. The service owns path checks and thumbnail creation;
  * this view never receives raw bytes, encodes an image, or writes the source.
@@ -14,6 +15,22 @@ export function LocalImagePreview({ bookmarkName, file, onReload }: {
   const lock = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [scale, setScale] = useState(1)
+  const committedScale = useRef(1)
+  // Official TF views/gestures: MagnifyGesture(0.01).onChanged/onEnded with
+  // value.magnification; ScrollView explicitly has NO native zoom API. Resize
+  // its content with the pinch and let native two-axis scrolling own panning.
+  function magnify(value: number, ended: boolean) {
+    if (!alive.current || !Number.isFinite(value) || value <= 0) return
+    const next = localImageZoomScale(committedScale.current * value)
+    if (ended) committedScale.current = next
+    setScale(next)
+  }
+  function resetZoom() {
+    if (!alive.current) return
+    committedScale.current = 1
+    setScale(1)
+  }
   useEffect(() => () => { alive.current = false }, [])
   async function reload() {
     if (lock.current) return
@@ -37,7 +54,20 @@ export function LocalImagePreview({ bookmarkName, file, onReload }: {
       navigationTitle={file.path.split("/").pop() || "图片预览"} navigationBarTitleDisplayMode="inline" navigationBarBackButtonHidden={false}
       toolbar={{ topBarTrailing: <Button title="刷新" action={reload} disabled={busy} /> }}>
       {error ? <Text foregroundStyle="red">{error}</Text> : null}
-      {file.previewImage ? <Image image={file.previewImage} resizable scaleToFit aspectRatio={{ value: null, contentMode: "fit" }} frame={{ maxWidth: Infinity, maxHeight: Infinity }} /> :
+      {file.previewImage ? <GeometryReader>
+        {proxy => {
+          const layout = localImageZoomLayout({ width: file.previewImage!.width, height: file.previewImage!.height }, proxy.size, scale)
+          return <ScrollView axes="all" scrollDisabled={scale <= 1} scrollClipDisabled={false} defaultScrollAnchor="center"
+            frame={{ width: layout.width, height: layout.height }}
+            simultaneousGesture={MagnifyGesture(0.01).onChanged(value => magnify(value.magnification, false)).onEnded(value => magnify(value.magnification, true))}
+            onTapGesture={scale > 1 ? { count: 2, perform: resetZoom } : undefined}>
+            <ZStack frame={{ width: layout.contentWidth, height: layout.contentHeight }}>
+              <Image image={file.previewImage} resizable scaleToFit aspectRatio={{ value: null, contentMode: "fit" }}
+                frame={{ width: layout.displayWidth, height: layout.displayHeight }} />
+            </ZStack>
+          </ScrollView>
+        }}
+      </GeometryReader> :
         <Text foregroundStyle="red">图片预览不可用；文件未修改，可返回列表重试或删除。</Text>}
     </VStack>
 }
