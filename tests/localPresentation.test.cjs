@@ -25,32 +25,32 @@ mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid:noop}
 const {RepoDetailPage}=load('pages/RepoDetailPage.tsx',mocks)
 async function main(){
  const h=mount(RepoDetailPage,{bookmarkName:'repo',name:'test'})
- assert.equal(h.tree.type,'List');assert.equal(h.tree.props.fullScreenCover.isPresented,false)
+ assert.equal(h.tree.type,'List');assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
  const tab=()=>{h.render();return all(h.tree).find(n=>n.type==='RepoDetailTabContent')}
  const file={path:'file.txt',text:'draft',version:{}}
- tab().props.onOpenLocalFile(file);h.render();let cover=h.tree.props.fullScreenCover
+ tab().props.onOpenLocalFile(file);h.render();let cover=h.tree.props.fullScreenCover[0]
  assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'LocalFileEditor');assert.equal(cover.content.props.file,file)
  // Tab source content can change while the stable List owns the editor session.
- data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,true)
+ data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,true)
  await cover.content.props.onChanged('file.txt',false);assert.equal(refreshed,1)
- cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
- tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();let destination=h.tree.props.navigationDestination
- assert.equal(h.tree.props.fullScreenCover.isPresented,false,'images are NOT modal covers');assert.equal(destination.isPresented,true)
+ cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
+ tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();let destination=h.tree.props.fullScreenCover[1]
+ assert.equal(h.tree.props.fullScreenCover[0].isPresented,false,'image uses its own cover entry, editor entry stays closed');assert.equal(destination.isPresented,true)
  assert.equal(destination.content.type,'LocalImagePreview');assert.deepEqual(destination.content.props.file.previewImage,{nativeThumbnail:true});assert.equal(destination.content.props.bookmarkName,'repo');assert.ok(!all(destination.content).some(n=>n.type==='LocalFileEditor'))
  const firstImageSession=destination.content.props.sessionId,oldReload=destination.content.props.onReload
- destination.content.props.onReload({...file,previewImage:{nativeThumbnail:'refreshed'},text:null});h.render();destination=h.tree.props.navigationDestination
+ destination.content.props.onReload({...file,previewImage:{nativeThumbnail:'refreshed'},text:null});h.render();destination=h.tree.props.fullScreenCover[1]
  assert.equal(destination.isPresented,true);assert.ok(destination.content.props.sessionId>firstImageSession);assert.equal(destination.content.props.file.previewImage.nativeThumbnail,'refreshed')
- assert.equal(skippedReloads,1,'refresh does not add another navigation push/return reload skip')
- destination.onChanged(false);h.render();assert.equal(h.tree.props.navigationDestination.isPresented,false);assert.equal(h.tree.props.fullScreenCover.isPresented,false)
- oldReload({...file,previewImage:{nativeThumbnail:'stale'},text:null});h.render();assert.equal(h.tree.props.navigationDestination.isPresented,false,'stale refresh cannot reopen popped image')
- assert.equal(mergeLoads,0);assert.equal(closedOtherPages,0,'image pop does not close or refresh unrelated routes')
+ assert.equal(skippedReloads,0,'sheet does not push/pop the underlying page; no reload skip needed')
+ destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false);assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
+ oldReload({...file,previewImage:{nativeThumbnail:'stale'},text:null});h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false,'stale refresh cannot reopen popped image')
+ assert.equal(mergeLoads,0);assert.equal(closedOtherPages,0,'image dismiss does not close or refresh unrelated routes')
  for(let i=0;i<3;i++){
-  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();destination=h.tree.props.navigationDestination
+  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();destination=h.tree.props.fullScreenCover[1]
   assert.ok(destination.content.props.sessionId>firstImageSession+i,'same image gets a fresh session')
-  destination.onChanged(false);h.render();assert.equal(h.tree.props.navigationDestination.isPresented,false)
+  destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false)
  }
  nav.isPresented=true;h.render();assert.equal(h.tree.props.navigationDestination.content.type,'RepoDetailDestination');h.tree.props.navigationDestination.onChanged(false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
- tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountReload=h.tree.props.navigationDestination.content.props.onReload
+ tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountReload=h.tree.props.fullScreenCover[1].content.props.onReload
  h.unmount();afterUnmountReload({...file,previewImage:{nativeThumbnail:true},text:null});assert.equal(h.lateWrites,0)
  const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(<View \/>\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
  for(const name of ['pages/FilesTab.tsx','pages/LocalFileEditor.tsx','services/git/localFileService.ts'])assert.doesNotMatch(fs.readFileSync(root+'/'+name,'utf8'),/Script.exit|Navigation.present/)
@@ -100,6 +100,6 @@ async function main(){
  assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
  for(const name of ['DiffPage','CommitDiffPage','GitHubItemDetailPage'])assert.doesNotMatch(fs.readFileSync(root+'/pages/'+name+'.tsx','utf8'),/compactImage/)
  console.log('PASS compact local image HTML caps 80%/60% inside safe-area stage, intrinsic small-image sizing, full-screen container, unchanged close/zoom/error script and shared default mode.')
- console.log('PASS real RepoDetailPage keeps text cover, pushes native image destination with default back/pop cleanup, refresh/stale/unmount guards and unrelated routes unchanged; no added Navigation.present/Script.exit path. Native lifecycle requires device validation.')
+ console.log('PASS real RepoDetailPage keeps text cover, presents image in its own fullScreenCover entry (editor cover untouched) with close cleanup, refresh/stale/unmount guards and unrelated routes unchanged; no added Navigation.present/Script.exit path. Native lifecycle requires device validation.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

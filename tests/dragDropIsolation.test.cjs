@@ -52,7 +52,7 @@ async function testEntry(){
  }).FilesTab
  const props={files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged:forbidden,onOpen:forbidden,onPush:forbidden,onRestore:forbidden,onCreateEntry:forbidden}
  const h=mount(FilesTab,props,{effectUpdates:true});await flush();h.render();const buttons=all(h.tree.props.header).filter(n=>n.type==='Button')
- assert.equal(buttons.at(-1).props.title,'导入图片');assert.ok(!buttons.some(n=>n.props.title==='拖放测试'));assert.equal(h.tree.props.fullScreenCover,undefined)
+ assert.equal(buttons.at(-1).props.title,'查看拖动记录');assert.equal(buttons.at(-2).props.title,'导入图片');assert.ok(!buttons.some(n=>n.props.title==='拖放测试'));assert.equal(h.tree.props.fullScreenCover,undefined)
  const source=fs.readFileSync(path.join(__dirname,'../pages/FilesTab.tsx'),'utf8');assert.doesNotMatch(source,/DragDropTestPage|dragTestPresented|drag-test|打开拖放测试/)
  assert.equal(repoCalls,0);h.unmount()
 

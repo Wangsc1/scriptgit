@@ -26,6 +26,9 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
   }
 }
 
+const DRAG_CALLBACKS = ["onDrag", "validateDrop", "dropEntered", "dropUpdated", "dropExited", "performDrop"] as const
+function newDragCounts(): Record<string, number> { return { onDrag: 0, validateDrop: 0, dropEntered: 0, dropUpdated: 0, dropExited: 0, performDrop: 0 } }
+
 /** 文件列表：左滑 提交(push)/还原/删除 */
 function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
@@ -119,7 +122,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [error, setError] = useState("")
   const [dragStatus, setDragStatus] = useState("")
   const [importStatus, setImportStatus] = useState("")
-  const dragTrace = useRef({ entries: [] as string[], pending: false, lastCallback: "", lastDecision: "" })
+  // Ref-only bounded trace: native drag callbacks never set state or dispatch UI work for diagnostics.
+  const dragTrace = useRef({ entries: [] as string[], counts: newDragCounts(), lastCallback: "", lastDecision: "" })
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -327,18 +331,17 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       const trace = dragTrace.current
       if (!state.current.alive || trace.entries[trace.entries.length - 1] === message) return
       trace.entries = [...trace.entries, message].slice(-8)
-      if (trace.pending) return
-      trace.pending = true
-      void localImportOnMain("拖动阶段提示", () => {
-        trace.pending = false
-        if (state.current.alive) setDragStatus(trace.entries.join("\n"))
-      }).catch(() => { trace.pending = false })
     } catch (_) { /* Diagnostic failure must not affect drag/drop. */ }
   }
+  function dragLogSnapshot(): string {
+    const trace = dragTrace.current
+    const counts = DRAG_CALLBACKS.map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
+    return `拖动记录（查看时快照）：回调计数 ${counts}` + (trace.entries.length ? "\n" + trace.entries.join("\n") : "\n尚无拖动记录")
+  }
+  // Counts every native entry; only distinct consecutive callbacks add a trace line.
   function enterDropCallback(name: string): boolean {
     const trace = dragTrace.current
-    // Suppress the entire repeated callback's routine entry/result pair, not
-    // just adjacent text, so high-frequency dropUpdated cannot cause renders.
+    trace.counts[name] = (trace.counts[name] || 0) + 1
     if (trace.lastCallback === name) return false
     trace.lastCallback = name
     reportDrag(`拖动：${name} 入口`)
@@ -346,19 +349,21 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }
   function dragFile(path: string): ItemProvider {
     dragTrace.current.entries = []
+    dragTrace.current.counts = newDragCounts()
+    dragTrace.current.counts.onDrag = 1
     dragTrace.current.lastCallback = ""
     dragTrace.current.lastDecision = ""
     dragSession.current.clear()
     try {
-      if (dragUnavailable() || removed.has(path)) return ItemProvider.fromText("")
+      if (dragUnavailable() || removed.has(path)) { reportDrag("拖动：当前不可拖动（忙碌、加载、合并或表单占用）"); return ItemProvider.fromText("") }
       const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
       const provider = ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
       let types = "未报告"
       try { types = provider.registeredTypes?.join(", ") || "未报告" } catch (_) { /* Diagnostics cannot change a successful drag. */ }
-      reportDrag(`拖动：已开始；源类型=${types}；请在目录行松手（接收public.utf8-plain-text）`)
+      reportDrag(`拖动：已开始；源类型=${types}`)
       return provider
     } catch (e: any) {
-      if (state.current.alive) setError(String(e?.message || e))
+      reportDrag(`拖动：开始异常：${String(e?.message || e)}`)
       return ItemProvider.fromText("")
     }
   }
@@ -411,7 +416,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         } catch (e: any) {
           reportDrag(`拖动：${stage} 异常：${String(e?.message || e)}`)
           dragSession.current.clear(); state.current.busy = false
-          void localImportOnMain("拖动UI错误", () => { if (state.current.alive) { setBusy(false); setError(`[${stage}] ${String(e?.message || e)}`) } }).catch(error => console.error(error))
           return false
         }
       },
@@ -526,10 +530,14 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Keep Menu actions lightweight: record an intent, then hand off after commit.
   // This boundary alone does not establish the cause of a native crash.
   // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
-  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
+  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo" | "drag-log"
   const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
   const additionPending = useRef(false)
   function requestAddition(kind: AdditionKind) {
+    if (kind === "drag-log") {
+      if (state.current.alive && !additionPending.current) { additionPending.current = true; setAdditionRequest({ kind, bookmarkName }) }
+      return
+    }
     if (!state.current.alive || state.current.busy || additionPending.current || loading || mergeInProgress || creationActive || directoryForm) return
     additionPending.current = true
     setAdditionRequest({ kind, bookmarkName })
@@ -539,6 +547,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     additionPending.current = false
     if (!state.current.alive) return
     setAdditionRequest(null)
+    if (additionRequest.kind === "drag-log") { setDragStatus(dragLogSnapshot()); return }
     if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
     if (kind === "file" || kind === "directory") startCreation(kind === "directory")
@@ -563,6 +572,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         <Button title="导入文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("document")} />
         <Button title="导入目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("import-directory")} />
         <Button title="导入图片" systemImage="photo" disabled={additionDisabled} action={() => requestAddition("photo")} />
+      </Section>
+      <Section header={<Text>仅诊断，不改仓库</Text>}>
+        <Button title="查看拖动记录" systemImage="list.bullet.rectangle" disabled={additionDisabled} action={() => requestAddition("drag-log")} />
       </Section>
     </Menu>
   </HStack>}>

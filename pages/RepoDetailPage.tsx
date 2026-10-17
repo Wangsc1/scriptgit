@@ -65,7 +65,6 @@ export function RepoDetailPage({
   function openLocalFile(file: LocalWorktreeFile) {
     const id = ++localSession.current
     if (file.previewImage) {
-      if (activeImage.current === null) nav.skipNextAppearLoad()
       activeImage.current = id
       setLocalImage({ file, id })
     } else {
@@ -228,7 +227,7 @@ export function RepoDetailPage({
 
   return (
     <List
-      fullScreenCover={{
+      fullScreenCover={[{
         isPresented: localFile !== null,
         // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
@@ -238,7 +237,16 @@ export function RepoDetailPage({
             try { await data.refreshChangesAndSnapshot() }
             catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
           }} /> : <Text>加载中…</Text>,
-      }}
+      }, {
+        // Same presentation family as the existing diff/GitHub image viewers
+        // (fullScreenCover), separate from the editor entry: the system owns the
+        // modal dismissal motion; no custom drag/edge gesture is installed.
+        isPresented: localImage !== null,
+        onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
+        content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} bookmarkName={bookmarkName} file={localImage.file}
+          onClose={() => closeLocalImage(localImage.id)}
+          onReload={file => { if (activeImage.current === localImage.id) openLocalFile(file) }} /> : <Text>加载中…</Text>,
+      }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"
@@ -296,20 +304,15 @@ export function RepoDetailPage({
         ) : undefined,
       }}
       navigationDestination={{
-        // Images PUSH on the existing app stack, matching the official
-        // NavigationStack/Use with navigationDestination example. A cover with
-        // a nested stack has no previous screen for the native edge-pop gesture.
-        isPresented: localImage !== null || nav.isPresented,
+        isPresented: nav.isPresented,
         onChanged: (presented: boolean) => {
-          if (!presented && localImage) closeLocalImage(localImage.id)
-          else if (!presented) {
+          if (!presented) {
             nav.closeAll()
             // 从冲突页返回时刷新合并状态
             data.loadMergeState()
           }
         },
-        content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} bookmarkName={bookmarkName} file={localImage.file}
-          onReload={file => { if (activeImage.current === localImage.id) openLocalFile(file) }} /> : (
+        content: (
           <RepoDetailDestination
             bookmarkName={bookmarkName}
             displayName={data.displayName}
