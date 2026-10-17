@@ -3,8 +3,6 @@ export interface FileTreeNode {
   path: string
   type: "directory" | "file"
   children: FileTreeNode[]
-  size?: number
-  modified?: number
 }
 
 interface MutableTreeNode extends FileTreeNode {
@@ -21,19 +19,12 @@ function sortNodes(nodes: MutableTreeNode[]): FileTreeNode[] {
       name: node.name,
       path: node.path,
       type: node.type,
-      size: node.size,
-      modified: node.modified,
       children: sortNodes(Array.from(node.childMap.values())),
     }))
 }
 
-export interface FileTreeOptions {
-  /** 文件路径到元数据的映射；目录节点不填充 */
-  metadata?: Map<string, { size: number; modified: number }>
-}
-
 /** 把已跟踪文件路径转换为目录优先、同层按名称排序的树 */
-export function buildFileTree(filepaths: string[], options?: FileTreeOptions): FileTreeNode[] {
+export function buildFileTree(filepaths: string[]): FileTreeNode[] {
   const roots = new Map<string, MutableTreeNode>()
 
   for (const filepath of filepaths) {
@@ -50,15 +41,12 @@ export function buildFileTree(filepaths: string[], options?: FileTreeOptions): F
       const isFile = index === parts.length - 1
       let node = siblings.get(name)
       if (!node) {
-        const meta = isFile ? options?.metadata?.get(currentPath) : undefined
         node = {
           name,
           path: currentPath,
           type: isFile ? "file" : "directory",
           children: [],
           childMap: new Map(),
-          size: meta?.size,
-          modified: meta?.modified,
         }
         siblings.set(name, node)
       }
