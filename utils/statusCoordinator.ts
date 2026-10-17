@@ -21,7 +21,10 @@ export class StatusCoordinator<T> {
   private revisions = new Map<string, number>()
   private scans = new Map<string, ScanJob<T>>()
   private queue: ScanJob<T>[] = []
-  private scanning = false
+  private activeScans = new Set<ScanJob<T>>()
+  private slowScans = new Set<ScanJob<T>>()
+
+  constructor(private options: { slowScanMs?: number; maxActiveScans?: number; writeWaitMs?: number } = {}) {}
 
   revision(key: string): number {
     return this.revisions.get(key) ?? 0
@@ -54,9 +57,16 @@ export class StatusCoordinator<T> {
     this.revisions.set(key, this.revision(key) + 1)
     try {
       // 失败的旧读取也必须收尾，但不能阻断用户的写操作。
-      await Promise.all(Array.from(this.readers.get(key) ?? []).map(
+      const reads = Promise.all(Array.from(this.readers.get(key) ?? []).map(
         (pending) => pending.catch(() => undefined)
       ))
+      // 只对写入的“准入等待”计时；真实读者仍登记，绝不超时释放正在执行的读/写。
+      if (this.options.writeWaitMs) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("仓库仍有状态读取未结束，暂未执行写操作；请等待读取完成后重试")), this.options.writeWaitMs)
+          reads.then(() => { clearTimeout(timer); resolve() }, error => { clearTimeout(timer); reject(error) })
+        })
+      } else await reads
       return await task()
     } finally {
       this.revisions.set(key, this.revision(key) + 1)
@@ -88,22 +98,29 @@ export class StatusCoordinator<T> {
     })
   }
 
-  private async drain(): Promise<void> {
-    if (this.scanning || this.queue.length === 0) return
-    this.scanning = true
+  private drain(): void {
+    // 正常仍串行；只有慢扫描占住槽位时，允许另一个仓库使用有限的备用槽。
+    // 慢任务并未取消/释放，仍占扫描槽且共享同仓 promise，读写屏障一直有效。
+    const capacity = this.slowScans.size > 0 ? Math.max(1, this.options.maxActiveScans || 1) : 1
+    if (this.activeScans.size >= capacity || this.queue.length === 0) return
     const foreground = this.queue.findIndex((job) =>
       Array.from(job.run.sources).some((source) => !source.startsWith("列表"))
     )
     const [job] = this.queue.splice(foreground < 0 ? 0 : foreground, 1)
+    this.activeScans.add(job)
     job.run.startedAt = Date.now()
-    try {
-      job.resolve(await job.task(job.run))
-    } catch (error) {
-      job.reject(error)
-    } finally {
-      this.scanning = false
-      // 给完成回调让出时机，避免下一项抢在当前页面状态更新之前启动。
+    job.run.activeScans = this.activeScans.size
+    const timer = this.options.slowScanMs ? setTimeout(() => {
+      if (!this.activeScans.has(job)) return
+      this.slowScans.add(job)
+      this.drain()
+    }, this.options.slowScanMs) : null
+    Promise.resolve().then(() => job.task(job.run)).then(job.resolve, job.reject).finally(() => {
+      if (timer !== null) clearTimeout(timer)
+      this.activeScans.delete(job)
+      this.slowScans.delete(job)
+      // 给完成回调让出时机，避免下一项抢在页面状态更新之前启动。
       Promise.resolve().then(() => this.drain())
-    }
+    })
   }
 }

@@ -385,6 +385,7 @@ async function loadGitBundle(): Promise<any> {
 
 /** git 引擎单例（懒加载，全局复用） */
 let _gitEngine: any = null
+let _gitEngineLoading: Promise<{ git: any; createFS: typeof createFS }> | null = null
 
 /** 向 isomorphic-git 转发 HTTP 阶段进度（可 async；取消错误原样抛出） */
 async function reportHttpProgress(
@@ -537,10 +538,15 @@ export function createHttpTransport(
  * 首次调用会加载 Buffer polyfill 与 UMD bundle，后续直接返回缓存
  */
 export async function loadGitEngine(): Promise<{ git: any; createFS: typeof createFS }> {
-  if (!_gitEngine) {
-    await loadBufferPolyfill()
-    const git = await loadGitBundle()
-    _gitEngine = { git, createFS }
+  if (_gitEngine) return _gitEngine
+  if (!_gitEngineLoading) {
+    // 批量仓库冷启动共用一次加载；失败才允许重试，慢加载绝不另起第二次 eval。
+    _gitEngineLoading = Promise.resolve().then(async () => {
+      await loadBufferPolyfill()
+      const git = await loadGitBundle()
+      _gitEngine = { git, createFS }
+      return _gitEngine
+    }).finally(() => { _gitEngineLoading = null })
   }
-  return _gitEngine
+  return _gitEngineLoading
 }

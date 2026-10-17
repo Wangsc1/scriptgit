@@ -5,7 +5,10 @@ import { findRepo, listRepos, getGitdirPath } from "../repoStore"
 import type { GitContext } from "./runtime"
 
 export type StatusMatrix = [string, number, number, number][]
-export const statusCoordinator = new StatusCoordinator<StatusMatrix>()
+// 保持常态串行；慢任务不释放同仓读锁，只给其它仓库一个备用扫描槽。
+export const statusCoordinator = new StatusCoordinator<StatusMatrix>({
+  slowScanMs: 8_000, maxActiveScans: 2, writeWaitMs: 10_000,
+})
 let scanSequence = 0
 let mutationSequence = 0
 

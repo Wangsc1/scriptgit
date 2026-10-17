@@ -53,13 +53,13 @@ import { formatRepoListMergeSummary } from "../utils/mergeConflict"
 import { githubRepoFromRemoteUrl } from "../utils/github"
 import { yieldForUi } from "../utils/remoteProgress"
 import { sortReposForList } from "../utils/repoSort"
-import { useRepoListStatus } from "../hooks/useRepoListStatus"
+import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
 
 export function RepoListPage() {
   // 关闭 present 的根界面（设置已独立为 Tab）
   const dismiss = Navigation.useDismiss()
-  const [repos, setRepos] = useState<RepoMeta[]>(listRepos())
+  const [repos, setRepos] = useState<RepoMeta[]>(() => listRepos())
   const [showClone, setShowClone] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<RepoMeta | null>(null)
   const [alertState, setAlertState] = useState<{
@@ -67,7 +67,7 @@ export function RepoListPage() {
     message: string
   } | null>(null)
   const {
-    statusMap, snapshotMap, refreshAll, refreshRepo, forgetRepo, appear, disappear,
+    statusMap, snapshotMap, repoRefreshMap, progress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
   } = useRepoListStatus(setRepos)
   // 移除仓库忙态：删 gitdir 缓存对大仓库可能耗时，用全屏遮罩
   const [removingName, setRemovingName] = useState<string | null>(null)
@@ -237,6 +237,11 @@ export function RepoListPage() {
         </Toolbar>
       }
     >
+      {repos.length > 0 ? <Section header={<Text>后台状态刷新</Text>}>
+        <Text>{progress.running ? `正在检查 ${progress.completed}/${progress.total} · ${progress.current || "准备中"}` : `本轮已处理 ${progress.completed}/${progress.total}`}</Text>
+        {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
+        <Button title="重试状态刷新" action={() => refreshAll(true)} disabled={progress.running} />
+      </Section> : null}
       <Section>
         <NavigationLink destination={<GitHubFilesPage />}>
           <Text>GitHub 远端文件浏览与编辑</Text>
@@ -278,6 +283,7 @@ export function RepoListPage() {
                   repo={repo}
                   status={statusMap[repo.bookmarkName]}
                   snapshot={snapshotMap[repo.bookmarkName]}
+                  refresh={repoRefreshMap[repo.bookmarkName]}
                   visibility={visibilities[repo.bookmarkName]}
                 />
               </NavigationLink>
@@ -294,11 +300,13 @@ function RepoRow({
   repo,
   status,
   snapshot,
+  refresh,
   visibility,
 }: {
   repo: RepoMeta
   status?: RepoListStatus
   snapshot?: RepoSnapshot
+  refresh?: RepoRefreshState
   visibility?: GitHubRepoVisibility
 }) {
   const source = sourceLabel(repo)
@@ -311,7 +319,7 @@ function RepoRow({
   let trailing: { text: string; color: string } | null = null
   if (status != null) {
     if (status.workdirOk === false) {
-      trailing = { text: "路径失效", color: COLOR_RED }
+      trailing = { text: "读取失败", color: COLOR_RED }
     } else {
       // 合并冲突优先于普通改动/待推送摘要
       const mergeSummary = formatRepoListMergeSummary({
@@ -368,6 +376,7 @@ function RepoRow({
             </HStack>
           ) : null}
         </HStack>
+        {refresh?.message ? <Text font="caption" foregroundStyle={refresh.phase === "error" ? COLOR_RED : COLOR_ORANGE}>{refresh.message}</Text> : null}
       </VStack>
       <Spacer />
       {/* 放在 NavigationLink 自带 > 的左侧，整行垂直居中 */}
@@ -385,7 +394,7 @@ function RepoRow({
                 .join(" · ")}
             </Text>
           ) : null}
-          <ProgressView />
+          {refresh && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>状态未确认</Text> : refresh ? <ProgressView /> : <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL}>待刷新</Text>}
         </HStack>
       ) : trailing ? (
         <Text font="caption" foregroundStyle={trailing.color as any}>

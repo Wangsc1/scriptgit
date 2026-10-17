@@ -1,6 +1,6 @@
 # scriptgit
 
-在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.2**。
+在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.3**。
 
 ## 导入
 
@@ -44,6 +44,17 @@ https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2
 
 iCloud 未启用、未授权，或因离线/权限等原因导致目录不可用时会明确报错，**不会静默切换到本地 Documents**。请启用 iCloud Drive / Scripting 的 iCloud 权限后重试，或主动更改目录。外部目录仍通过系统目录选择器获取授权，并保存父目录书签及仓库相对路径。
 
+### 重新进入与状态刷新
+
+启动先显示已保存仓库和可操作入口，状态在后台逐仓刷新；顶部显示处理进度，失败或较慢的仓库会在对应行显示说明，可点「重试状态刷新」。上次快照只是摘要，不代表刚完成实时检查。
+
+- 单仓界面等待约 10 秒后会标为“状态未确认”并继续处理其它仓库，不据此判定 iCloud 或目录失效，也不删除文件。
+- 界面停止等待不等于原生读取已取消。原任务真实结束前重试会复用它；慢矩阵扫描最多使用两个不同仓库的槽位，两个读取都迟迟未结束时，其余仓库会明确显示暂未扫描，而不是无限转圈。
+- 同一仓库的读写屏障保留到真实任务结束。写操作若等待读取超时，会提示“暂未执行写操作”，请稍后重试；不会把超时的写入排在后台随后偷偷执行。
+- 批量克隆页面打开时，隐藏的仓库列表不为每个新增仓库提前堆积状态扫描；返回列表后再刷新。强制退出不会自动恢复克隆队列，也不会自动删除遗留文件。
+
+如克隆失败，请保留「本次结果」中**仓库名及完整错误信息**的截图/文字。仅凭“失败”不能判断是认证、网络、目录权限还是其它原因，不建议直接删除仓库数据。若仍卡在加载，请同时说明是 Scripting 的启动加载页，还是已经进入 scriptgit 的仓库列表。
+
 ### 保存与只读限制
 
 - 使用 GitHub Contents API，保存请求携带**加载时的文件 SHA**。他人更新同一文件后，GitHub 会拒绝过期 SHA 的保存；不会自动重试覆盖。
@@ -77,8 +88,9 @@ NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/remoteFiles.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/cloneQueue.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/anonymousClone.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/userSearch.test.cjs
+NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/startupRefresh.test.cjs
 ```
 
-测试使用 mock GitHub HTTP、Scripting UI、Data、编辑器、内存文件系统与克隆引擎，不会向 GitHub 写入，也不会在服务器克隆用户仓库。覆盖全部分页（本人私有/他人公开与可访问私有）、iCloud 默认与不可用、外部目录权限及书签、批量成功/部分失败/跳过/取消/同名安全与重跑，以及文件编辑的 SHA 冲突、草稿保留、退出确认回归；同时验证无 Token 分页、页面到真实克隆服务/HTTP 认证路径（底层网络与引擎 mock）、Token 失败不降级、私有读取/写入门禁，以及用户候选搜索分页、防抖、旧响应丢弃、选择和用户名更改失效；进行 TypeScript/TSX 语法检查。
+测试使用 mock GitHub HTTP、Scripting UI、Data、编辑器、内存文件系统与克隆引擎，不会向 GitHub 写入，也不会在服务器克隆用户仓库。覆盖全部分页（本人私有/他人公开与可访问私有）、iCloud 默认与不可用、外部目录权限及书签、批量成功/部分失败/跳过/取消/同名安全与重跑，以及文件编辑的 SHA 冲突、草稿保留、退出确认回归；同时验证无 Token 分页、页面到真实克隆服务/HTTP 认证路径（底层网络与引擎 mock）、Token 失败不降级、私有读取/写入门禁，以及用户候选搜索分页、防抖、旧响应丢弃、选择和用户名更改失效；还覆盖慢/失败仓库启动隔离、刷新重入、隐藏页新增仓库、超时不解锁与不重复扫描、真实写入保持屏障、Git 引擎首次加载单飞，以及既有状态缓存/协调器回归；进行 TypeScript/TSX 语法检查。
 
 **本地环境不能验证 iOS 真机 UI、原生编辑器焦点/键盘、全屏弹层手势、真实 iCloud 同步/目录授权和 GitHub 实际克隆/写入权限。** 导入后应在测试仓库实际检查这些交互，再编辑重要文件。
