@@ -172,11 +172,14 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const bulkSystemImage = stagingBusy ? null : canUnstageAll ? "minus.circle" : "plus.circle"
   const bulkTint = bulkDisabled ? COLOR_SECONDARY_LABEL : canUnstageAll ? COLOR_RED : COLOR_ACCENT
 
+  // 树只随文件列表或元数据变化重建，避免滑动时反复构建
+  const tree = useMemo(() => buildFileTree(visibleFiles, { metadata }), [visibleFiles, metadata])
+
   return <>
     <Section header={<HStack alignment="center"><Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer /><Button action={bulkAction} disabled={bulkDisabled} tint={bulkTint}><HStack alignment="center" spacing={4}>{bulkSystemImage ? <Image systemName={bulkSystemImage} font="caption" foregroundStyle={bulkTint} /> : null}<Text font="caption" foregroundStyle={bulkTint}>{bulkTitle}</Text></HStack></Button></HStack>}>
       {error ? <Text foregroundStyle="red">{error}</Text> : null}
       {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-      {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || worktreeBusy || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
+      {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || worktreeBusy || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
     </Section>
     {hasStaged ? (
       <Section>
