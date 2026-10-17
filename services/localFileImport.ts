@@ -20,6 +20,14 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
   return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }
 
+/** pickDirectory grants access to the selected tree for this script run. */
+export async function pickLocalDirectory(): Promise<PickedLocalFile | null> {
+  const path = await DocumentPicker.pickDirectory()
+  if (path == null) return null
+  const sourcePath = path.replace(/\/+$/, "")
+  return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
+}
+
 const imageTypes: Record<string, string[]> = {
   "public.jpeg": ["jpg", "jpeg"], "public.png": ["png"], "com.compuserve.gif": ["gif"],
   "org.webmproject.webp": ["webp"], "public.heic": ["heic"], "public.heif": ["heif"],

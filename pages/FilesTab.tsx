@@ -4,9 +4,9 @@ import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { createLocalWorktreeEntry, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { importLocalWorktreeDirectory, createLocalWorktreeEntry, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
-import { pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
+import { pickLocalDirectory, pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
 import type { FileChange } from "../types/git"
 
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
@@ -311,16 +311,28 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       try { await onWorktreeChanged() } catch (_) { /* Preserve the original failure, including partial results. */ }
     } finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
-  async function importSelection(photo: boolean) {
+  async function importSelection(kind: "document" | "import-directory" | "photo") {
     if (state.current.busy || loading || mergeInProgress) return
     state.current.busy = true; setBusy(true); setError("")
     let picked: PickedLocalFile | null = null
     try {
       const expectedRoot = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-      picked = await (photo ? pickLocalPhoto() : pickLocalDocument())
+      picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory() : pickLocalDocument())
       if (!picked || !state.current.alive) return // Cancellation is a zero-write operation.
-      const path = await importLocalWorktreeFile(bookmarkName, picked.sourcePath, picked.name, expectedRoot)
-      showAddition(path, false)
+      if (kind === "import-directory") {
+        const result = await importLocalWorktreeDirectory(bookmarkName, picked.sourcePath, expectedRoot)
+        if (state.current.alive) {
+          setAdded(previous => [...new Set([...previous, ...result.files])])
+          setDirectories(previous => [...new Set([...previous, ...result.directories])])
+          setCopied(previous => [...previous,
+            ...result.directories.map(path => ({ path, before: changes, directory: true })),
+            ...result.files.map(path => ({ path, before: changes })),
+          ])
+        }
+      } else {
+        const path = await importLocalWorktreeFile(bookmarkName, picked.sourcePath, picked.name, expectedRoot)
+        showAddition(path, false)
+      }
       await onWorktreeChanged()
     } catch (e: any) {
       if (state.current.alive) setError(String(e?.message || e))
@@ -333,6 +345,29 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     }
   }
 
+  // Native Menu actions are not a safe place to start presentation/async work.
+  // Hand off only an intent; the component effect runs after that render commits.
+  // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
+  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
+  const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
+  const additionPending = useRef(false)
+  function requestAddition(kind: AdditionKind) {
+    if (!state.current.alive || state.current.busy || additionPending.current || loading || mergeInProgress || creation || directoryForm) return
+    additionPending.current = true
+    setAdditionRequest({ kind, bookmarkName })
+  }
+  useEffect(() => {
+    if (additionRequest === null) return
+    additionPending.current = false
+    if (!state.current.alive) return
+    setAdditionRequest(null)
+    if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creation || directoryForm) return
+    const kind = additionRequest.kind
+    if (kind === "file" || kind === "directory") startCreation(kind === "directory")
+    else void importSelection(kind)
+  }, [additionRequest])
+  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creation !== null || directoryForm !== null
+
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
   return <Section sheet={{
@@ -341,14 +376,15 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     content: creation ? <NameInputSheet key={creation.directory ? "create-directory" : "create-file"} title={creation.directory ? "创建目录" : "创建文件"} initialName="" message="添加到仓库工作区根目录。不覆盖同名目标；文件初始为空，扩展名不限；空目录仅在当前会话可见，Git 不跟踪。" busy={busy} error={creationError} onCancel={cancelCreation} onConfirm={confirmCreation} /> : directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
   }} header={<HStack frame={{ maxWidth: Infinity }}>
     <Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
-    <Menu label={<Image systemName="plus" />} disabled={busy || loading || mergeInProgress}>
+    <Menu label={<Image systemName="plus" />} disabled={additionDisabled}>
       <Section header={<Text>添加到仓库</Text>}>
-        <Button title="创建文件" systemImage="doc.text" disabled={busy || loading || mergeInProgress} action={() => startCreation(false)} />
-        <Button title="创建目录" systemImage="folder" disabled={busy || loading || mergeInProgress} action={() => startCreation(true)} />
+        <Button title="创建文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("file")} />
+        <Button title="创建目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("directory")} />
       </Section>
       <Section>
-        <Button title="导入文件" systemImage="doc.text" disabled={busy || loading || mergeInProgress} action={() => importSelection(false)} />
-        <Button title="导入图片" systemImage="photo" disabled={busy || loading || mergeInProgress} action={() => importSelection(true)} />
+        <Button title="导入文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("document")} />
+        <Button title="导入目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("import-directory")} />
+        <Button title="导入图片" systemImage="photo" disabled={additionDisabled} action={() => requestAddition("photo")} />
       </Section>
     </Menu>
   </HStack>}>

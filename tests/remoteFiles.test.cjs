@@ -78,16 +78,20 @@ const ui = new Proxy({}, { get(_, name) {
     if (!previous || !deps || !previous.deps || deps.some((value, index) => !Object.is(value, previous.deps[index]))) h.slots[i] = { value: factory(), deps }
     return h.slots[i].value
   }
-  if (name === 'useEffect') return (effect) => {
-    const h = active, i = h.cursor++
-    if (!(i in h.slots)) { h.slots[i] = true; h.effects.push(() => { const cleanup = effect(); if (cleanup) h.cleanups.push(cleanup) }) }
+  if (name === 'useEffect') return (effect, deps) => {
+    const h = active, i = h.cursor++, previous = h.slots[i]
+    if (!previous || (h.effectUpdates && (!deps || !previous.deps || deps.some((value, index) => !Object.is(value, previous.deps[index]))))) {
+      const slot = { deps, cleanup: previous?.cleanup }; h.slots[i] = slot
+      h.effects.push(() => { slot.cleanup?.(); slot.cleanup = effect() })
+    }
   }
   return String(name)
 }})
-function mount(Component, props) {
-  const h = { slots: [], cursor: 0, effects: [], cleanups: [], lateWrites: 0, unmounted: false,
+// Legacy tests explicitly simulate refreshes; opt in to dependency effects for scheduling tests.
+function mount(Component, props, { effectUpdates = false } = {}) {
+  const h = { effectUpdates, slots: [], cursor: 0, effects: [], cleanups: [], lateWrites: 0, unmounted: false,
     render() { active=h; h.cursor=0; h.tree=Component(props); active=null; h.effects.splice(0).forEach(f=>f()); return h.tree },
-    unmount() { h.unmounted=true; h.cleanups.forEach(f=>f()) },
+    unmount() { h.unmounted=true; h.cleanups.forEach(f=>f()); h.slots.forEach(slot=>slot?.cleanup?.()) },
   }
   h.render(); return h
 }

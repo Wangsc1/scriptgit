@@ -299,3 +299,101 @@ export async function importLocalFileInternal(bookmarkName: string, sourcePath: 
     throw new Error(String(error?.message || error) + "；目标可能已部分导入，源文件保留，未自动删除任何源文件或目标，请刷新核对")
   }
 }
+
+/** Selected-directory scope only. No probing/enumeration above sourceRoot. */
+export async function importLocalDirectoryInternal(bookmarkName: string, sourcePath: string, expectedRoot?: string): Promise<LocalDirectoryResult> {
+  const sourceRoot = sourcePath.replace(/\/+$/, "")
+  if (!sourceRoot.startsWith("/") || sourceRoot.includes("\\") || /[\x00-\x1f\x7f]/.test(sourceRoot) || sourceRoot.split("/").some(p => p === "." || p === ".." || p.toLowerCase() === ".git")) throw new Error("导入目录来源路径不安全")
+  const name = sourceRoot.split("/").pop() || ""
+  const destination = await additionTarget(bookmarkName, name, expectedRoot)
+  if (destination.root === sourceRoot || destination.root.startsWith(sourceRoot + "/")) throw new Error("不能将源目录导入其自身内部")
+  type Entry = { path: string; directory: boolean; size: number; modified: number; created: number }
+  async function inspect(relative: string, known?: Entry[]) {
+    // Check the selected root plus descendants, never /var, /private, or a provider parent.
+    let absolute = sourceRoot
+    for (const part of ["", ...relative.split("/").filter(Boolean)]) {
+      if (part) absolute += "/" + part
+      if (await FileManager.isLink(absolute)) throw new Error("导入目录含符号链接，拒绝整次导入")
+      const directory = await FileManager.isDirectory(absolute)
+      if (absolute !== sourceRoot + (relative ? "/" + relative : "") && !directory) throw new Error("源目录父路径已变化")
+      if (!directory && !(await FileManager.isFile(absolute))) throw new Error("导入目录含非普通文件，拒绝整次导入")
+      const stat = await FileManager.stat(absolute)
+      if (known) {
+        const path = absolute.slice(sourceRoot.length).replace(/^\//, "")
+        const before = known.find(entry => entry.path === path)
+        if (!before || before.directory !== directory || before.created !== stat.creationDate || before.size !== stat.size || before.modified !== stat.modificationDate) throw new Error("导入源目录已变化")
+      }
+    }
+    const directory = await FileManager.isDirectory(absolute)
+    const stat = await FileManager.stat(absolute)
+    return { path: relative, directory, size: stat.size, modified: stat.modificationDate, created: stat.creationDate }
+  }
+  async function scan() {
+    const entries: Entry[] = []
+    async function visit(relative: string) {
+      const entry = await inspect(relative)
+      if (!relative && !entry.directory) throw new Error("请选择普通目录")
+      entries.push(entry)
+      if (!entry.directory) return
+      const absolute = sourceRoot + (relative ? "/" + relative : "")
+      const names = (await FileManager.readDirectory(absolute)).sort()
+      const folded = new Set<string>()
+      for (const child of names) {
+        validNewName(child) // rejects .git (including gitdir files), traversal and unsafe names
+        const key = child.normalize("NFC").toLowerCase()
+        if (folded.has(key)) throw new Error("源目录含大小写或 Unicode 等价重名，拒绝整次导入")
+        folded.add(key)
+        // Revalidate ancestors after asynchronous provider calls, before entering a child.
+        await inspect(relative, entries)
+        await visit(relative ? relative + "/" + child : child)
+      }
+    }
+    await visit("")
+    return entries
+  }
+  const snapshot = await scan()
+  if (JSON.stringify(snapshot) !== JSON.stringify(await scan())) throw new Error("导入源目录已变化，未复制")
+  await destination.check()
+  const targetDirectories = new Map<string, number>()
+  const mapped = (relative: string) => name + (relative ? "/" + relative : "")
+  let started = false
+  try {
+    for (const entry of snapshot) {
+      await additionRoot(bookmarkName, destination.root, destination.creationDate)
+      await inspect(entry.path, snapshot)
+      const targetPath = mapped(entry.path)
+      const target = destination.root + "/" + targetPath
+      if (!entry.path) await destination.check()
+      else {
+        const parent = targetPath.slice(0, targetPath.lastIndexOf("/"))
+        await safeFile(bookmarkName, parent, true)
+        // Destination parents must still be the directories this operation created.
+        for (const [path, created] of targetDirectories) if (parent === path || parent.startsWith(path + "/")) {
+          const checked = await safeFile(bookmarkName, path, true)
+          if ((await FileManager.stat(checked.absolute)).creationDate !== created) throw new Error("导入目标父目录身份已变化")
+        }
+        if ((await FileManager.readDirectory(destination.root + "/" + parent)).some(value => value.normalize("NFC").toLowerCase() === targetPath.split("/").pop()!.normalize("NFC").toLowerCase()) || await FileManager.isLink(target) || await FileManager.exists(target)) throw new Error("导入目标已存在，未覆盖")
+      }
+      await additionRoot(bookmarkName, destination.root, destination.creationDate)
+      started = true
+      if (entry.directory) {
+        await FileManager.createDirectory(target, false)
+        const checked = await safeFile(bookmarkName, targetPath, true)
+        targetDirectories.set(targetPath, (await FileManager.stat(checked.absolute)).creationDate)
+      } else {
+        await FileManager.copyFile(sourceRoot + "/" + entry.path, target)
+        const checked = await safeFile(bookmarkName, targetPath)
+        if ((await FileManager.stat(checked.absolute)).size !== entry.size) throw new Error("导入文件大小不一致")
+      }
+    }
+    await additionRoot(bookmarkName, destination.root, destination.creationDate)
+    for (const [path, created] of targetDirectories) {
+      const checked = await safeFile(bookmarkName, path, true)
+      if ((await FileManager.stat(checked.absolute)).creationDate !== created) throw new Error("导入目标目录身份已变化")
+    }
+    if (JSON.stringify(snapshot) !== JSON.stringify(await scan())) throw new Error("复制期间源目录已变化")
+  } catch (error: any) {
+    throw new Error(String(error?.message || error) + (started ? "；源目录保留，目标可能已部分导入，未自动删除任何内容，请刷新核对" : ""))
+  }
+  return { path: name, files: snapshot.filter(entry => !entry.directory).map(entry => mapped(entry.path)), directories: snapshot.filter(entry => entry.directory).map(entry => mapped(entry.path)) }
+}
