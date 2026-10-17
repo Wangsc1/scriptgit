@@ -226,7 +226,7 @@ async function main(){
   const props={files:['icon-normal','icon-mod','icon-add','icon-deleted','icon-unstaged','icon-photo.png','icon-folder/a'],loading:false,bookmarkName:'repo',changes:[{filepath:'icon-mod',status:'*modified'},{filepath:'icon-add',status:'*added'},{filepath:'icon-deleted',status:'*deleted',worktreeDeleted:true},{filepath:'icon-unstaged',status:'unknown',unstaged:true}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
-  const color=name=>all(row(name)).find(n=>n.type==='Image'&&['doc','photo'].includes(n.props.systemName)).props.foregroundStyle
+  const color=name=>all(row(name)).find(n=>n.type==='Image'&&['doc.text','photo'].includes(n.props.systemName)).props.foregroundStyle
   assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');assert.equal(color('icon-add'),'systemGreen');assert.equal(color('icon-deleted'),'systemRed');for(const name of ['icon-normal','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
   assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'secondaryLabel')
   global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
@@ -281,7 +281,7 @@ async function main(){
   for(const name of images){assert.equal(icon(row(name)).props.systemName,'photo');assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')}
   for(const name of ['normal.txt','green-photo.jpg'])assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')
   assert.equal(icon(folder('green-source').props.label).props.foregroundStyle,'secondaryLabel')
-  for(const name of ['normal.txt','unsupported.svg'])assert.equal(icon(row(name)).props.systemName,'doc')
+  for(const name of ['normal.txt','unsupported.svg'])assert.equal(icon(row(name)).props.systemName,'doc.text')
   assert.equal(icon(row('deleted.jpg')).props.systemName,'photo');assert.equal(row('deleted.jpg').props.disabled,true);assert.match(JSON.stringify(row('deleted.jpg')),/已删除/);badge(row('deleted.jpg'),'已删除','systemRed');assert.doesNotMatch(JSON.stringify(row('deleted.jpg')),/不可编辑/)
   badge(folder('new-dir').props.label,'新增','systemGreen');folder('new-dir').props.onChanged(true);badge(folder('sub').props.label,'新增','systemGreen')
   for(const name of ['existing','mixed','mixed-new'])badge(folder(name).props.label,'已修改','systemOrange')

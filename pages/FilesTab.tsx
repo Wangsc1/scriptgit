@@ -58,7 +58,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHin
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
         <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-            <Image systemName={/\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(node.path) ? "photo" : "doc"} foregroundStyle={badge ? badge.color as any : COLOR_SECONDARY_LABEL} />
+            <Image systemName={/\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(node.path) ? "photo" : "doc.text"} foregroundStyle={badge ? badge.color as any : COLOR_SECONDARY_LABEL} />
             <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
             {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
           </HStack>
