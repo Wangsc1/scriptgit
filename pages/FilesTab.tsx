@@ -69,8 +69,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           }
         }))
         if (!cancelled && state.current.alive) setMetadata(next)
-      } catch (_e) {
-        // 工作区不可访问时静默，列表仍可显示文件名
+      } catch (e: any) {
+        if (state.current.alive) setError("元数据读取失败: " + String(e?.message || e))
       }
     }
     load()
