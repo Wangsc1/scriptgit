@@ -41,8 +41,8 @@ export function CommitDetailPage({
   const [detail, setDetail] = useState<CommitDetail | null>(null)
   const [githubAvatarUrl, setGithubAvatarUrl] = useState("")
   const [error, setError] = useState<string | null>(null)
-  // 默认保持原有「文件」视图；「更改」仅在切换后才开始读取 diff
-  const [mode, setMode] = useState<"changes" | "files">("files")
+  // 默认打开「更改」；「文件」树保持原有展示
+  const [mode, setMode] = useState<"changes" | "files">("changes")
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const loaderRef = useRef<CommitChangesLoader | null>(null)
 
@@ -51,7 +51,7 @@ export function CommitDetailPage({
     const token = { cancelled: false }
     setDetail(null)
     setError(null)
-    setMode("files")
+    setMode("changes")
     getCommitDetail(bookmarkName, oid, token)
       .then((next) => {
         if (!token.cancelled) setDetail(next)

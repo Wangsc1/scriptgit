@@ -54,10 +54,10 @@ async function main(){try{
  write('side.txt','side\n');const c6=await commit('side');const merge=await git.commit({fs,dir,author,message:'merge two parents',parent:[c5,c2],tree:(await git.readCommit({fs,dir,oid:c5})).commit.tree})
  write('a.txt','WORKTREE ONLY\n') // uncommitted: must never appear in any commit changes
 
- await test('segmented order is 更改 left / 文件 right, default 文件 with original tree and no diff reads before switching',async()=>{
+ await test('segmented order is 更改 left / 文件 right, default 更改; 文件 keeps original tree and starts no diff reads',async()=>{
   reset();const h=await open(c2),p=picker(h)
-  assert.equal(p.props.pickerStyle,'segmented');assert.deepEqual(p.children.map(n=>[n.props.tag,n.children[0]]),[['changes','更改'],['files','文件']]);assert.equal(p.props.value,'files')
-  assert.ok(!section(h));assert.ok(all(h.tree).some(n=>n.type===treeNode&&n.props.commitDetailStyle===true));assert.ok(all(h.tree).some(n=>JSON.stringify(n.children||'').includes('提交信息')))
+  assert.equal(p.props.pickerStyle,'segmented');assert.deepEqual(p.children.map(n=>[n.props.tag,n.children[0]]),[['changes','更改'],['files','文件']]);assert.equal(p.props.value,'changes');assert.ok(section(h))
+  p.props.onChanged('files');h.render();assert.equal(picker(h).props.value,'files');assert.ok(!section(h));assert.ok(all(h.tree).some(n=>n.type===treeNode&&n.props.commitDetailStyle===true));assert.ok(all(h.tree).some(n=>JSON.stringify(n.children||'').includes('提交信息')))
   await sleep(30);assert.equal(stats.reads.length,0,'file view must not compute diffs');h.unmount()
  })
  await test('single commit boundary: only c2 vs first parent, real counts, binary image, delete/add, no later commit or worktree content',async()=>{
@@ -112,7 +112,7 @@ async function main(){try{
   assert.ok(old.entries.every(e=>e.diff===null),'stale diff must not land after leaving');assert.equal(c.lateWrites,0)
  })
  await test('Stash/shared page title and Compare tree semantics are preserved',async()=>{
-  const h=await open(c3,{title:'Stash 详情'});h.render();assert.equal(h.tree.props.navigationTitle,'Stash 详情');assert.equal(picker(h).props.value,'files');h.unmount()
+  const h=await open(c3,{title:'Stash 详情'});h.render();assert.equal(h.tree.props.navigationTitle,'Stash 详情');assert.equal(picker(h).props.value,'changes');h.unmount()
   const plain=await open(c3);plain.render();assert.equal(plain.tree.props.navigationTitle,'提交详情');plain.unmount()
   const filesNode=treeNode({node:{type:'file',name:'x.png',path:'x.png',children:[]},statusByPath:new Map([['x.png','added']]),bookmarkName:'repo',oid:c2,parentOid:c1,commitDetailStyle:true})
   assert.ok(all(filesNode).some(n=>n.type==='Image'&&n.props.systemName==='photo'&&n.props.foregroundStyle==='secondaryLabel'));assert.ok(!all(filesNode).some(n=>n.type==='Text'&&/^[AMD]$/.test(String(n.children[0]))))
