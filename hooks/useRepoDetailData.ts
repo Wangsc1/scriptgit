@@ -69,7 +69,6 @@ export function useRepoDetailData({
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyLimited, setHistoryLimited] = useState(false)
   const [trackedFiles, setTrackedFiles] = useState<string[]>([])
-  const [filesLoaded, setFilesLoaded] = useState(false)
   const [branchInfo, setBranchInfo] = useState<BranchInfo>({
     branches: [],
     current: null,
