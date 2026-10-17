@@ -1,19 +1,13 @@
-import { useEffect, useRef, useState } from "scripting"
-import { getStartupPullState, startStartupPull, stopStartupPull, subscribeStartupPull } from "../services/startupAutoPull"
+import { useEffect, useRef } from "scripting"
+import { startStartupPull, subscribeStartupPull } from "../services/startupAutoPull"
 
-export function useStartupAutoPull(onSettled: (key: string) => void) {
-  const [result, setResult] = useState(getStartupPullState)
+/** 只启动一次后台任务并在单仓完成后刷新对应状态；不渲染结果UI，也不保存React状态。 */
+export function useStartupAutoPull(onSettled: (key: string) => void): void {
   const callback = useRef(onSettled)
   callback.current = onSettled
   useEffect(() => {
-    const unsubscribe = subscribeStartupPull((value, key) => {
-      setResult(value)
-      if (key) callback.current(key)
-    })
-    // 读取已完成汇总而非再次排队；模块级once跨Tab/页面重挂载生效。
-    setResult(getStartupPullState())
+    const unsubscribe = subscribeStartupPull((_value, key) => { if (key) callback.current(key) })
     void startStartupPull()
     return unsubscribe
   }, [])
-  return { ...result, stop: stopStartupPull }
 }

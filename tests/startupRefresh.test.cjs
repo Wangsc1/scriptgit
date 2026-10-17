@@ -31,7 +31,7 @@ function readPage(e){
     scripting,'../services/repoStore':{listRepos:()=>e.repos,sourceLabel:()=> '克隆'},'../services/gitService':{},
     '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'./RepoDetailPage':{RepoDetailPage:'RepoDetailPage'},'./ClonePage':{ClonePage:'ClonePage'},'./GitHubFilesPage':{GitHubFilesPage:'GitHubFilesPage'},
     '../constants/colors':load('constants/colors.ts'),'../utils/mergeConflict':{formatRepoListMergeSummary:()=>null},'../utils/github':{githubRepoFromRemoteUrl:()=>null},'../utils/remoteProgress':{},'../utils/repoSort':{sortReposByGithubUpdated:r=>r},
-    '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../hooks/useStartupAutoPull':{useStartupAutoPull:()=>({running:false,results:[],stop(){}})},'../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},
+    '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../hooks/useStartupAutoPull':{useStartupAutoPull:()=>{}},'../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},
   }).RepoListPage
 }
 async function main(){
@@ -106,7 +106,7 @@ async function main(){
       const gate=deferred();e=hookEnv(['a-slow','b-good'],key=>key==='a-slow'?gate.promise:Promise.resolve(status()))
       page=mount(readPage(e),{});assert.equal(page.tree.props.overlay,undefined)
       assert.ok(node(page,'Button','重试状态刷新'));assert.equal(all(page.tree).filter(n=>typeof n.type==='function'&&n.props.repo).length,2)
-      page.tree.props.onAppear();await tick();await time.advance(0);assert.doesNotMatch(text(page),/正在检查|本轮已处理|GitHub 更新时间刷新|按 GitHub 最近更新时间/)
+      page.tree.props.onAppear();await tick();await time.advance(0);assert.doesNotMatch(text(page),/正在检查|本轮已处理|GitHub 更新时间刷新|按 GitHub 最近更新时间|启动自动拉取结果|停止后续自动拉取/);assert.equal(all(page.tree).some(n=>n.type==='DisclosureGroup'),false)
       await time.advance(10000);await tick();assert.equal(node(page,'Button','重试状态刷新').props.disabled,false)
       page.render();const row=all(page.tree).find(n=>typeof n.type==='function'&&n.props.repo?.bookmarkName==='a-slow');assert.equal(row.props.refresh.phase,'slow')
       const rendered=row.type(row.props);assert.equal(all(rendered).filter(n=>n.type==='ProgressView').length,0)

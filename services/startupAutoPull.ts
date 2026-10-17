@@ -7,20 +7,16 @@ export type StartupPullState = { running: boolean; results: StartupPullRow[] }
 const listeners = new Set<(value: StartupPullState, settledKey?: string) => void>()
 let state: StartupPullState = { running: false, results: [] }
 let once: Promise<void> | null = null
-let stopped = false
-let currentToken: RemoteCancelToken | null = null
 export function getStartupPullState(): StartupPullState { return state }
 export function subscribeStartupPull(listener: (value: StartupPullState, settledKey?: string) => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
 function publish(row?: StartupPullRow, settled = false) {
+  // 无结果UI：仅保留内部状态；失败/等待写入console供排查（文案已脱敏分类）。
+  if (row && (row.status === "failed" || row.status === "waiting")) console.warn(`启动自动拉取：${row.name} · ${row.reason}`)
   if (row) state = { ...state, results: [...state.results.filter(item => item.key !== row.key), row] }
   for (const listener of listeners) listener(state, settled ? row?.key : undefined)
-}
-export function stopStartupPull(): void {
-  stopped = true
-  currentToken?.cancel()
 }
 /** 仅给用户可操作的分类信息，不把网络错误中的URL、凭据或原生长路径带进UI。 */
 function failure(error: any): string {
@@ -40,8 +36,7 @@ export function startStartupPull(): Promise<void> {
       if (seen.has(repo.bookmarkName)) continue
       seen.add(repo.bookmarkName)
       const base = { key: repo.bookmarkName, name: (repo.name.split(/[\\/]/).pop() || "仓库").replace(/[\x00-\x1f]/g, "").slice(0, 80) }
-      if (stopped) { publish({ ...base, status: "cancelled", reason: "已停止后续自动拉取" }, true); continue }
-      const token = new RemoteCancelToken(); currentToken = token
+      const token = new RemoteCancelToken()
       let timedOut = false
       // 仅请求协作取消；不race、不提前返回/解锁。原网络未结束时串行队列继续等待。
       const timer = setTimeout(() => {
@@ -54,7 +49,7 @@ export function startStartupPull(): Promise<void> {
       } catch (error: any) {
         const busy = /正在执行其它写操作|暂未执行写操作/.test(String(error?.message || error))
         publish({ ...base, status: busy ? "skipped" : token.isCancelled ? "cancelled" : "failed", reason: busy ? "仓库正忙，未自动重试，请稍后手动拉取" : token.isCancelled ? timedOut ? "等待超时，原任务已结束；未继续自动更新" : "已取消自动拉取，原任务已结束" : failure(error) }, true)
-      } finally { clearTimeout(timer); currentToken = null }
+      } finally { clearTimeout(timer) }
     }
   }).catch(() => {
     publish({ key: "startup-list", name: "仓库列表", status: "failed", reason: "无法读取仓库列表，未继续自动拉取" })

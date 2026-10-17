@@ -9,7 +9,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node:
     <Button title="复制文件" disabled={busy || removed.has(node.path)} action={() => manage(node.path, "copy")} />
     <Button title="重命名" disabled={busy || removed.has(node.path)} action={() => manage(node.path, "rename")} />
   </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: [
-    <Button title="删除文件" systemImage="trash" tint="systemRed" disabled={busy || removed.has(node.path)} action={() => remove(node.path)} />,
+    <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || removed.has(node.path)} action={() => remove(node.path)} />,
   ] }}>
     <Button action={() => open(node.path)} disabled={busy || removed.has(node.path)}>
       <HStack alignment="center" spacing={10}>

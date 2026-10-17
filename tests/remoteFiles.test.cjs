@@ -248,8 +248,8 @@ async function main() {
   })
   await test('metadata identity, release name, import URL, bundle paths and notification launch targets', async () => {
     const meta=JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8'))
-    assert.equal(meta.name,'scriptgit'); assert.equal(meta.version,'1.4.1'); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/iamwaa',name:'Waa'})
-    assert.equal(meta.remoteResource.url,'https://github.com/Wangsc1/scriptgit')
+    assert.equal(meta.name,'scriptgit'); assert.equal(meta.version,'1.4.2'); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/Wangsc1',name:'Wangsc1'})
+    assert.equal(meta.remoteResource.url,'https://github.com/Wangsc1/scriptgit');assert.deepEqual(meta.contributors,[]);assert.equal(meta.iconImage,'https://raw.githubusercontent.com/Wangsc1/scriptgit/main/icon.png');assert.ok(fs.existsSync(path.join(root,'icon.png')))
     const read=f=>fs.readFileSync(path.join(root,f),'utf8')
     assert.ok(read('README.md').includes('https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2Fscriptgit"]'))
     assert.ok(read('polyfills.ts').includes('/scriptgit/vendor/buffer-bundle.js')); assert.ok(read('services/gitCore.ts').includes('/scriptgit/vendor/index.umd.min.js'))
