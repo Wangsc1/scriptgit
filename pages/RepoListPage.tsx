@@ -43,7 +43,6 @@ import {
   COLOR_LABEL,
   COLOR_SECONDARY_LABEL,
   COLOR_ORANGE,
-  COLOR_GREEN,
   COLOR_RED,
 } from "../constants/colors"
 import { formatRepoListMergeSummary } from "../utils/mergeConflict"
@@ -359,12 +358,6 @@ function RepoRow({
 
   return (
     <HStack alignment="center" spacing={10}>
-      {source === "本地" ? (
-        <Image
-          systemName="folder.fill"
-          foregroundStyle={COLOR_GREEN}
-        />
-      ) : null}
       <VStack alignment="leading" spacing={2}>
         <Text font="headline" foregroundStyle={COLOR_LABEL}>
           {repo.name}
