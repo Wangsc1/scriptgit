@@ -2,7 +2,7 @@
 
 ## Octicons (`mark-github`)
 
-`assets/octicon-mark-github-24.svg` is the unmodified `mark-github-24.svg` from the primer/octicons project (https://github.com/primer/octicons). `icon.png` (referenced by its raw GitHub URL in script.json) and `assets/notify-icon.png` are renders of that unmodified path, uniformly scaled in white on a solid blue square.
+`assets/octicon-mark-github-24.svg` is the unmodified `mark-github-24.svg` from the primer/octicons project (https://github.com/primer/octicons). `icon.png` (referenced by its raw GitHub URL in script.json) and `assets/notify-icon.png` are renders of that unmodified path, uniformly scaled in black on a transparent background, scaled to fill the canvas.
 
 MIT License
 

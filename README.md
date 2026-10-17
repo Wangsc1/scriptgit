@@ -1,6 +1,6 @@
 # scriptgit
 
-在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.4.2**。
+在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.4.3**。
 
 ## 导入
 
