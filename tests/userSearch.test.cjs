@@ -19,7 +19,7 @@ function state(h){h.render();return h.tree.props.search}
 function form(h){h.render();const n=all(h.tree).find(n=>n.type==='FormRow'&&n.props.label==='用户名');assert.ok(n);return n}
 function page(e,api){
   const useToast=load('hooks/useToast.ts',{scripting:ui}).useToast
-  return load('pages/ClonePage.tsx',{
+  return load('pages/ClonePage.tsx',{'../utils/displayPaths':load('utils/displayPaths.ts'),'../services/cloneDiagnostics':{runDirectoryCheck:async()=>''},
     scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':{useGitHubUserSearch:hook(api.searchGitHubUsers)},
     '../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:()=>null},'../hooks/useToast':{useToast},
     '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>null},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,

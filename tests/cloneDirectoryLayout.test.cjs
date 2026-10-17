@@ -8,7 +8,7 @@ const {env,repo}=require('./cloneQueue.test.cjs')
 const progress=load('utils/remoteProgress.ts')
 async function main(){
   const e=env()
-  const page=load('pages/ClonePage.tsx',{
+  const page=load('pages/ClonePage.tsx',{'../utils/displayPaths':load('utils/displayPaths.ts'),'../services/cloneDiagnostics':{runDirectoryCheck:async()=>''},
     scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':{useGitHubUserSearch:()=>({candidates:[],total:null,changeQuery(){},selectUser(){}})},
     '../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:()=>null},'../hooks/useToast':{useToast:()=>({showToast(){}})},
     '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>({path:'/external',accessBookmarkName:null})},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,
@@ -42,14 +42,14 @@ async function main(){
   let confirmation
   global.Dialog={confirm:async input=>{confirmation=input;return false}}
   await node(h,'Button','克隆所选仓库').props.action()
-  assert.match(confirmation.message,/目标：\/cloud\/Scripting\/git\/<repo>/)
+  assert.match(confirmation.message,/目标：git\/<repo>/);assert.doesNotMatch(confirmation.message,/\/cloud/)
   assert.equal(e.clones.length,0)
   h.unmount()
   const root=path.join(__dirname,'..')
   const source=ts.createSourceFile('ClonePage.tsx',fs.readFileSync(path.join(root,'pages/ClonePage.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
   assert.equal(source.parseDiagnostics.length,0)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.4.3')
-  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.4\.3\*\*/)
-  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; both specified footers absent; search caption absent; ClonePage TSX syntax; 1.4.3 versions.')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.4.4')
+  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.4\.4\*\*/)
+  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; both specified footers absent; search caption absent; ClonePage TSX syntax; 1.4.4 versions.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

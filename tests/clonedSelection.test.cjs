@@ -8,7 +8,7 @@ const marker=load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts
 let groups=0
 async function test(name,fn){await fn();groups++;console.log('PASS '+name)}
 function page(e,repos,onRead=()=>{},search=()=>({candidates:[],total:null,changeQuery(){},selectUser(){}})){
-  return load('pages/ClonePage.tsx',{
+  return load('pages/ClonePage.tsx',{'../utils/displayPaths':load('utils/displayPaths.ts'),'../services/cloneDiagnostics':{runDirectoryCheck:async()=>''},
     scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':{useGitHubUserSearch:search},
     '../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:()=>null},'../hooks/useToast':{useToast:()=>({showToast(){}})},
     '../utils/clonedGithubRepos':marker,'../services/repoStore':{listRepos:()=>{onRead();return e.store.listRepos()},pickDirectory:async()=>null},

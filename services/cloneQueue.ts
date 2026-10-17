@@ -5,10 +5,13 @@ import { clone, RemoteCancelToken, isRemoteOperationCancelled } from "./gitServi
 import { createRepoId, getGitdirPath, listRepos, registerRepoByPath, resolveWorkdir } from "./repoStore"
 import { prepareCloneRoot, type CloneDestination } from "./cloneWorkspace"
 import type { RemoteProgressInfo } from "../utils/remoteProgress"
+import { hideSystemDetails, relativeCloneLabel } from "../utils/displayPaths"
 
 export interface CloneRequest { name: string; url: string; githubRepo?: GitHubRepo }
 export interface CloneResult {
   name: string; url: string; path: string
+  /** 仅展示：git/<repo>，不含系统绝对路径。 */
+  displayPath: string
   status: "cloned" | "failed" | "skipped" | "cancelled"
   message: string
   repo?: RepoMeta
@@ -32,7 +35,7 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
     for (let index = 0; index < requests.length; index++) {
       const request = requests[index]
       const path = root + "/" + request.name
-      const base = { name: request.githubRepo?.fullName || request.name, url: request.url, path }
+      const base = { name: request.githubRepo?.fullName || request.name, url: request.url, path, displayPath: relativeCloneLabel(request.name) }
       let result: CloneResult
       let stage: string | null = null
       let gitdir: string | null = null
@@ -49,8 +52,16 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
         })
         const names = await FileManager.readDirectory(root)
         const collision = names.some(name => key(name) === key(request.name))
-        if (seen.has(targetKey) || registered || collision || await FileManager.exists(path)) {
-          result = { ...base, status: "skipped", message: registered ? "该目录已注册，不重复添加" : "同名目录/文件已存在或本批次同名，未覆盖" }
+        const diskExists = seen.has(targetKey) || registered || collision ? false : await FileManager.exists(path)
+        if (seen.has(targetKey) || registered || collision || diskExists) {
+          let message = "磁盘上已有同名项，但没有对应的已注册仓库，未覆盖"
+          if (registered) message = "已注册同名仓库，不重复添加"
+          else if (seen.has(targetKey)) message = "本批次重复，已跳过"
+          else if (collision && !names.includes(request.name)) message = "磁盘上已有仅大小写不同的同名项，但没有对应的已注册仓库，未覆盖"
+          else {
+            try { message += (await FileManager.isDirectory(path)) ? "（目录）" : "（文件）" } catch (_e) { message += "（类型未知）" }
+          }
+          result = { ...base, status: "skipped", message }
         } else {
           seen.add(targetKey)
           let upstream: { url: string } | undefined
@@ -92,7 +103,7 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
         }
       } catch (e: any) {
         result = { ...base, status: isRemoteOperationCancelled(e) || options.cancelToken.isCancelled ? "cancelled" : "failed",
-          message: String(e?.message || e) + (published ? "；文件已下载到目标但注册失败，已保留文件和 Git 缓存，请勿直接删除。" : "") }
+          message: hideSystemDetails(e?.message || e) + (published ? "；文件已下载到目标但注册失败，已保留文件和 Git 缓存，请勿直接删除。" : "") }
       } finally {
         // 只有本任务拥有的临时路径允许清理；绝不调用旧 cleanupCloneAttempt 清理最终目标。
         if (!published) {

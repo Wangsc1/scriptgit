@@ -1,6 +1,6 @@
 # scriptgit
 
-在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.4.3**。
+在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.4.4**。
 
 ## 导入
 
@@ -62,6 +62,8 @@ https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2
 - 克隆先写入本次专用临时目录，完成后才移动到目标并注册；失败/取消只清理本次拥有的临时目录和 Git 缓存，绝不删除既有目标。若下载后注册失败，保留下载文件与缓存并显示提示，避免误删数据。
 
 ### 默认 iCloud 目录
+
+克隆页「目标目录」中的「目录检查」是只读诊断：只读取目录项和存在性/类型/iCloud 状态并可复制文本，不创建、删除、重命名或下载文件，也不显示系统完整路径。
 
 使用官方 `FileManager.iCloudDocumentsDirectory` 获取 **Scripting 自有 iCloud 容器文稿目录**，在其下创建 `git`；不猜测系统绝对路径，也不额外拼接一个 `Scripting` 文件夹。该默认目录无需外部安全范围书签。
 

@@ -17,6 +17,8 @@ import { listMyRepos, listOwnedRepos } from "../api/githubApi"
 import { repoNameFromUrl } from "../utils/format"
 import { yieldForUi } from "../utils/remoteProgress"
 import { registeredGithubRepos } from "../utils/clonedGithubRepos"
+import { hideSystemDetails } from "../utils/displayPaths"
+import { runDirectoryCheck } from "../services/cloneDiagnostics"
 
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
@@ -40,6 +42,9 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [results, setResults] = useState<CloneResult[]>([])
   const [listError, setListError] = useState("")
+  const [diagName, setDiagName] = useState("")
+  const [diagText, setDiagText] = useState("")
+  const [diagBusy, setDiagBusy] = useState(false)
   const alive = useRef(true)
   const locked = useRef(false)
   const listRequest = useRef(0)
@@ -65,7 +70,8 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     setLoadingMyRepos(true); setMyReposError("")
     try {
       const repos = await listMyRepos(20)
-      if (alive.current) setMyRepos(repos)
+      // 列表加载完成后才读取一次注册表；render 不读 Storage，也不逐仓联网。
+      if (alive.current) { setMyRepos(repos); setClonedRepos(current => new Set([...current, ...registeredGithubRepos(listRepos())])) }
     } catch (e: any) {
       if (alive.current) setMyReposError("在线仓库加载失败：" + String(e?.message || e))
     } finally { if (alive.current) setLoadingMyRepos(false) }
@@ -77,7 +83,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     setDirectoryError("")
     try {
       const root = await prepareCloneRoot(next)
-      if (alive.current && id === directoryRequest.current) setRootLabel(root)
+      if (alive.current && id === directoryRequest.current) setRootLabel("git")
     } catch (e: any) {
       if (alive.current && id === directoryRequest.current) {
         setRootLabel(next.kind === "icloud" ? "iCloud Drive/Scripting/git（不可用）" : next.parentPath + "/git")
@@ -153,10 +159,10 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     cancelRef.current = token
     setCloning(true); setCancelling(false); setProgress("检查目标目录")
     try {
-      const root = cloneRoot(destination)
+      cloneRoot(destination)
       if (batch) {
         const confirmed = await Dialog.confirm({ title: `批量克隆 ${requests.length} 个仓库？`,
-          message: `用户：${loadedUser}\n范围：${publicOnly ? "仅公开仓库" : "含当前 Token 已授权仓库"}\n目标：${root}/<repo>\n逐个下载并注册；同名/已存在项目跳过，绝不覆盖。`, confirmLabel: "开始克隆" })
+          message: `用户：${loadedUser}\n范围：${publicOnly ? "仅公开仓库" : "含当前 Token 已授权仓库"}\n目标：git/<repo>\n逐个下载并注册；同名/已存在项目跳过，绝不覆盖。`, confirmLabel: "开始克隆" })
         if (confirmed !== true || !alive.current || loadedUser !== usernameRef.current.trim()) return
       }
       setResults([])
@@ -178,6 +184,8 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
         onCloned(completed[0].repo)
       } else if (!batch && completed[0]?.status === "failed") {
         await notifyError("clone", requests[0].name, completed[0].message)
+      } else if (!batch && completed[0]?.status === "skipped") {
+        showToast("已跳过：" + completed[0].message, "warning")
       }
     } catch (e: any) {
       if (alive.current) showToast("克隆未完成：" + String(e?.message || e), "error")
@@ -191,6 +199,21 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     if (!cloneUrl.trim()) return
     return execute([{ name: repo?.name || repoNameFromUrl(cloneUrl.trim()), url: cloneUrl.trim(), githubRepo: repo }], false)
   }
+  async function checkDirectory() {
+    if (diagBusy || cloning) return
+    setDiagBusy(true)
+    try {
+      const names = [...myRepos, ...ownedRepos].map(repo => repo.name)
+      const text = await runDirectoryCheck(destination, names, diagName)
+      if (alive.current) setDiagText(text)
+    } catch (e: any) {
+      if (alive.current) setDiagText("目录检查失败：" + hideSystemDetails(e?.message || e))
+    } finally { if (alive.current) setDiagBusy(false) }
+  }
+  async function copyDiagnostics() {
+    try { await Pasteboard.setString(diagText); showToast("已复制检查结果", "success") }
+    catch (e: any) { showToast("复制失败：" + hideSystemDetails(e?.message || e), "error") }
+  }
   function cancel() { cancelRef.current?.cancel(); setCancelling(true); setProgress("取消中…已完成仓库保留，等待当前网络检查点") }
   const selectedRepos = ownedRepos.filter(repo => selected.includes(repo.fullName))
   const counts = Object.entries(STATUS).map(([status, label]) => `${label} ${results.filter(item => item.status === status).length}`).join(" · ")
@@ -200,9 +223,13 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>}>
-      {directoryError ? <Text foregroundStyle="red">{directoryError}</Text> : null}
+      {directoryError ? <Text foregroundStyle="red">{hideSystemDetails(directoryError)}</Text> : null}
       <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
+      <FormRow label="检查名称" prompt="可选，如 exchange；留空检查已加载仓库" value={diagName} onChanged={setDiagName} />
+      <Button title="目录检查" action={checkDirectory} disabled={cloning || diagBusy} />
+      {diagText ? <Text font="caption">{diagText}</Text> : null}
+      {diagText ? <Button title="复制检查结果" action={copyDiagnostics} /> : null}
     </Section>
     <Section header={<Text>单个仓库</Text>}>
       <FormRow label="Git URL" prompt="https://github.com/user/repo.git" value={url} onChanged={setUrl} />
@@ -236,12 +263,15 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     </Section>
     {results.length ? <Section header={<Text>本次结果</Text>} footer={<Text>失败可重跑；已完成项目与现有目录自动跳过，不覆盖也不重复注册。取消为协作式，可能等待当前请求结束。</Text>}>
       <Text>{counts}</Text>
-      {results.map((item, index) => <Text key={`${index}:${item.url}`} foregroundStyle={item.status === "failed" ? "red" : "label"}>{`${STATUS[item.status]} · ${item.name}\n${item.path}\n${item.message}`}</Text>)}
+      {results.map((item, index) => <Text key={`${index}:${item.url}`} foregroundStyle={item.status === "failed" ? "red" : "label"}>{`${STATUS[item.status]} · ${item.name}\n${item.displayPath}\n${hideSystemDetails(item.message)}`}</Text>)}
     </Section> : null}
     {hasToken() ? <Section header={<Text>我的 GitHub 仓库（单个克隆）</Text>}>
       {loadingMyRepos ? <Text>加载中…</Text> : null}
       {myReposError ? <Text foregroundStyle="red">{myReposError}</Text> : null}
-      {myRepos.map(repo => <Button key={repo.fullName} title={repo.fullName} action={() => { setUrl(repo.url); cloneSingle(repo.url, repo) }} disabled={cloning || loadingRepos} />)}
+      {myRepos.map(repo => <Button key={repo.fullName} title={repo.fullName + (clonedRepos.has(repo.fullName.toLowerCase()) ? "（已克隆）" : "")} action={() => {
+        if (clonedRepos.has(repo.fullName.toLowerCase())) { showToast("已克隆：" + repo.fullName + "，未加入克隆队列", "info"); return }
+        setUrl(repo.url); cloneSingle(repo.url, repo)
+      }} disabled={cloning || loadingRepos} />)}
       <Button title="重新加载在线仓库" action={loadMyRepos} disabled={cloning || loadingRepos || loadingMyRepos} />
     </Section> : null}
   </List>

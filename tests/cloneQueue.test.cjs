@@ -49,7 +49,7 @@ function env(overrides={}) {
     await overrides.clone?.(url,dir,id,options,fm)
   })}
   const api={getRepo:async fullName=>({fullName,fork:false})}
-  const queue=load('services/cloneQueue.ts',{'../api/githubApi':{...api,...overrides.api},'./gitService':git,'./repoStore':{...storeDependency,...overrides.store},'./cloneWorkspace':workspace})
+  const queue=load('services/cloneQueue.ts',{'../api/githubApi':{...api,...overrides.api},'./gitService':git,'./repoStore':{...storeDependency,...overrides.store},'./cloneWorkspace':workspace,'../utils/displayPaths':load('utils/displayPaths.ts')})
   return {fm,rows,workspace,store,queue,git,clones}
 }
 async function main(){
@@ -158,7 +158,7 @@ async function main(){
 
   function page(e,api={},queue=e.queue){
     const useToast=load('hooks/useToast.ts',{scripting:ui}).useToast
-    return load('pages/ClonePage.tsx',{
+    return load('pages/ClonePage.tsx',{'../utils/displayPaths':load('utils/displayPaths.ts'),'../services/cloneDiagnostics':{runDirectoryCheck:async()=>''},
       scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':load('hooks/useGitHubUserSearch.ts',{scripting:ui,'../api/githubApi':{searchGitHubUsers:async()=>({items:[],total:0,hasMore:false,limited:false,incomplete:false})}}),'../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:message=>global.__jsx('Text',{},message)},'../hooks/useToast':{useToast},
       '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>({path:'/external',accessBookmarkName:null})},'../services/gitService':{RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':queue,
       '../services/authStore':{hasToken:()=>true},'../services/notifyService':{notifySync:async()=>{},notifyError:async()=>{}},
@@ -172,7 +172,7 @@ async function main(){
     assert.match(text(h),/已选\s+2\s+个/);await node(h,'Button','取消全选').props.action();assert.equal(node(h,'Button','克隆所选仓库').props.disabled,true)
     await node(h,'Button','全选').props.action();await node(h,'Button','☑ bob/a').props.action();assert.match(text(h),/已选\s+1\s+个/)
     let confirmation;global.Dialog={confirm:async options=>{confirmation=options;return false}}
-    await node(h,'Button','克隆所选仓库').props.action();assert.equal(e.clones.length,0);assert.match(confirmation.title,/1/);assert.match(confirmation.message,/\/cloud\/Scripting\/git/)
+    await node(h,'Button','克隆所选仓库').props.action();assert.equal(e.clones.length,0);assert.match(confirmation.title,/1/);assert.match(confirmation.message,/目标：git\/<repo>/);assert.doesNotMatch(confirmation.message,/\/cloud/)
     global.Dialog.confirm=async()=>true;await node(h,'Button','克隆所选仓库').props.action()
     assert.equal(e.rows.length,1);assert.equal(registered[0][1],true);assert.match(text(h),/成功 1/);assert.match(text(h),/bob\/b/)
     await node(h,'Button','更改目录').props.action();assert.ok(e.fm.files.has('/external/git'));assert.ok(!text(h).includes('/external/git'));h.unmount()
