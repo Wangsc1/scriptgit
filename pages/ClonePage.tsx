@@ -199,7 +199,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     navigationBarBackButtonHidden={cloning}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
-    <Section header={<Text>目标目录</Text>} footer={<Text>每个仓库保存到 git/&lt;repo&gt;。更改目录时请选择父目录，其下自动创建 git。默认不会落回本地文稿。</Text>}>
+    <Section header={<Text>目标目录</Text>}>
       {directoryError ? <Text foregroundStyle="red">{directoryError}</Text> : null}
       <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
@@ -208,10 +208,10 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
       <FormRow label="Git URL" prompt="https://github.com/user/repo.git" value={url} onChanged={setUrl} />
       <Button title="克隆" action={() => cloneSingle()} disabled={cloning || loadingRepos || !url.trim()} />
     </Section>
-    <Section header={<Text>按 GitHub 用户名批量添加</Text>} footer={<Text>无 Token 时加载该用户全部公开仓库并匿名克隆；配置 Token 时还包含当前凭据可访问的私有仓库，认证失败不会降级。未克隆默认勾选，已克隆仍可手动选择；加载完整列表后才能开始。</Text>}>
+    <Section header={<Text>按 GitHub 用户名批量添加</Text>}>
       {!hasToken() ? <Text>未配置 Token：仅公开仓库，可匿名加载与克隆。</Text> : null}
       <FormRow label="用户名" prompt="输入至少 2 个字符搜索用户，或填写完整 login" value={username} onChanged={(value: string) => changeUsername(value)} />
-      <Text font="caption">搜索的是公开 GitHub 用户名，不是关联账号。点候选立即自动加载全部仓库；手工填写完整 login 后停顿片刻自动加载。</Text>
+      <Text font="caption">搜索Github用户名</Text>
       {userSearch.loading ? <Text>搜索用户中…</Text> : null}
       {userSearch.error ? <Text foregroundStyle="red">{userSearch.error}</Text> : null}
       {userSearch.error ? <Button title="重试用户搜索" action={userSearch.retry} disabled={cloning || userSearch.loading} /> : null}

@@ -16,6 +16,14 @@ async function main(){
   }).ClonePage
   const h=mount(page,{onCloned(){}})
   await tick()
+  const sections=all(h.tree).filter(n=>n.type==='Section')
+  for(const title of ['目标目录','按 GitHub 用户名批量添加']){
+    const section=sections.find(n=>n.props.header.children.includes(title))
+    assert.ok(section);assert.equal(Object.hasOwn(section.props,'footer'),false)
+  }
+  assert.ok(all(h.tree).some(n=>n.type==='Text'&&n.props.font==='caption'&&n.children.join('')==='搜索Github用户名'))
+  assert.ok(!text(h).includes('每个仓库保存到'))
+  assert.ok(!text(h).includes('无 Token 时加载该用户全部公开仓库'))
   const buttons=all(h.tree).filter(n=>n.type==='Button').map(n=>n.props.title)
   assert.ok(buttons.indexOf('默认目录iCloud/Scripting/git')<buttons.indexOf('更改目录'))
   assert.ok(!text(h).includes('/cloud/Scripting/git'))
@@ -40,8 +48,8 @@ async function main(){
   const root=path.join(__dirname,'..')
   const source=ts.createSourceFile('ClonePage.tsx',fs.readFileSync(path.join(root,'pages/ClonePage.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
   assert.equal(source.parseDiagnostics.length,0)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.2.5')
-  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.2\.5\*\*/)
-  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; ClonePage TSX syntax; 1.2.5 versions.')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.2.6')
+  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.2\.6\*\*/)
+  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; both specified footers absent; exact search caption; ClonePage TSX syntax; 1.2.6 versions.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})
