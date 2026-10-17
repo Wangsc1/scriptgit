@@ -69,7 +69,10 @@ async function main() {
     '../utils/repoSort': { sortReposByGithubUpdated: value => value },
   }).useRepoListStatus
   const home = mount(() => useStatus(() => {}), {})
-  home.tree.appear(); await home.tree.refreshAll(); home.render()
+  home.tree.appear(); await tick(); home.render()
+  assert.equal(reads, 0); assert.equal(home.tree.progress.running, false)
+  writes = 0
+  await home.tree.refreshAll(); home.render()
   assert.equal(reads, 10); assert.equal(maxReads, 2); assert.equal(Object.keys(home.tree.statusMap).length, 10)
   assert.equal(home.tree.progress.completed, 10)
   assert.ok(writes <= 7, `expected coalesced state writes, got ${writes}`)

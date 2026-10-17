@@ -10,6 +10,7 @@
 
 import {
   List,
+  ProgressView,
   Section,
   Text,
   HStack,
@@ -54,7 +55,6 @@ import { yieldForUi } from "../utils/remoteProgress"
 import { sortReposByGithubUpdated } from "../utils/repoSort"
 import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
-import { useStartupAutoPull } from "../hooks/useStartupAutoPull"
 
 export function RepoListPage() {
   // 关闭 present 的根界面（设置已独立为 Tab）
@@ -69,10 +69,6 @@ export function RepoListPage() {
   const {
     statusMap, snapshotMap, repoRefreshMap, githubUpdatedProgress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
   } = useRepoListStatus(setRepos)
-  useStartupAutoPull(key => {
-    const repo = repos.find(item => item.bookmarkName === key)
-    if (repo) void refreshRepo(repo)
-  })
   // 移除仓库忙态：删 gitdir 缓存对大仓库可能耗时，用全屏遮罩
   const [removingName, setRemovingName] = useState<string | null>(null)
 
@@ -137,6 +133,7 @@ export function RepoListPage() {
   const pulling = useRef<Promise<void> | null>(null)
   const singlePull = useRef<Promise<void> | null>(null)
   const [pullBusy, setPullBusy] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number; current: string } | null>(null)
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
 
@@ -167,15 +164,19 @@ export function RepoListPage() {
   function refreshAndPullAll(): Promise<void> {
     if (pulling.current) return pulling.current
     setPullBusy(true)
+    setBatchProgress({ completed: 0, total: 1, current: "准备拉取…" })
     const pending = Promise.resolve().then(async () => {
       if (singlePull.current) await singlePull.current
       const targets = listRepos()
+      let completed = 0
+      if (alive.current) setBatchProgress({ completed, total: targets.length + 1, current: "准备拉取…" })
       const notes: string[] = []
       let updated = 0, unchanged = 0
       for (const repo of targets) {
         if (!alive.current) break
         // 运行期间被移除的仓库不再启动操作。
-        if (!listRepos().some(item => item.bookmarkName === repo.bookmarkName)) continue
+        if (!listRepos().some(item => item.bookmarkName === repo.bookmarkName)) { completed++; continue }
+        setBatchProgress({ completed, total: targets.length + 1, current: `正在拉取 ${repo.name}` })
         await yieldForUi()
         try {
           const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true })
@@ -184,14 +185,18 @@ export function RepoListPage() {
           else notes.push(`${repo.name}：${result.reason}`)
         } catch (e: any) {
           notes.push(`${repo.name}：拉取失败，${String(e?.message || e)}`)
+        } finally {
+          completed++
+          if (alive.current) setBatchProgress({ completed, total: targets.length + 1, current: `已处理 ${completed}/${targets.length} 个仓库` })
         }
       }
       if (!alive.current) return
+      setBatchProgress({ completed: targets.length, total: targets.length + 1, current: "正在刷新仓库状态…" })
       await refreshAll(true)
       if (alive.current && notes.length) showAlert("批量拉取结果", `已更新 ${updated} 个，已是最新或本地领先 ${unchanged} 个。\n${notes.join("\n")}`)
     }).finally(() => {
       if (pulling.current === pending) pulling.current = null
-      if (alive.current) setPullBusy(false)
+      if (alive.current) { setPullBusy(false); setBatchProgress(null) }
     })
     pulling.current = pending
     return pending
@@ -303,6 +308,10 @@ export function RepoListPage() {
         </Toolbar>
       }
     >
+      {batchProgress ? <Section>
+        <ProgressView value={batchProgress.completed} total={batchProgress.total} progressViewStyle="linear"
+          label={<Text font="caption">{batchProgress.current}</Text>} />
+      </Section> : null}
       {repos.length > 0 ? <Section>
         {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
         {githubUpdatedProgress.failed > 0 ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>部分 GitHub 更新时间未刷新，保留已有时间缓存。{githubUpdatedProgress.error}</Text> : null}

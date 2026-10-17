@@ -66,9 +66,9 @@ async function main(){
     try{
       const snapshot=deferred(),slow=deferred();e=hookEnv(['a'],()=>slow.promise,()=>snapshot.promise)
       e.api().refreshRepo(repo('a'));assert.equal(e.calls.length,0)
-      e.api().appear();await tick();await time.advance(0);assert.equal(e.calls.length,1)
+      e.api().appear();e.api().refreshAll();await tick();await time.advance(0);assert.equal(e.calls.length,1)
       e.api().disappear();e.repos.push(repo('b'));e.api().refreshRepo(repo('b'));assert.equal(e.calls.length,1)
-      e.api().appear();const completion=e.api().refreshAll();await time.advance(20000);await time.advance(0);await time.advance(10000);await completion
+      e.api().appear();const completion=e.api().refreshAll(true);await time.advance(20000);await time.advance(0);await time.advance(10000);await completion
       assert.equal(e.calls.filter(x=>x[0]==='a').length,1);assert.equal(e.calls.filter(x=>x[0]==='b').length,1)
       e.h.unmount();snapshot.resolve({a:{branch:'main'}});slow.resolve(status());await tick();assert.equal(e.h.lateWrites,0)
     }finally{if(e&&!e.h.unmounted)e.h.unmount();time.restore()}
@@ -100,7 +100,7 @@ async function main(){
       writeGate.resolve('written');assert.equal(await actual,'written');assert.equal(await following,'read-after-write');assert.equal(c.isWriting('same'),false)
     }finally{time.restore()}
   })
-  await test('real RepoListPage has operable first screen, hidden progress with pull-to-refresh and non-spinning error rows',async()=>{
+  await test('real RepoListPage opening is cache-only with no automatic scans or progress',async()=>{
     const time=clock();let page,e
     try{
       const gate=deferred();e=hookEnv(['a-slow','b-good'],key=>key==='a-slow'?gate.promise:Promise.resolve(status()))
@@ -108,9 +108,9 @@ async function main(){
       assert.equal(typeof page.tree.props.refreshable,'function');assert.equal(all(page.tree).filter(n=>typeof n.type==='function'&&n.props.repo).length,2)
       page.tree.props.onAppear();await tick();await time.advance(0);assert.doesNotMatch(text(page),/正在检查|本轮已处理|GitHub 更新时间刷新|按 GitHub 最近更新时间|启动自动拉取结果|停止后续自动拉取/);assert.equal(all(page.tree).some(n=>n.type==='DisclosureGroup'),false)
       await time.advance(10000);await tick();assert.equal(typeof page.tree.props.refreshable,'function')
-      page.render();const row=all(page.tree).find(n=>typeof n.type==='function'&&n.props.repo?.bookmarkName==='a-slow');assert.equal(row.props.refresh.phase,'slow')
+      page.render();const row=all(page.tree).find(n=>typeof n.type==='function'&&n.props.repo?.bookmarkName==='a-slow');assert.equal(row.props.refresh,undefined);assert.equal(e.calls.length,0)
       const rendered=row.type(row.props);assert.equal(all(rendered).filter(n=>n.type==='ProgressView').length,0)
-      assert.ok(JSON.stringify(rendered).includes('状态读取较慢'));assert.ok(JSON.stringify(rendered).includes('状态未确认'))
+      assert.ok(!JSON.stringify(rendered).includes('状态读取较慢'));assert.ok(!JSON.stringify(rendered).includes('状态未确认'))
       page.unmount();gate.resolve(status());await tick();assert.equal(page.lateWrites,0)
     }finally{if(page&&!page.unmounted)page.unmount();e?.h.unmount();time.restore()}
   })

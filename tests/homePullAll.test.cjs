@@ -13,13 +13,13 @@ function page(rows, pull, refresh, refreshOne = () => {}) {
     '../utils/remoteProgress': { yieldForUi: async () => {} },
     '../utils/repoSort': { sortReposByGithubUpdated: value => value },
     '../hooks/useRepoListStatus': { useRepoListStatus: () => ({ statusMap: {}, snapshotMap: {}, repoRefreshMap: {}, githubUpdatedProgress: {}, refreshAll: refresh, refreshRepo: refreshOne }) },
-    '../hooks/useStartupAutoPull': { useStartupAutoPull() {} },
+    '../hooks/useStartupAutoPull': { useStartupAutoPull() { throw Error('App opening must not start auto pull') } },
     '../hooks/useRepoVisibilities': { useRepoVisibilities: () => ({}) },
   }).RepoListPage
 }
 async function main() {
   const rows = ['clone', 'local', 'noRemote', 'bad', 'afterError'].map((name, i) => ({ name, bookmarkName: name, source: i ? 'local' : 'clone' }))
-  const calls = [], gate = deferred()
+  const calls = [], gate = deferred(), refreshGate = deferred()
   let refreshes = 0
   const h = mount(page(rows, async (key, options) => {
     calls.push(key); assert.equal(options.includeAllSources, true)
@@ -27,13 +27,17 @@ async function main() {
     if (key === 'bad') throw Error('HTTP 403')
     if (key === 'noRemote') return { status: 'skipped', reason: '未配置 upstream' }
     return { status: key === 'local' ? 'updated' : 'unchanged' }
-  }, async force => { refreshes++; assert.equal(force, true) }), {})
+  }, async force => { refreshes++; assert.equal(force, true); await refreshGate.promise }), {})
+  assert.equal(all(h.tree).some(n => n.type === 'ProgressView'), false)
   const first = h.tree.props.refreshable(), duplicate = h.tree.props.refreshable()
   assert.equal(first, duplicate)
-  await tick(); assert.deepEqual(calls, ['clone']); assert.equal(refreshes, 0)
-  gate.resolve(); await first
+  await tick(); h.render(); const bar = all(h.tree).find(n => n.type === 'ProgressView'); assert.equal(bar.props.progressViewStyle,'linear'); assert.equal(bar.props.value,0); assert.equal(bar.props.total,6); assert.deepEqual(calls, ['clone']); assert.equal(refreshes, 0)
+  gate.resolve(); await tick(); h.render()
+  const finishing = all(h.tree).find(n => n.type === 'ProgressView')
+  assert.equal(finishing.props.value, 5); assert.equal(finishing.props.total, 6)
+  refreshGate.resolve(); await first
   assert.deepEqual(calls, rows.map(r => r.name)); assert.equal(refreshes, 1)
-  h.render(); assert.equal(h.tree.props.alert.title, '批量拉取结果')
+  h.render(); assert.equal(all(h.tree).some(n => n.type === 'ProgressView'), false); assert.equal(h.tree.props.alert.title, '批量拉取结果')
   assert.match(JSON.stringify(h.tree.props.alert.message), /noRemote：未配置 upstream/)
   assert.match(JSON.stringify(h.tree.props.alert.message), /bad：拉取失败，HTTP 403/)
   assert.match(JSON.stringify(h.tree.props.alert.message), /已更新 1 个/)

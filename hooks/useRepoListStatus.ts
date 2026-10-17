@@ -190,10 +190,16 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
   }
 
   function appear() {
-    const wasHidden = !state.current.active
     state.current.active = true
-    if (wasHidden && state.current.pending) state.current.rerun = true
-    refreshAll().catch(error => console.warn("仓库列表刷新失败: " + error))
+    const epoch = state.current.epoch
+    const latest = listRepos()
+    setRepos(latest)
+    setStatusMap(cachedStatuses(latest))
+    setRepoRefreshMap({})
+    // 打开/返回列表仅恢复已有缓存；没有缓存时等待用户手动刷新。
+    readSnapshots().then(value => {
+      if (state.current.active && state.current.epoch === epoch) setSnapshotMap(value)
+    }).catch(() => {})
   }
 
   function refreshRepo(repo: RepoMeta) {
