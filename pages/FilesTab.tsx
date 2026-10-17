@@ -31,7 +31,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
     if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
     const swipeActions: any[] = []
-    if (!deleted) {
+    if (change && !deleted) {
       swipeActions.push(<Button
         key="push"
         title="提交"
