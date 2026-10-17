@@ -1,4 +1,4 @@
-import { Button, Image, NavigationStack, Text, VStack, useEffect, useRef, useState } from "scripting"
+import { Button, Image, Text, VStack, useEffect, useRef, useState } from "scripting"
 import { openLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { localImportOnMain } from "../services/localImportExecution"
 
@@ -6,9 +6,9 @@ import { localImportOnMain } from "../services/localImportExecution"
  * this view never receives raw bytes, encodes an image, or writes the source.
  * Deletion remains the existing confirmed action in the workspace file list.
  */
-export function LocalImagePreview({ bookmarkName, file, onClose, onReload }: {
+export function LocalImagePreview({ bookmarkName, file, onReload }: {
   bookmarkName: string; file: LocalWorktreeFile; sessionId?: number
-  onClose(): void; onReload(file: LocalWorktreeFile): void
+  onReload(file: LocalWorktreeFile): void
 }) {
   const alive = useRef(true)
   const lock = useRef(false)
@@ -30,15 +30,14 @@ export function LocalImagePreview({ bookmarkName, file, onClose, onReload }: {
       await localImportOnMain("图片刷新收尾", () => { if (alive.current) setBusy(false) })
     }
   }
-  return <NavigationStack>
-    <VStack spacing={12} padding frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-      navigationTitle={file.path.split("/").pop() || "图片预览"} navigationBarTitleDisplayMode="inline"
-      toolbar={{ topBarLeading: <Button title="返回" action={onClose} disabled={busy} />,
-        topBarTrailing: <Button title="刷新" action={reload} disabled={busy} /> }}>
+  // A destination in the APP's existing NavigationStack, not a new stack root.
+  // Keep the system back button/interactive pop; don't replace it with a custom
+  // leading toolbar action or a JS drag gesture.
+  return <VStack spacing={12} padding frame={{ maxWidth: Infinity, maxHeight: Infinity }}
+      navigationTitle={file.path.split("/").pop() || "图片预览"} navigationBarTitleDisplayMode="inline" navigationBarBackButtonHidden={false}
+      toolbar={{ topBarTrailing: <Button title="刷新" action={reload} disabled={busy} /> }}>
       {error ? <Text foregroundStyle="red">{error}</Text> : null}
       {file.previewImage ? <Image image={file.previewImage} resizable scaleToFit aspectRatio={{ value: null, contentMode: "fit" }} frame={{ maxWidth: Infinity, maxHeight: Infinity }} /> :
         <Text foregroundStyle="red">图片预览不可用；文件未修改，可返回列表重试或删除。</Text>}
-      <Text font="caption">图片只读 · 显示缩略图，不修改原文件</Text>
     </VStack>
-  </NavigationStack>
 }

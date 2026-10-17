@@ -52,11 +52,10 @@ async function testEntry(){
  }).FilesTab
  const props={files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged:forbidden,onOpen:forbidden,onPush:forbidden,onRestore:forbidden,onCreateEntry:forbidden}
  const h=mount(FilesTab,props,{effectUpdates:true});await flush();h.render();const buttons=all(h.tree.props.header).filter(n=>n.type==='Button')
- assert.equal(buttons.at(-1).props.title,'拖放测试');const groups=all(h.tree.props.header).filter(n=>n.type==='Section');assert.equal(groups.length,3);assert.match(JSON.stringify(groups.at(-1).props.header),/仅诊断，不改仓库/)
- buttons.at(-1).props.action();assert.equal(h.tree.props.fullScreenCover.isPresented,false,'menu only queues intent');h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false,'await real main callback, not sync Thread assumption');await flush();h.render()
- assert.equal(h.tree.props.fullScreenCover.isPresented,true);assert.equal(h.tree.props.fullScreenCover.content.type,'DragDropTestPage');assert.deepEqual(Object.keys(h.tree.props.fullScreenCover.content.props),['onClose'])
- h.tree.props.fullScreenCover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);assert.equal(repoCalls,0);h.unmount()
- const detached=mount(FilesTab,props,{effectUpdates:true});await flush();detached.render();all(detached.tree.props.header).find(n=>n.type==='Button'&&n.props.title==='拖放测试').props.action();detached.render();detached.unmount();await flush();assert.equal(detached.lateWrites,0);assert.equal(repoCalls,0)
+ assert.equal(buttons.at(-1).props.title,'导入图片');assert.ok(!buttons.some(n=>n.props.title==='拖放测试'));assert.equal(h.tree.props.fullScreenCover,undefined)
+ const source=fs.readFileSync(path.join(__dirname,'../pages/FilesTab.tsx'),'utf8');assert.doesNotMatch(source,/DragDropTestPage|dragTestPresented|drag-test|打开拖放测试/)
+ assert.equal(repoCalls,0);h.unmount()
+
 }
-async function mainTest(){await testPage();await testEntry();console.log('PASS pure VStack source/target, sync provider/load and return, bounded/dedup event trace, errors, new-drag reset, close/unmount cleanup; menu post-commit deferred-main presentation and zero repository calls');console.log('LIMIT native gesture recognition, callback delivery and full-screen presentation still require device validation')}
+async function mainTest(){await testPage();await testEntry();console.log('PASS pure VStack source/target, sync provider/load and return, bounded/dedup event trace, errors, new-drag reset, close/unmount cleanup; unstable diagnostic entry/cover/import removed; zero repository calls');console.log('LIMIT native gesture recognition, callback delivery remain unverified; diagnostic page has no normal entry after reported crash')}
 mainTest().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{delete global.Thread;delete global.ItemProvider})

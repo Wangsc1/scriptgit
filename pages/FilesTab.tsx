@@ -1,6 +1,5 @@
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
-import { DragDropTestPage } from "./DragDropTestPage"
 import { LocalFileDragSession } from "../utils/localFileDrag"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
@@ -527,8 +526,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Keep Menu actions lightweight: record an intent, then hand off after commit.
   // This boundary alone does not establish the cause of a native crash.
   // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
-  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo" | "drag-test"
-  const [dragTestPresented, setDragTestPresented] = useState(false)
+  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
   const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
   const additionPending = useRef(false)
   function requestAddition(kind: AdditionKind) {
@@ -543,28 +541,14 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     setAdditionRequest(null)
     if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
-    if (kind === "drag-test") {
-      // Only enqueue from Menu; present after commit via the actual asynchronous
-      // main-context bridge. The test page receives no repository material.
-      additionPending.current = true
-      void localImportOnMain("打开拖放测试", () => {
-        additionPending.current = false
-        const current = state.current.context
-        if (state.current.alive && !state.current.busy && current.bookmarkName === bookmarkName && !current.loading && !current.mergeInProgress && !current.creationActive) setDragTestPresented(true)
-      }).catch(error => { additionPending.current = false; console.error(error) })
-    }
-    else if (kind === "file" || kind === "directory") startCreation(kind === "directory")
+    if (kind === "file" || kind === "directory") startCreation(kind === "directory")
     else void importSelection(kind).catch(error => console.error(error))
   }, [additionRequest])
-  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null || dragTestPresented
+  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
-  return <Section fullScreenCover={{
-    isPresented: dragTestPresented,
-    onChanged: (presented: boolean) => { if (!presented && state.current.alive) setDragTestPresented(false) },
-    content: dragTestPresented ? <DragDropTestPage onClose={() => { if (state.current.alive) setDragTestPresented(false) }} /> : <Text />,
-  }} sheet={{
+  return <Section sheet={{
     isPresented: directoryForm !== null,
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
@@ -579,9 +563,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         <Button title="导入文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("document")} />
         <Button title="导入目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("import-directory")} />
         <Button title="导入图片" systemImage="photo" disabled={additionDisabled} action={() => requestAddition("photo")} />
-      </Section>
-      <Section header={<Text>仅诊断，不改仓库</Text>}>
-        <Button title="拖放测试" systemImage="hand.draw" disabled={additionDisabled} action={() => requestAddition("drag-test")} />
       </Section>
     </Menu>
   </HStack>}>

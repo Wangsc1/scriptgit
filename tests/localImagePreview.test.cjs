@@ -33,15 +33,16 @@ async function main(){
  links.add(root+'/camera.HEIC');await assert.rejects(service.readLocalFileForOpenInternal('repo','camera.HEIC'),/符号链接/);links.clear()
  assert.equal(bytesReads,0);assert.equal(writes,0)
  const file=await service.readLocalFileForOpenInternal('repo','camera.HEIC');let closes=0,reloaded=[]
- const h=mount(page,{bookmarkName:'repo',file,onClose:()=>closes++,onReload:f=>reloaded.push(f)})
+ const h=mount(page,{bookmarkName:'repo',file,onReload:f=>reloaded.push(f)})
  const bar=()=>{h.render();return all(h.tree).find(n=>n.type==='VStack').props.toolbar}
  assert.equal(all(h.tree).find(n=>n.type==='Image').props.image,file.previewImage)
  assert.ok(!all(h.tree).some(n=>n.type==='LocalCodeEditor'||n.type==='WebView'))
  await bar().topBarTrailing.props.action();assert.equal(reloaded.length,1);assert.ok(reloaded[0].previewImage)
  readFailure=true;await bar().topBarTrailing.props.action();h.render();assert.match(JSON.stringify(h.tree),/图片刷新失败/);assert.equal(reloaded.length,1);assert.equal(all(h.tree).find(n=>n.type==='Image').props.image,file.previewImage);readFailure=false
- bar().topBarLeading.props.action();assert.equal(closes,1)
+ assert.equal(h.tree.type,'VStack');assert.equal(bar().topBarLeading,undefined,'retain the system navigation back button, no custom override');assert.equal(h.tree.props.navigationBarBackButtonHidden,false);assert.ok(!JSON.stringify(h.tree).includes('显示缩略图'));assert.ok(!JSON.stringify(h.tree).includes('图片只读'))
  gate=deferred();const loading=bar().topBarTrailing.props.action();await tick();await bar().topBarTrailing.props.action();assert.equal(opened.length,3,'duplicate refresh locked');h.unmount();gate.resolve();await loading;assert.equal(h.lateWrites,0);assert.equal(reloaded.length,1)
  const absent=mount(page,{bookmarkName:'repo',file:{...file,previewImage:undefined},onClose(){},onReload(){}});assert.match(JSON.stringify(absent.tree),/图片预览不可用/);absent.unmount()
+ assert.ok(!all(h.tree).some(n=>n.type==='NavigationStack'));assert.equal(h.tree.props.gesture,undefined);assert.equal(h.tree.props.simultaneousGesture,undefined)
  const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../pages/FilesTab.tsx'),'utf8');assert.ok(!source.includes('pickerStatus'));assert.ok(source.includes('pickLocalDirectory()'));assert.ok(source.includes('dragTrace'))
  assert.equal(bytesReads,0);assert.equal(writes,0)
  console.log('PASS case-insensitive HEIC/HEIF/PNG/JPEG before text size check, native path thumbnail, no JS Data/base64/write; safety/read-only/version checks; refresh/lock/failure/close/unmount view wiring')

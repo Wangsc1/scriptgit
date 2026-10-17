@@ -10,7 +10,7 @@
  * - 分支与同步动作：hooks/useRepoBranchActions、hooks/useRepoSyncActions
  */
 
-import { List, Text, Button, Menu, useState, useRef } from "scripting"
+import { List, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -54,7 +54,26 @@ export function RepoDetailPage({
 }) {
   const [localFile, setLocalFile] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
   const localSession = useRef(0)
-  const openLocalFile = (file: LocalWorktreeFile) => setLocalFile({ file, id: ++localSession.current })
+  const [localImage, setLocalImage] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
+  const activeImage = useRef<number | null>(null)
+  useEffect(() => () => { activeImage.current = null }, [])
+  function closeLocalImage(id: number) {
+    if (activeImage.current !== id) return
+    activeImage.current = null
+    setLocalImage(null)
+  }
+  function openLocalFile(file: LocalWorktreeFile) {
+    const id = ++localSession.current
+    if (file.previewImage) {
+      if (activeImage.current === null) nav.skipNextAppearLoad()
+      activeImage.current = id
+      setLocalImage({ file, id })
+    } else {
+      activeImage.current = null
+      setLocalImage(null)
+      setLocalFile({ file, id })
+    }
+  }
   const [alertState, setAlertState] = useState<AlertState>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
 
@@ -214,7 +233,7 @@ export function RepoDetailPage({
         // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
-        content: localFile?.file.previewImage ? <LocalImagePreview key={localFile.id} sessionId={localFile.id} bookmarkName={bookmarkName} file={localFile.file} onReload={openLocalFile} onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
+        content: localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
           onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
             try { await data.refreshChangesAndSnapshot() }
             catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
@@ -277,15 +296,20 @@ export function RepoDetailPage({
         ) : undefined,
       }}
       navigationDestination={{
-        isPresented: nav.isPresented,
+        // Images PUSH on the existing app stack, matching the official
+        // NavigationStack/Use with navigationDestination example. A cover with
+        // a nested stack has no previous screen for the native edge-pop gesture.
+        isPresented: localImage !== null || nav.isPresented,
         onChanged: (presented: boolean) => {
-          if (!presented) {
+          if (!presented && localImage) closeLocalImage(localImage.id)
+          else if (!presented) {
             nav.closeAll()
             // 从冲突页返回时刷新合并状态
             data.loadMergeState()
           }
         },
-        content: (
+        content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} bookmarkName={bookmarkName} file={localImage.file}
+          onReload={file => { if (activeImage.current === localImage.id) openLocalFile(file) }} /> : (
           <RepoDetailDestination
             bookmarkName={bookmarkName}
             displayName={data.displayName}

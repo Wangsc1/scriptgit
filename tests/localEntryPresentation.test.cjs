@@ -21,7 +21,7 @@ const {RepoDetailPage}=load('pages/RepoDetailPage.tsx',{
 '../hooks/useLocalEntryCreation':{useLocalEntryCreation},
  '../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../components/CommitMessageSheet':{CommitMessageSheet:'CommitMessageSheet'},
  '../hooks/useOpBusy':{useOpBusy:()=>({opBusy:null})},'../hooks/useRepoDetailData':{useRepoDetailData:()=>data},
- '../hooks/useRepoDetailNavigation':{useRepoDetailNavigation:()=>({})},'../hooks/useRepoWorktreeActions':{useRepoWorktreeActions:()=>worktree},
+ '../hooks/useRepoDetailNavigation':{useRepoDetailNavigation:()=>({isPresented:false,skipNextAppearLoad(){}})},'../hooks/useRepoWorktreeActions':{useRepoWorktreeActions:()=>worktree},
  '../hooks/useRepoPendingActions':{useRepoPendingActions:()=>({pending:null})},'../hooks/useRepoBranchActions':{useRepoBranchActions:()=>({})},
  '../hooks/useRepoSyncActions':{useRepoSyncActions:()=>({})},'../services/repoStore':{updateBranchLastPulledAt:noop},
  '../utils/format':{suggestCommitTitle:()=>'',shortOid:String},'../utils/repoDetailAlerts':{},
