@@ -114,6 +114,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [pickerStatus, setPickerStatus] = useState("")
+  const [dragStatus, setDragStatus] = useState("")
+  const lastDragStatus = useRef("")
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -314,12 +317,21 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Repo switches, merge/other operations and unmount invalidate any old capability.
   useEffect(() => { dragSession.current.clear(); return () => dragSession.current.clear() }, [bookmarkName, loading, mergeInProgress, creationActive])
   function dragUnavailable() { return !state.current.alive || state.current.busy || loading || mergeInProgress || creationActive || directoryForm !== null }
+  function reportDrag(message: string) {
+    if (lastDragStatus.current === message) return
+    lastDragStatus.current = message
+    void localImportOnMain("拖动阶段提示", () => { if (state.current.alive && lastDragStatus.current === message) setDragStatus(message) }).catch(error => console.error(error))
+  }
   function dragFile(path: string): ItemProvider {
     dragSession.current.clear()
     try {
       if (dragUnavailable() || removed.has(path)) return ItemProvider.fromText("")
       const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-      return ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
+      const provider = ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
+      let types = "未报告"
+      try { types = provider.registeredTypes?.join(", ") || "未报告" } catch (_) { /* Diagnostics cannot change a successful drag. */ }
+      reportDrag(`拖动：已开始；源类型=${types}；请在目录行松手（接收public.plain-text）`)
+      return provider
     } catch (e: any) {
       if (state.current.alive) setError(String(e?.message || e))
       return ItemProvider.fromText("")
@@ -330,19 +342,27 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // (including coexistence with contextMenu) must be checked on the device.
   function dropFolder(directory: string) {
     const types = ["public.plain-text"]
-    const accepts = (info: DropInfo) => !dragUnavailable() && !deletedDirectories.has(directory) &&
-      dragSession.current.eligible(bookmarkName, directory) && info.hasItemsConforming(types)
+    const accepts = (info: DropInfo) => {
+      const reason = dragUnavailable() ? "忙碌、合并或表单占用" : deletedDirectories.has(directory) ? "目标目录已删除" :
+        !dragSession.current.eligible(bookmarkName, directory) ? "会话无效、过期、仓库变化或文件已在此目录" :
+        !info.hasItemsConforming(types) ? "文本类型不匹配" : "可接收，松手后移动"
+      reportDrag(`拖动：目录validate → ${reason}`)
+      return reason === "可接收，松手后移动"
+    }
     return {
       types,
       validateDrop: accepts,
       dropUpdated: (info: DropInfo) => accepts(info) ? "move" : "forbidden",
+      dropEntered: (info: DropInfo) => { accepts(info) },
       performDrop(info: DropInfo): boolean {
         if (!accepts(info)) return false
         try {
           const providers = info.itemProviders(types)
+          reportDrag(`拖动：performDrop已触发，provider数量=${providers.length}`)
           if (providers.length !== 1) { dragSession.current.clear(); return false }
           // Mandatory official lifetime rule: start loading NOW, before returning.
           const text = providers[0].loadText()
+          reportDrag("拖动：已启动loadText，等待内部凭据校验")
           state.current.busy = true
           void finishDrop(text, directory).catch(error => console.error(error))
           return true
@@ -363,12 +383,13 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       const result = await loaded
       if (result.ok === false) throw result.error
       const payload = result.value
+      reportDrag("拖动：loadText完成，正在校验内部会话")
       if (!state.current.alive) return
       const root = await localImportStep("拖动工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       const drag = dragSession.current.consume(payload, bookmarkName, root, directory)
       if (!drag) throw new Error("仅允许本页当前工作区的有效文件拖动；外来或过期内容未移动")
       if (!state.current.alive || mergeInProgress || creationActive) return
-      const target = await localImportStep("拖动移动/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root) })
+      const target = await localImportStep("拖动移动/协调锁", () => { checkQueuedWrite(); enteredWrite = true; reportDrag("拖动：校验通过，正在执行移动"); return moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root) })
       await localImportOnMain("拖动UI结果", () => {
         if (!state.current.alive) return
         setAdded(previous => [...previous.filter(path => path !== drag.path), target])
@@ -377,8 +398,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         setCopied(previous => previous.filter(entry => entry.path !== drag.path && entry.path !== target))
       })
       await localImportStep("拖动刷新改动", () => onWorktreeChanged())
+      reportDrag("拖动：移动成功，已刷新工作区")
     } catch (e: any) {
       let message = String(e?.message || e)
+      reportDrag(enteredWrite ? "拖动：移动或刷新失败，详见错误" : "拖动：未进入写入，详见错误")
       if (enteredWrite) {
         try { await localImportStep("拖动失败后刷新", () => onWorktreeChanged()) }
         catch (refreshError: any) { message += "\n" + String(refreshError?.message || refreshError) }
@@ -400,7 +423,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
       const expectedRoot = await localImportStep("工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       if (!state.current.alive) return
-      picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory() : pickLocalDocument())
+      picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory(message => localImportOnMain("目录选择阶段提示", () => { if (state.current.alive) setPickerStatus(message) })) : pickLocalDocument())
       if (!picked || !state.current.alive) return
       if (kind === "import-directory") {
         const result = await localImportStep("目录写入/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return importLocalWorktreeDirectory(bookmarkName, picked!.sourcePath, expectedRoot) })
@@ -482,6 +505,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     </Menu>
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
+    {pickerStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{pickerStatus}</Text> : null}
+    {dragStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{dragStatus}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
     {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>

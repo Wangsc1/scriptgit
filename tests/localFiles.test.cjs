@@ -433,34 +433,34 @@ async function main(){
   await assert.rejects(service.importLocalWorktreeFile('repo',outside+'/original binary.BIN','locked-import.bin'),/写|操作/)
   gate.resolve();await read;await create;assert.ok(fs.existsSync(dir+'/locked-created'));assert.ok(coordinator.revision(ctx.gitdir)>ctxRevision)
  })
- await test('actual root add menu order/group/icon, declarative creation, import/cancel/conflict/partial refresh and merge/busy guards',async()=>{
-  let updates=0,selected=[],selectedDirectory=null,pickCalls=0,photoCalls=0
+ await test('actual root add menu order/group/icon, centered prompt creation, import/cancel/conflict/partial refresh and merge/busy guards',async()=>{
+  let updates=0,selected=[],selectedDirectory=null,pickCalls=0,photoCalls=0,createInput=null;const createErrors=[],createPrompts=[]
+  global.Dialog.prompt=async options=>{createPrompts.push(options);return createInput}
   global.DocumentPicker={pickFiles:async opts=>{pickCalls++;if(opts.types){assert.deepEqual(opts,{types:['public.folder'],allowsMultipleSelection:false,shouldShowFileExtensions:true});return selectedDirectory?[selectedDirectory]:[]}assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
   global.PHPickerFilter={images:()=> 'images'};global.Photos={pick:async()=>{photoCalls++;return []}}
   const props={files:['folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:async()=>{updates++},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,{useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts');let creation
-  function Host(){creation=useLocalEntryCreation({bookmarkName:props.bookmarkName,unavailable:props.mergeInProgress,onChanged:props.onWorktreeChanged,onError(){}});return FilesTab({...props,creationActive:creation.form!==null||creation.busy,onCreateEntry:creation.open})}
+  function Host(){creation=useLocalEntryCreation({bookmarkName:props.bookmarkName,unavailable:props.mergeInProgress,onChanged:props.onWorktreeChanged,onError:message=>createErrors.push(message)});return FilesTab({...props,creationActive:creation.busy,onCreateEntry:creation.open})}
   const h=mount(Host,props,{effectUpdates:true})
   function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
   function action(title){h.render();return all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title===title)}
   async function settleImport(){for(let i=0;i<1000;i++){h.render();if(!action('导入文件').props.disabled)return;await tick()}throw Error('import did not settle')}
-  async function dispatch(title){action(title).props.action();h.render();if(title.startsWith('导入'))await settleImport();else h.render()}
+  async function dispatch(title){action(title).props.action();h.render();await settleImport()}
   const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
   assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
   assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo']])
-  function sheet(){h.render();return {title:creation.form?.directory?'创建目录':'创建文件',onCancel:creation.cancel,onConfirm:creation.confirm,error:creation.error}}
   nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
-  await dispatch('创建文件');assert.equal(sheet().title,'创建文件');sheet().onCancel();assert.equal(updates,0)
-  await dispatch('创建文件');await sheet().onConfirm('ui-created.json');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
+  await dispatch('创建文件');assert.equal(createPrompts.at(-1).title,'创建文件');assert.equal(createPrompts.at(-1).defaultValue,'');assert.equal(updates,0)
+  createInput='ui-created.json';await dispatch('创建文件');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
   assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
-  await dispatch('创建目录');await sheet().onConfirm('ui-empty');assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
+  createInput='ui-empty';await dispatch('创建目录');assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
   for(let refresh=0;refresh<3;refresh++){
    props.changes=[...props.changes];const emptyRow=nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty'));const label=all(emptyRow.props.label)
    assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'created empty directory stays green after actual changes-array replacement')
    assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
   }
 
-  await dispatch('创建文件');await sheet().onConfirm('UI-CREATED.JSON');assert.match(sheet().error,/同名/);sheet().onCancel()
+  createInput='UI-CREATED.JSON';await dispatch('创建文件');assert.match(createErrors.at(-1),/同名/)
   const before=updates;await dispatch('导入文件');await dispatch('导入目录');await dispatch('导入图片');assert.equal(updates,before);assert.equal(photoCalls,1)
   selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
   const photoBytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);fs.writeFileSync(outside+'/picker-original.PNG',photoBytes)

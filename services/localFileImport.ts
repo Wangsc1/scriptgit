@@ -27,14 +27,18 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
  * https://developer.apple.com/documentation/uniformtypeidentifiers/uttype-swift.struct/folder
  * No directory-bookmark overload or silent fallback to an untyped picker.
  */
-export async function pickLocalDirectory(): Promise<PickedLocalFile | null> {
+export async function pickLocalDirectory(onProgress?: (message: string) => void | Promise<void>): Promise<PickedLocalFile | null> {
+  await onProgress?.("目录选择：入口 pickFiles，types=public.folder；请选目录后点击系统确认按钮")
   const paths = await localImportStep("DocumentPicker.pickFiles(public.folder)", () => DocumentPicker.pickFiles({
     types: ["public.folder"], allowsMultipleSelection: false, shouldShowFileExtensions: true,
   }))
-  if (!paths?.length) return null
+  if (!paths?.length) { await onProgress?.("目录选择：返回0项（取消或未选中），未写入"); return null }
+  await onProgress?.(`目录选择：返回${paths.length}项，正在检查是否为目录`)
   if (paths.length !== 1) throw new Error("请一次选择一个目录")
   const sourcePath = paths[0].replace(/\/+$/, "")
-  if (!(await localImportStep("目录类型检查", () => FileManager.isDirectory(sourcePath)))) throw new Error("系统未返回目录（已限定 public.folder）；请选择文件夹，不是文件")
+  const directory = await localImportStep("目录类型检查", () => FileManager.isDirectory(sourcePath))
+  await onProgress?.(`目录选择：返回类型=${directory ? "目录" : "非目录"}`)
+  if (!directory) throw new Error("系统未返回目录（已限定 public.folder）；请选择文件夹，不是文件")
   // pickFiles owns the per-run access scope; do not stop unrelated workspace scopes.
   return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }

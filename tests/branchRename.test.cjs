@@ -1,4 +1,4 @@
-/* Actual detail button -> hook -> declarative List sheet, no native imperative prompt. */
+/* Actual detail button -> hook -> same Dialog.prompt as create branch. Native UI not emulated. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const {load,mount,ui,all,deferred,tick}=require('./remoteFiles.test.cjs')
 const branch=load('utils/branch.ts'),merge={},calls=[],toasts=[]
@@ -19,11 +19,9 @@ hook('../hooks/useRepoWorktreeActions','useRepoWorktreeActions',{commitSheetMode
 hook('../hooks/useRepoPendingActions','useRepoPendingActions',{clearPending:noop})
 mocks['../hooks/useRepoBranchActions']=actions
 hook('../hooks/useRepoSyncActions','useRepoSyncActions',{})
+hook('../hooks/useLocalEntryCreation','useLocalEntryCreation',{busy:false,open:noop})
 mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid:noop}
 const Page=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage
-const FormSheet=load('components/FormSheet.tsx',{scripting:ui,'../constants/colors':colors}).FormSheet
-const FormRow=load('components/FormRow.tsx',{scripting:ui}).FormRow
-const NameInputSheet=load('components/NameInputSheet.tsx',{scripting:ui,'./FormSheet':{FormSheet},'./FormRow':{FormRow}}).NameInputSheet
 async function engineSemantics(){
  // No actual Git transport: both injected pushBranch and git.push are in-memory spies.
  const progress=load('utils/remoteProgress.ts')
@@ -43,35 +41,31 @@ async function engineSemantics(){
 }
 async function main(){
  await engineSemantics()
- global.Dialog={prompt:()=>{throw Error('imperative prompt must never be used for branch rename')}}
+ let input=null,promptGate=null;const prompts=[]
+ global.Dialog={prompt:async options=>{prompts.push(options);return promptGate?promptGate.promise:input}}
  const h=mount(Page,{bookmarkName:'repo',name:'test'})
  const section=()=>{h.render();return Section(all(h.tree).find(n=>n.type==='RepoBranchSection').props)}
  const rename=()=>all(section().props.header).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('重命名'))
- const form=()=>{h.render();assert.equal(h.tree.props.sheet.isPresented,true);return h.tree.props.sheet.content.props}
- await rename().props.action();assert.equal(form().initialName,'main');assert.deepEqual(calls,[]);assert.equal(begins,0)
- let submitted;const f=mount(NameInputSheet,{...form(),onConfirm:name=>submitted=name});assert.equal(f.tree.type,FormSheet)
- const row=all(f.tree).find(n=>n.type===FormRow);row.props.observable.setValue('topic/new');f.render();const rendered=FormSheet({...f.tree.props,children:f.tree.children});all(rendered).find(n=>n.type==='List').props.toolbar.confirmationAction.props.action();assert.equal(submitted,'topic/new')
- f.unmount();form().onCancel();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.deepEqual(calls,[]);assert.equal(ends,0)
- await rename().props.action();await form().onConfirm('bad..name');assert.match(form().error,/名称无效/);assert.deepEqual(calls,[])
- await form().onConfirm('main');h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.deepEqual(calls,[])
- await rename().props.action();fail=true;await form().onConfirm('topic');assert.match(form().error,/branch exists/);assert.equal(begins,1);assert.equal(ends,1);assert.equal(refreshes,0)
- fail=false;gate=deferred();const pending=form().onConfirm('new-name');await tick();await form().onConfirm('duplicate');assert.equal(calls.length,2);form().onCancel();assert.equal(form().initialName,'main');gate.resolve();await pending;gate=null;h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(refreshes,1);assert.deepEqual(calls.at(-1),['repo','main','new-name']);assert.match(toasts.at(-1)[0],/已重命名：/)
- data.branchInfo.current='main';await rename().props.action();data.branchInfo.current='changed';await form().onConfirm('stale');assert.match(form().error,/已变化/);assert.equal(calls.length,2);form().onCancel()
- data.branchInfo.current='main'
+ await rename().props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(prompts.at(-1).defaultValue,'main');assert.equal(prompts.at(-1).confirmLabel,'重命名');assert.deepEqual(calls,[]);assert.equal(begins,0);assert.equal(ends,0)
+ input='bad..name';await rename().props.action();assert.match(toasts.at(-1)[0],/名称无效/);assert.deepEqual(calls,[])
+ input='main';await rename().props.action();assert.deepEqual(calls,[])
+ input='topic';fail=true;await rename().props.action();assert.match(toasts.at(-1)[0],/branch exists/);assert.equal(begins,1);assert.equal(ends,1);assert.equal(refreshes,0)
+ fail=false;input='new-name';gate=deferred();const pending=rename().props.action();await tick();const n=prompts.length;await rename().props.action();assert.equal(prompts.length,n);gate.resolve();await pending;gate=null;assert.deepEqual(calls.at(-1),['repo','main','new-name']);assert.equal(refreshes,1)
+ promptGate=deferred();const stale=rename().props.action();await tick();data.branchInfo.current='changed';h.render();promptGate.resolve('stale');await stale;assert.match(toasts.at(-1)[0],/已变化/);assert.equal(calls.length,2);promptGate=null;data.branchInfo.current='main'
  for(const scenario of [
   {oldRemote:'origin',remoteError:null,pushedNewBranch:true},
   {oldRemote:'origin',remoteError:'push denied',pushedNewBranch:false},
   {oldRemote:'origin',remoteError:'delete denied',pushedNewBranch:true},
  ]){
-  result=scenario;await rename().props.action();assert.match(form().message,/同步远端/);assert.doesNotMatch(form().message,/仅.*本地/);await form().onConfirm('remote-name');h.render();assert.equal(h.tree.props.sheet.isPresented,false)
+  result=scenario;input='remote-name';await rename().props.action();assert.match(prompts.at(-1).message,/同步远端/);h.render();assert.equal(h.tree.props.sheet.isPresented,false)
   if(!scenario.remoteError)assert.match(toasts.at(-1)[0],/已重命名并同步远端/)
-  else {assert.equal(h.tree.props.alert.title,'本地已重命名，远端同步失败');assert.match(JSON.stringify(h.tree.props.alert.message),scenario.pushedNewBranch?/删除远端旧分支失败/:/推送新分支失败/);assert.ok(JSON.stringify(h.tree.props.alert.message).includes(scenario.remoteError));h.tree.props.alert.onChanged(false)}
+  else {assert.equal(h.tree.props.alert.title,'本地已重命名，远端同步失败');assert.match(JSON.stringify(h.tree.props.alert.message),scenario.pushedNewBranch?/删除远端旧分支失败/:/推送新分支失败/);h.tree.props.alert.onChanged(false)}
  }
- data.mergeInProgress=true;assert.equal(rename().props.disabled,true);await rename().props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false);data.mergeInProgress=false
+ data.mergeInProgress=true;assert.equal(rename().props.disabled,true);const before=prompts.length;await rename().props.action();assert.equal(prompts.length,before);data.mergeInProgress=false
  const picker=all(section()).find(n=>n.type==='Picker');assert.equal(picker.props.title,'更改分支')
  let switched;const direct=Section({...all(h.tree).find(n=>n.type==='RepoBranchSection').props,onSwitch:ref=>switched=ref});all(direct).find(n=>n.type==='Picker').props.onChanged('topic');assert.equal(switched,'topic')
  const remote=all(h.tree.props.toolbar.topBarTrailing).find(n=>n.type==='Button'&&n.props.title==='Edit Remote Files');assert.ok(remote);remote.props.action();assert.deepEqual(calls.at(-1),['remote',3])
  const content=fs.readFileSync(path.join(__dirname,'../components/RepoDetailContent.tsx'),'utf8');assert.match(content,/<Text tag=\{2\}>状态<\/Text>/);assert.match(content,/<HistoryTab/)
- h.unmount();console.log('PASS actual branch header click opens declared sheet; cancellation/no-op/invalid/stale/failure/retry/duplicate guards; unchanged picker and remote navigation with requested labels')
+ h.unmount();console.log('PASS actual branch header click opens centered Dialog.prompt; cancellation/no-op/invalid/stale/failure/retry/duplicate guards; unchanged picker and remote navigation with requested labels')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

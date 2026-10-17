@@ -24,9 +24,7 @@ import {
   RepoDetailTabContent,
 } from "../components/RepoDetailContent"
 import { RepoDetailDestination } from "../components/RepoDetailDestination"
-import { CreateLocalEntrySheet } from "../components/CreateLocalEntrySheet"
 import { useLocalEntryCreation } from "../hooks/useLocalEntryCreation"
-import { NameInputSheet } from "../components/NameInputSheet"
 import { CommitMessageSheet } from "../components/CommitMessageSheet"
 import { useOpBusy } from "../hooks/useOpBusy"
 import { useRepoDetailData } from "../hooks/useRepoDetailData"
@@ -141,7 +139,6 @@ export function RepoDetailPage({
     handleMergeIntoCurrent,
     handleSwitchBranch,
     handleRenameBranch,
-    renameFrom, renameError, cancelRenameBranch, confirmRenameBranch,
     handleCreateBranch,
   } = useRepoBranchActions({
     bookmarkName,
@@ -330,15 +327,11 @@ export function RepoDetailPage({
         ),
       }}
       sheet={{
-        isPresented: localCreation.form != null || renameFrom != null || worktree.commitSheetMode != null,
+        isPresented: worktree.commitSheetMode != null,
         onChanged: (presented: boolean) => {
-          if (!presented) { localCreation.cancel(); cancelRenameBranch(); worktree.closeCommitSheet() }
+          if (!presented) worktree.closeCommitSheet()
         },
-        content: localCreation.form != null ? (
-          <CreateLocalEntrySheet key={`create-${localCreation.form.id}`} directory={localCreation.form.directory} busy={localCreation.busy} error={localCreation.error} onCancel={localCreation.cancel} onConfirm={localCreation.confirm} />
-        ) : renameFrom != null ? (
-          <NameInputSheet key={`rename-${renameFrom}`} title="重命名分支" initialName={renameFrom} message="重命名当前分支；已发布的分支会同步远端（推送新分支并删除远端旧分支）。" busy={mutating} error={renameError} onCancel={cancelRenameBranch} onConfirm={confirmRenameBranch} />
-        ) : worktree.commitSheetMode === "amend" ? (
+        content: worktree.commitSheetMode === "amend" ? (
           <CommitMessageSheet
             key={`amend-${pendingActions.amendDraft.title}`}
             navigationTitle="重编提交"
@@ -450,7 +443,7 @@ export function RepoDetailPage({
         log={data.log}
         trackedFiles={data.trackedFiles}
         onOpenLocalFile={openLocalFile}
-        creationActive={localCreation.form != null || localCreation.busy}
+        creationActive={localCreation.busy}
         onCreateLocalEntry={localCreation.open}
         onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
         loading={data.loading}

@@ -1,4 +1,4 @@
-import { useRef, useState } from "scripting"
+import { useRef } from "scripting"
 import {
   checkoutBranch,
   createBranch,
@@ -86,36 +86,31 @@ export function useRepoBranchActions({
     }
   }
 
-  const [renameFrom, setRenameFrom] = useState<string | null>(null)
-  const [renameError, setRenameError] = useState("")
   const renameBusy = useRef(false)
-
-  function handleRenameBranch() {
+  const branchContext = useRef({ bookmarkName, currentBranch, mutating, mergeInProgress })
+  branchContext.current = { bookmarkName, currentBranch, mutating, mergeInProgress }
+  async function handleRenameBranch() {
     if (mutating || mergeInProgress || !hasCommits || renameBusy.current) return
-    if (!currentBranch) {
-      showToast("当前没有可重命名的分支", "warning")
-      return
-    }
-    setRenameError("")
-    setRenameFrom(currentBranch)
-  }
-  function cancelRenameBranch() {
-    if (!renameBusy.current) setRenameFrom(null)
-  }
-  async function confirmRenameBranch(input: string) {
-    if (!renameFrom || mutating || mergeInProgress || renameBusy.current) return
-    const from = renameFrom
-    let to: string
-    try { to = validateBranchName(input) }
-    catch (error: any) { setRenameError(`名称无效：${String(error?.message || error)}`); return }
-    if (to === from) { setRenameFrom(null); return }
-    if (currentBranch !== from) { setRenameError("当前分支已变化，请取消后重试"); return }
+    if (!currentBranch) { showToast("当前没有可重命名的分支", "warning"); return }
+    const from = currentBranch
     renameBusy.current = true
-    setRenameError("")
+    let started = false
     try {
+      const input = await Dialog.prompt({
+        title: "重命名分支",
+        message: "重命名当前分支；已发布的分支会同步远端（推送新分支并删除远端旧分支）。",
+        defaultValue: from, selectAll: true, cancelLabel: "取消", confirmLabel: "重命名",
+      })
+      if (input == null) return
+      let to: string
+      try { to = validateBranchName(input) }
+      catch (error: any) { showToast(`名称无效：${String(error?.message || error)}`, "error"); return }
+      if (to === from) return
+      const latest = branchContext.current
+      if (latest.bookmarkName !== bookmarkName || latest.currentBranch !== from || latest.mutating || latest.mergeInProgress) { showToast("当前分支或工作区状态已变化，请重试", "warning"); return }
+      started = true
       await beginOpBusy("正在重命名分支", `${from} → ${to}`)
       const result = await renameBranch(bookmarkName, from, to)
-      setRenameFrom(null)
       try { await reloadRepo() }
       catch (error: any) { showToast(`分支已重命名，刷新失败：${String(error?.message || error)}`, "warning") }
       if (!result.oldRemote) {
@@ -129,10 +124,10 @@ export function useRepoBranchActions({
         showToast(`已重命名并同步远端：${from} → ${to}`, "success")
       }
     } catch (error: any) {
-      setRenameError(`重命名失败：${String(error?.message || error)}`)
+      showToast(`重命名失败：${String(error?.message || error)}`, "error")
     } finally {
       renameBusy.current = false
-      endOpBusy()
+      if (started) endOpBusy()
     }
   }
 
@@ -174,7 +169,6 @@ export function useRepoBranchActions({
     handleMergeIntoCurrent,
     handleSwitchBranch,
     handleRenameBranch,
-    renameFrom, renameError, cancelRenameBranch, confirmRenameBranch,
     handleCreateBranch,
   }
 }

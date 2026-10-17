@@ -11,9 +11,9 @@ const execution=load('services/localImportExecution.ts')
 const {pickLocalDirectory,pickLocalDocument,pickLocalPhoto}=load('services/localFileImport.ts',{'./localImportExecution':execution})
 function photo(types,path){return {itemProvider:{registeredTypes:types,loadFilePath:async type=>{calls.push(['representation',type]);return path},loadUIImage:()=>{throw Error('must not transcode')},loadData:()=>{throw Error('must not load entire photo into JS')}}}}
 async function main(){
- assert.equal(await pickLocalDirectory(),null);directory='/selected/Whole Folder/';const folder=await pickLocalDirectory();assert.equal(folder.name,'Whole Folder');assert.equal(folder.sourcePath,'/selected/Whole Folder');await folder.release();assert.deepEqual(removed,[]);assert.deepEqual(bookmarks,[])
+ const progress=[];assert.equal(await pickLocalDirectory(message=>progress.push(message)),null);assert.match(progress.at(-1),/返回0项/);directory='/selected/Whole Folder/';const folder=await pickLocalDirectory(message=>progress.push(message));assert.match(progress.at(-1),/返回类型=目录/);assert.ok(progress.every(message=>!message.includes('/selected/')));assert.equal(folder.name,'Whole Folder');assert.equal(folder.sourcePath,'/selected/Whole Folder');await folder.release();assert.deepEqual(removed,[]);assert.deepEqual(bookmarks,[])
  assert.deepEqual(calls.find(c=>c[1]?.types)[1],{types:['public.folder'],allowsMultipleSelection:false,shouldShowFileExtensions:true})
- directory='/selected/not-a-folder.txt';await assert.rejects(pickLocalDirectory(),/未返回目录/);assert.deepEqual(bookmarks,[])
+ directory='/selected/not-a-folder.txt';await assert.rejects(pickLocalDirectory(message=>progress.push(message)),/未返回目录/);assert.match(progress.at(-1),/非目录/);assert.deepEqual(bookmarks,[])
  assert.equal(await pickLocalDocument(),null);assert.equal(await pickLocalPhoto(),null)
  documents=['/selected/原文件.ZIP'];let selected=await pickLocalDocument();assert.equal(selected.sourcePath,documents[0]);assert.equal(selected.name,'原文件.ZIP');await selected.release();assert.deepEqual(removed,[])
  assert.deepEqual(calls.find(c=>c[0]==='files'&&!c[1].types)[1],{allowsMultipleSelection:false,shouldShowFileExtensions:true})

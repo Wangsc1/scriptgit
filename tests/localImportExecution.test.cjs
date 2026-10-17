@@ -34,7 +34,7 @@ async function testUI(){
  deferredThread();let moves=0,refreshes=0,loads=0
  global.FileManager={stat:async()=>({size:17,modificationDate:2})}
  global.UUID={string:()=>require('node:crypto').randomUUID()}
- global.ItemProvider={fromText:value=>({value,loadText:async()=>value})}
+ global.ItemProvider={fromText:value=>({value,registeredTypes:['public.utf8-plain-text'],loadText:async()=>value})}
  const FilesTab=load('pages/FilesTab.tsx',{
   scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
   '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
@@ -48,11 +48,13 @@ async function testUI(){
  assert.ok(nodes().some(n=>n.type==='Text'&&n.children.join('').includes('bytes:17')),'metadata result must arrive through deferred main callback')
  assert.ok(!JSON.stringify(h.tree).includes('元数据读取失败'))
  const file=nodes().find(n=>n.type==='Button'&&n.props.onDrag),folder=nodes().find(n=>n.type==='DisclosureGroup')
- const provider=file.props.onDrag.data();assert.equal(typeof provider.loadText,'function');assert.equal(provider instanceof Promise,false,'native drag provider return stays synchronous')
+ const provider=file.props.onDrag.data();await flush();h.render();assert.match(JSON.stringify(h.tree),/已开始.*public.utf8-plain-text/);assert.equal(JSON.stringify(h.tree).includes('scriptgit-local-move:'),false);assert.equal(typeof provider.loadText,'function');assert.equal(provider instanceof Promise,false,'native drag provider return stays synchronous')
  const info={hasItemsConforming:()=>true,itemProviders:()=>[{loadText(){loads++;return provider.loadText()}}]}
- const accepted=folder.props.onDrop.performDrop(info);assert.equal(accepted,true);assert.equal(loads,1,'load begins before performDrop returns');assert.equal(moves,0)
+ assert.equal(folder.props.onDrop.validateDrop({hasItemsConforming:()=>false}),false);await flush();h.render();assert.match(JSON.stringify(h.tree),/文本类型不匹配/)
+ assert.equal(folder.props.onDrop.validateDrop(info),true);await flush();h.render();assert.match(JSON.stringify(h.tree),/可接收，松手后移动/)
+ const accepted=folder.props.onDrop.performDrop(info);assert.equal(accepted,true);assert.equal(loads,1,'load begins before performDrop returns');assert.equal(moves,0);await tick();assert.ok(pending.length>0,'phase updates await native callback delivery')
  assert.equal(folder.props.onDrop.performDrop(info),false,'busy ref locks immediately, before delayed UI update')
- await flush();h.render();assert.equal(moves,1);assert.equal(refreshes,1);assert.equal(all(h.tree.props.header).find(n=>n.type==='Menu').props.disabled,false)
+ await flush();h.render();assert.equal(moves,1);assert.equal(refreshes,1);assert.match(JSON.stringify(h.tree),/移动成功，已刷新工作区/);assert.equal(all(h.tree.props.header).find(n=>n.type==='Menu').props.disabled,false)
  h.unmount()
  // State can change while the native dispatch callback is queued, before write begins.
  deferredThread();const queued=mount(FilesTab,props,{effectUpdates:true});await flush();queued.render()
