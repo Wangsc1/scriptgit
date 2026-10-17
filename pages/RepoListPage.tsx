@@ -35,14 +35,13 @@ import {
   addRepoByPicker,
   sourceLabel,
 } from "../services/repoStore"
-import { initRepo, removeRepo } from "../services/gitService"
+import { initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
 import {
   COLOR_LABEL,
   COLOR_SECONDARY_LABEL,
-  COLOR_ACCENT,
   COLOR_ORANGE,
   COLOR_GREEN,
   COLOR_RED,
@@ -66,7 +65,7 @@ export function RepoListPage() {
     message: string
   } | null>(null)
   const {
-    statusMap, snapshotMap, repoRefreshMap, progress, githubUpdatedProgress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
+    statusMap, snapshotMap, repoRefreshMap, githubUpdatedProgress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
   } = useRepoListStatus(setRepos)
   useStartupAutoPull(key => {
     const repo = repos.find(item => item.bookmarkName === key)
@@ -133,6 +132,21 @@ export function RepoListPage() {
     }
   }
 
+  // 下拉刷新：先刷新状态，再对全部克隆仓库做快进拉取
+  async function refreshAndPullAll() {
+    await refreshAll(true)
+    for (const repo of repos) {
+      if (repo.source !== "clone") continue
+      try {
+        await autoPullFastForward(repo.bookmarkName)
+        await refreshRepo(repo)
+      } catch (e: any) {
+        // 单个仓库拉取失败不阻断其它仓库
+        console.warn(`拉取 ${repo.name} 失败: ${String(e?.message || e)}`)
+      }
+    }
+  }
+
   const activeAlert =
     pendingDelete != null
       ? {
@@ -180,7 +194,7 @@ export function RepoListPage() {
       }
       onAppear={appear}
       onDisappear={disappear}
-      refreshable={() => refreshAll(true)}
+      refreshable={refreshAndPullAll}
       navigationDestination={{
         isPresented: showClone,
         onChanged: setShowClone,
@@ -243,7 +257,6 @@ export function RepoListPage() {
       {repos.length > 0 ? <Section>
         {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
         {githubUpdatedProgress.failed > 0 ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>部分 GitHub 更新时间未刷新，保留已有时间缓存。{githubUpdatedProgress.error}</Text> : null}
-        <Button title="重试状态刷新" action={() => refreshAll(true)} disabled={progress.running} />
       </Section> : null}
       {repos.length === 0 ? (
         <Section>
@@ -308,7 +321,6 @@ function RepoRow({
   visibility?: GitHubRepoVisibility
 }) {
   const source = sourceLabel(repo)
-  const isClone = source === "克隆"
   const uncommitted = status?.uncommitted ?? snapshot?.uncommitted ?? 0
   const ahead = status?.ahead ?? snapshot?.ahead ?? 0
   const branch = status?.branch ?? snapshot?.branch
@@ -348,8 +360,8 @@ function RepoRow({
   return (
     <HStack alignment="center" spacing={10}>
       <Image
-        systemName={isClone ? "cloud.fill" : "folder.fill"}
-        foregroundStyle={isClone ? COLOR_ACCENT : COLOR_GREEN}
+        systemName="folder.fill"
+        foregroundStyle={COLOR_GREEN}
       />
       <VStack alignment="leading" spacing={2}>
         <Text font="headline" foregroundStyle={COLOR_LABEL}>

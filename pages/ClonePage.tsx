@@ -42,9 +42,6 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [results, setResults] = useState<CloneResult[]>([])
   const [listError, setListError] = useState("")
-  const [diagName, setDiagName] = useState("")
-  const [diagText, setDiagText] = useState("")
-  const [diagBusy, setDiagBusy] = useState(false)
   const alive = useRef(true)
   const locked = useRef(false)
   const listRequest = useRef(0)
@@ -199,21 +196,6 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     if (!cloneUrl.trim()) return
     return execute([{ name: repo?.name || repoNameFromUrl(cloneUrl.trim()), url: cloneUrl.trim(), githubRepo: repo }], false)
   }
-  async function checkDirectory() {
-    if (diagBusy || cloning) return
-    setDiagBusy(true)
-    try {
-      const names = [...myRepos, ...ownedRepos].map(repo => repo.name)
-      const text = await runDirectoryCheck(destination, names, diagName)
-      if (alive.current) setDiagText(text)
-    } catch (e: any) {
-      if (alive.current) setDiagText("目录检查失败：" + hideSystemDetails(e?.message || e))
-    } finally { if (alive.current) setDiagBusy(false) }
-  }
-  async function copyDiagnostics() {
-    try { await Pasteboard.setString(diagText); showToast("已复制检查结果", "success") }
-    catch (e: any) { showToast("复制失败：" + hideSystemDetails(e?.message || e), "error") }
-  }
   function cancel() { cancelRef.current?.cancel(); setCancelling(true); setProgress("取消中…已完成仓库保留，等待当前网络检查点") }
   const selectedRepos = ownedRepos.filter(repo => selected.includes(repo.fullName))
   const counts = Object.entries(STATUS).map(([status, label]) => `${label} ${results.filter(item => item.status === status).length}`).join(" · ")
@@ -226,16 +208,12 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
       {directoryError ? <Text foregroundStyle="red">{hideSystemDetails(directoryError)}</Text> : null}
       <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
-      <FormRow label="检查名称" prompt="可选，如 exchange；留空检查已加载仓库" value={diagName} onChanged={setDiagName} />
-      <Button title="目录检查" action={checkDirectory} disabled={cloning || diagBusy} />
-      {diagText ? <Text font="caption">{diagText}</Text> : null}
-      {diagText ? <Button title="复制检查结果" action={copyDiagnostics} /> : null}
     </Section>
     <Section header={<Text>单个仓库</Text>}>
       <FormRow label="Git URL" prompt="https://github.com/user/repo.git" value={url} onChanged={setUrl} />
       <Button title="克隆" action={() => cloneSingle()} disabled={cloning || loadingRepos || !url.trim()} />
     </Section>
-    <Section header={<Text>按 GitHub 用户名批量添加</Text>}>
+    <Section header={<Text>按 GitHub 用户名添加</Text>}>
       {!hasToken() ? <Text>未配置 Token：仅公开仓库，可匿名加载与克隆。</Text> : null}
       <FormRow label="用户名" prompt="输入至少 2 个字符搜索用户，或填写完整 login" value={username} onChanged={(value: string) => changeUsername(value)} />
       {userSearch.loading ? <Text>搜索用户中…</Text> : null}
