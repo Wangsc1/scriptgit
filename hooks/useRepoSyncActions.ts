@@ -15,6 +15,7 @@ type UseRepoSyncActionsProps = {
   displayName: string
   currentBranch: string | null
   hasRemote: boolean
+  resolvePushContext?: () => Promise<{ branch: string | null; hasRemote: boolean }>
   beginOpBusy: (
     title: string,
     message?: string,
@@ -36,6 +37,7 @@ export function useRepoSyncActions({
   displayName,
   currentBranch,
   hasRemote,
+  resolvePushContext,
   beginOpBusy,
   updateOpBusy,
   endOpBusy,
@@ -67,9 +69,10 @@ export function useRepoSyncActions({
     }
     try {
       await beginOpBusy("正在推送", "正在打包对象…", makeSyncCancel(token))
-      const branch = currentBranch
+      const context = resolvePushContext ? await resolvePushContext() : { branch: currentBranch, hasRemote }
+      const branch = context.branch
       if (!branch) throw new Error("当前没有可推送的分支")
-      if (hasRemote && (await hasRemoteBranch(bookmarkName, branch, "origin"))) {
+      if (context.hasRemote && (await hasRemoteBranch(bookmarkName, branch, "origin"))) {
         try {
           await updateOpBusy("正在推送", "先拉取最新…")
           await pull(bookmarkName, "origin", branch, undefined, remoteOptions)

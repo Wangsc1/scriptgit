@@ -38,8 +38,9 @@ import {
   listRepos,
   addRepoByPicker,
   sourceLabel,
+  updateBranchLastPulledAt,
 } from "../services/repoStore"
-import { initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
+import { getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
@@ -54,6 +55,7 @@ import { githubRepoFromRemoteUrl } from "../utils/github"
 import { yieldForUi } from "../utils/remoteProgress"
 import { sortReposByGithubUpdated } from "../utils/repoSort"
 import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
+import { useRepoSyncActions } from "../hooks/useRepoSyncActions"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
 
 export function RepoListPage() {
@@ -137,8 +139,41 @@ export function RepoListPage() {
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
 
+  const [pushTarget, setPushTarget] = useState<RepoMeta | null>(null)
+  const pushGate = useRef(false)
+  const [pushProgress, setPushProgress] = useState<{ title: string; message?: string; onCancel?: () => void } | null>(null)
+  const sync = useRepoSyncActions({
+    bookmarkName: pushTarget?.bookmarkName || "",
+    displayName: pushTarget?.name || "",
+    currentBranch: null,
+    hasRemote: false,
+    resolvePushContext: async () => {
+      if (!pushTarget) throw new Error("未选择仓库")
+      const status = await getRepoListStatus(pushTarget.bookmarkName, undefined, { source: "列表提交", force: true })
+      if (status.error || !status.workdirOk) throw new Error(status.error || "无法读取仓库")
+      if (status.mergeInProgress || status.conflictCount) throw new Error("仓库存在未完成合并，请进入仓库处理")
+      return { branch: status.branch || null, hasRemote: status.hasRemote }
+    },
+    beginOpBusy: async (title, message, onCancel) => { if (alive.current) setPushProgress({ title, message, onCancel }) },
+    updateOpBusy: async (title, message) => { if (alive.current) setPushProgress(previous => ({ title, message, onCancel: previous?.onCancel })) },
+    endOpBusy: () => { pushGate.current = false; if (alive.current) { setPushProgress(null); setPushTarget(null) } },
+    makeSyncCancel: token => () => token.cancel(),
+    setPulledAt: (branch, timestamp) => { if (pushTarget) updateBranchLastPulledAt(pushTarget.bookmarkName, branch, timestamp) },
+    refreshSyncState: async () => { if (alive.current && pushTarget) refreshRepo(pushTarget) },
+    reloadRepo: async () => { if (alive.current && pushTarget) refreshRepo(pushTarget) },
+    showToast: message => { if (alive.current) showAlert("提交结果", message) },
+    showConflictNotice: message => { if (alive.current) showAlert("合并冲突", message) },
+  })
+  useEffect(() => { if (pushTarget) void sync.handlePush() }, [pushTarget])
+  function pushOne(repo: RepoMeta) {
+    if (pushGate.current || pulling.current || singlePull.current) return
+    pushGate.current = true
+    setPushTarget(repo)
+  }
+
   function pullOne(repo: RepoMeta): Promise<void> {
     if (pulling.current) return pulling.current
+    if (pushGate.current) return Promise.resolve()
     if (singlePull.current) return singlePull.current
     setPullBusy(true)
     const pending = Promise.resolve().then(async () => {
@@ -163,6 +198,7 @@ export function RepoListPage() {
   // 下拉刷新显式拉取所有来源，复用在途任务；不先做一次无用的全仓扫描。
   function refreshAndPullAll(): Promise<void> {
     if (pulling.current) return pulling.current
+    if (pushGate.current) return Promise.resolve()
     setPullBusy(true)
     setBatchProgress({ completed: 0, total: 1, current: "准备拉取…" })
     const pending = Promise.resolve().then(async () => {
@@ -234,7 +270,9 @@ export function RepoListPage() {
       navigationTitle="scriptgit"
       navigationBarTitleDisplayMode="large"
       overlay={
-        showRemovingOverlay
+        pushProgress
+          ? { alignment: "center", content: <BusyOverlay title={pushProgress.title} message={pushProgress.message} onCancel={pushProgress.onCancel} /> }
+          : showRemovingOverlay
           ? {
               alignment: "center",
               content: (
@@ -334,12 +372,16 @@ export function RepoListPage() {
                   <Button
                     title="拉取"
                     tint="systemBlue"
-                    disabled={pullBusy}
+                    disabled={pullBusy || pushTarget !== null}
                     action={() => pullOne(repo)}
                   />,
+                  ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
+                    || (statusMap[repo.bookmarkName]?.ahead ?? snapshotMap[repo.bookmarkName]?.ahead ?? 0) > 0)
+                    ? [<Button title="提交" tint="systemGreen" disabled={pullBusy || pushTarget !== null} action={() => pushOne(repo)} />] : []),
                   <Button
                     title="删除"
                     tint="systemRed"
+                    disabled={pullBusy || pushTarget !== null}
                     action={() => setPendingDelete(repo)}
                   />,
                 ],

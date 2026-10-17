@@ -1,7 +1,7 @@
 /* Real homepage refresh callback, mocked safe-pull facade: no network/write effects. */
 const assert = require('node:assert/strict')
 const { load, mount, ui, all, tick, deferred } = require('./remoteFiles.test.cjs')
-function page(rows, pull, refresh, refreshOne = () => {}) {
+function page(rows, pull, refresh, refreshOne = () => {}, overrides = {}) {
   const scripting = new Proxy(ui, { get(target, key) { return key === 'Navigation' ? { useDismiss: () => () => {} } : target[key] } })
   return load('pages/RepoListPage.tsx', {
     scripting,
@@ -14,7 +14,8 @@ function page(rows, pull, refresh, refreshOne = () => {}) {
     '../utils/repoSort': { sortReposByGithubUpdated: value => value },
     '../hooks/useRepoListStatus': { useRepoListStatus: () => ({ statusMap: {}, snapshotMap: {}, repoRefreshMap: {}, githubUpdatedProgress: {}, refreshAll: refresh, refreshRepo: refreshOne }) },
     '../hooks/useStartupAutoPull': { useStartupAutoPull() { throw Error('App opening must not start auto pull') } },
-    '../hooks/useRepoVisibilities': { useRepoVisibilities: () => ({}) },
+    '../hooks/useRepoSyncActions': { useRepoSyncActions: () => ({ handlePush: async () => {} }) }, '../hooks/useRepoVisibilities': { useRepoVisibilities: () => ({}) },
+    ...overrides,
   }).RepoListPage
 }
 async function main() {
@@ -65,4 +66,5 @@ async function main() {
   assert.equal(single.tree.props.alert.title, '拉取完成'); single.unmount()
   console.log('PASS 下拉涵盖所有来源、重复下拉单飞、单仓跳过/失败不阻断、最后仅刷新一次、卸载停止后续任务；蓝色左滑仅拉取目标仓库且防重复')
 }
-main().catch(error => { console.error(error); process.exitCode = 1 })
+module.exports = { page }
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
