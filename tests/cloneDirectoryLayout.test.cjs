@@ -48,8 +48,8 @@ async function main(){
   const root=path.join(__dirname,'..')
   const source=ts.createSourceFile('ClonePage.tsx',fs.readFileSync(path.join(root,'pages/ClonePage.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
   assert.equal(source.parseDiagnostics.length,0)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.4.5')
-  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.4\.5\*\*/)
-  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; both specified footers absent; search caption absent; ClonePage TSX syntax; 1.4.5 versions.')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8')).version,'1.4.6')
+  assert.match(fs.readFileSync(path.join(root,'README.md'),'utf8'),/当前版本 \*\*1\.4\.6\*\*/)
+  console.log('PASS directory row hidden; exact button label/order; external/default/retry behavior; batch directory confirmation retained; both specified footers absent; search caption absent; ClonePage TSX syntax; 1.4.6 versions.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

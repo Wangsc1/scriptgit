@@ -84,7 +84,7 @@ async function main(){
     assert.deepEqual((await api.listMyRepos(20)).map(r=>r.fullName),['a/ok'])
   })
   await test('metadata/readme minimal and old decision predicates unchanged',async()=>{
-    const meta=JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8'));assert.equal(meta.version,'1.4.5');const readme=fs.readFileSync(path.join(root,'README.md'),'utf8');assert.match(readme,/当前版本 \*\*1\.4\.5\*\*/);assert.match(readme,/「目录检查」是只读诊断/);assert.doesNotMatch(readme,/Octicons|primer|THIRD_PARTY/)
+    const meta=JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8'));assert.equal(meta.version,'1.4.6');const readme=fs.readFileSync(path.join(root,'README.md'),'utf8');assert.match(readme,/当前版本 \*\*1\.4\.6\*\*/);assert.match(readme,/「目录检查」是只读诊断/);assert.doesNotMatch(readme,/Octicons|primer|THIRD_PARTY/)
     const queue=fs.readFileSync(path.join(root,'services/cloneQueue.ts'),'utf8');assert.match(queue,/key\(name\) === key\(request\.name\)/);assert.match(queue,/FileManager\.exists\(path\)/);assert.doesNotMatch(fs.readFileSync(path.join(root,'services/cloneDiagnostics.ts'),'utf8'),/createDirectory\(|rename\(|remove\(|downloadFileFromiCloud\(|write/)
   })
   console.log(`\n${groups} clone diagnostics groups passed; in-memory FileManager only, no real clone/write.`)

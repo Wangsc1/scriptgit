@@ -1,5 +1,5 @@
 {
-  "color" : "rgba(88, 166, 255, 1)",
+  "color" : "rgba(0, 0, 0, 1)",
   "runInApp" : true,
   "remoteResource" : {
     "url" : "https://github.com/Wangsc1/scriptgit"
@@ -16,7 +16,7 @@
     "de" : ""
   },
   "entry" : "index.tsx",
-  "version" : "1.4.5",
+  "version" : "1.4.6",
   "localizedNames" : {
     "de" : "",
     "es" : "",
