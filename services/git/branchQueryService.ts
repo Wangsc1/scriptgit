@@ -5,7 +5,7 @@ async function hasHead(gitdir: string): Promise<boolean> {
   return FileManager.exists(gitdir + "/HEAD")
 }
 
-/** 当前命名分支名（解析失败返回 null，供 UI 判断是否可回滚/回退） */
+/** 当前命名分支；无 HEAD/分离 HEAD 返回 null，读取或解析失败向调用方报告。 */
 export async function getCurrentBranchName(
   bookmarkName: string
 ): Promise<string | null> {
@@ -48,12 +48,7 @@ export async function getBranches(bookmarkName: string): Promise<BranchInfo> {
   const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
   if (!(await hasHead(gitdir))) return { branches: [], current: null }
   // 分支查询保持只读；不能在状态扫描并行时 force checkout 工作区。
-  let localBranches: string[] = []
-  try {
-    localBranches = await git.listBranches({ fs, dir, gitdir })
-  } catch (_e) {
-    localBranches = []
-  }
+  const localBranches: string[] = await git.listBranches({ fs, dir, gitdir })
   let remoteBranches: string[] = []
   try {
     remoteBranches = await git.listBranches({ fs, dir, gitdir, remote: "origin" })
@@ -81,12 +76,7 @@ export async function getManagedBranches(
     return { current: null, locals: [], remotes: [], remoteNames: [], hasRemote: false }
   }
   // 分支查询保持只读；不能在状态扫描并行时 force checkout 工作区。
-  let locals: string[] = []
-  try {
-    locals = await git.listBranches({ fs, dir, gitdir })
-  } catch (_e) {
-    locals = []
-  }
+  const locals: string[] = await git.listBranches({ fs, dir, gitdir })
   let hasRemote = false
   try {
     const remotes = (await git.listRemotes({ fs, dir, gitdir })) as {

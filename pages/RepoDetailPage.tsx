@@ -127,6 +127,8 @@ export function RepoDetailPage({
     worktree.stashBusy ||
     opBusy != null
 
+  const branchUnavailable = data.branchStateKnown === false
+
   const {
     handleMergeIntoCurrent,
     handleSwitchBranch,
@@ -138,7 +140,7 @@ export function RepoDetailPage({
     currentBranch: data.branchInfo.current,
     hasCommits: data.hasCommits,
     hasRemote: data.hasRemote,
-    mutating,
+    mutating: mutating || branchUnavailable,
     mergeInProgress: data.mergeInProgress,
     beginOpBusy,
     endOpBusy,
@@ -148,7 +150,7 @@ export function RepoDetailPage({
     showConflictNotice,
   })
 
-  const { handlePush, handlePull } = useRepoSyncActions({
+  const { handlePush: performPush, handlePull: performPull } = useRepoSyncActions({
     bookmarkName,
     displayName: data.displayName,
     currentBranch: data.branchInfo.current,
@@ -166,6 +168,15 @@ export function RepoDetailPage({
     showToast,
     showConflictNotice,
   })
+
+  async function handlePush() {
+    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
+    await performPush()
+  }
+  async function handlePull() {
+    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
+    await performPull()
+  }
 
   async function handleRefresh() {
     // 写操作完成后已有统一刷新，此时不再并发读取其它 Tab 的中间状态。
@@ -376,6 +387,9 @@ export function RepoDetailPage({
     >
       <RepoBranchSection
         branchInfo={data.branchInfo}
+        branchesLoaded={data.branchesLoaded}
+        branchLoading={data.branchLoading}
+        branchError={data.branchError}
         remoteOnlyBranches={data.remoteOnlyBranches}
         remoteBranchNames={data.remoteBranchNames}
         mergeSources={data.mergeSources}
@@ -401,6 +415,7 @@ export function RepoDetailPage({
 
       <RepoRemoteSections
         branchInfo={data.branchInfo}
+        branchUnavailable={branchUnavailable}
         upstream={data.upstream}
         pulledLabel={data.pulledLabel}
         hasRemote={data.hasRemote}

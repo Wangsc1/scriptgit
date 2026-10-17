@@ -14,6 +14,7 @@ import type { BranchInfo } from "../types/git"
 
 export function RepoBranchSection({
   branchInfo,
+  branchesLoaded = true, branchLoading = false, branchError = null,
   remoteOnlyBranches,
   remoteBranchNames,
   mergeSources,
@@ -29,6 +30,9 @@ export function RepoBranchSection({
   onSwitch,
 }: {
   branchInfo: BranchInfo
+  branchesLoaded?: boolean
+  branchLoading?: boolean
+  branchError?: string | null
   remoteOnlyBranches: string[]
   remoteBranchNames: string[]
   mergeSources: string[]
@@ -43,7 +47,8 @@ export function RepoBranchSection({
   onCreate: () => void
   onSwitch: (branch: string) => void
 }) {
-  const mergeDisabled = mutating || mergeInProgress || !hasCommits
+  const branchUnavailable = !branchesLoaded || branchLoading || branchError !== null
+  const mergeDisabled = branchUnavailable || mutating || mergeInProgress || !hasCommits
 
   return (
     <Section
@@ -70,7 +75,7 @@ export function RepoBranchSection({
                   }
                   role="destructive"
                   action={() => onDelete(branch)}
-                  disabled={mutating || mergeInProgress}
+                  disabled={branchUnavailable || mutating || mergeInProgress}
                 />
               ))}
             </Menu>
@@ -100,14 +105,14 @@ export function RepoBranchSection({
           ) : null}
           <Button
             action={onRename}
-            disabled={mutating || mergeInProgress || !hasCommits || !branchInfo.current}
+            disabled={branchUnavailable || mutating || mergeInProgress || !hasCommits || !branchInfo.current}
           >
             <HStack alignment="center" spacing={4}>
               <Image systemName="pencil" font="caption" foregroundStyle={COLOR_ACCENT} />
               <Text font="caption" foregroundStyle={COLOR_ACCENT}>重命名</Text>
             </HStack>
           </Button>
-          <Button action={onCreate} disabled={mutating || mergeInProgress}>
+          <Button action={onCreate} disabled={branchUnavailable || mutating || mergeInProgress}>
             <HStack alignment="center" spacing={4}>
               <Image systemName="plus.circle" font="caption" foregroundStyle={COLOR_ACCENT} />
               <Text font="caption" foregroundStyle={COLOR_ACCENT}>新建</Text>
@@ -117,7 +122,10 @@ export function RepoBranchSection({
       }
       footer={
         <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-          {!hasCommits
+          {branchError
+            ? branchesLoaded ? "显示上次成功读取的分支，读取恢复前暂不可操作" : "分支信息未知，请下拉重试；不会按空仓库处理"
+            : branchLoading || !branchesLoaded ? "正在读取分支信息…"
+            : !hasCommits
             ? `空仓库默认 ${branchInfo.current || DEFAULT_BRANCH}，首次提交后才会真正创建分支引用`
             : hasRemote
               ? "含本地与 origin 远端分支"
@@ -125,9 +133,11 @@ export function RepoBranchSection({
         </Text>
       }
     >
+      {branchError ? <Text foregroundStyle="systemRed">分支读取失败：{branchError}</Text> : null}
       {branchInfo.branches.length > 0 ? (
         <Picker
           title="更改分支"
+          disabled={branchUnavailable || mutating || mergeInProgress}
           value={branchInfo.current ?? ""}
           onChanged={(value: string) => onSwitch(value)}
         >
@@ -139,7 +149,7 @@ export function RepoBranchSection({
         </Picker>
       ) : (
         <Text foregroundStyle={COLOR_SECONDARY_LABEL}>
-          默认 {DEFAULT_BRANCH}（尚未初始化）
+          {branchUnavailable ? branchError ? "分支信息读取失败，请下拉重试" : "正在读取分支信息…" : hasCommits ? "HEAD 未指向本地分支，暂无可选分支" : `默认 ${DEFAULT_BRANCH}（尚未初始化）`}
         </Text>
       )}
     </Section>

@@ -12,14 +12,12 @@ import {
   Text,
   HStack,
   Button,
-  Toggle,
   Image,
   Navigation,
   Toolbar,
   ToolbarItem,
   useState,
   useEffect,
-  useRef,
 } from "scripting"
 import type { Color } from "scripting"
 import { FormRow } from "../components/FormRow"
@@ -31,12 +29,6 @@ import {
   getVerifiedUser,
   saveVerifiedUser,
 } from "../services/authStore"
-import {
-  readNotifyEnabled,
-  writeNotifyEnabled,
-  readErrorNotifyEnabled,
-  writeErrorNotifyEnabled,
-} from "../services/storage"
 import { getHistoryCacheStats } from "../services/gitService"
 import {
   buildPerformanceReport,
@@ -72,15 +64,8 @@ export function SettingsPage() {
   const [diagnosticCount, setDiagnosticCount] = useState(
     () => getSlowOperations().length
   )
-  // 同步读 Storage，避免 useState(true) 先显示开、load 后再变关
-  const [notifyEnabled, setNotifyEnabled] = useState(() => readNotifyEnabled())
-  const [errorNotifyEnabled, setErrorNotifyEnabled] = useState(() => readErrorNotifyEnabled())
-  // Toggle 挂载/受控同步时可能误触 onChanged(false)，首帧内忽略写盘
-  const notifyWriteReadyRef = useRef(false)
-
   useEffect(() => {
     loadSettings()
-    notifyWriteReadyRef.current = true
   }, [])
 
   function showAlert(title: string, message: string) {
@@ -123,36 +108,6 @@ export function SettingsPage() {
     } else {
       // 无法校验（网络）：保留上次结果，仅标注
       setTokenCheck({ status: "error", message: result.message })
-    }
-  }
-
-  function handleNotifyChanged(value: boolean) {
-    if (!notifyWriteReadyRef.current) {
-      // 挂载期误触：不写 Storage，用当前存储值把开关拉回
-      setNotifyEnabled(readNotifyEnabled())
-      setErrorNotifyEnabled(readErrorNotifyEnabled())
-      return
-    }
-    if (value === notifyEnabled) return
-    try {
-      writeNotifyEnabled(value)
-      setNotifyEnabled(value)
-    } catch (e: any) {
-      showAlert("保存失败", String(e?.message || e))
-    }
-  }
-
-  function handleErrorNotifyChanged(value: boolean) {
-    if (!notifyWriteReadyRef.current) {
-      setErrorNotifyEnabled(readErrorNotifyEnabled())
-      return
-    }
-    if (value === errorNotifyEnabled) return
-    try {
-      writeErrorNotifyEnabled(value)
-      setErrorNotifyEnabled(value)
-    } catch (e: any) {
-      showAlert("保存失败", String(e?.message || e))
     }
   }
 
@@ -369,28 +324,6 @@ export function SettingsPage() {
         ),
       }}
     >
-      <Section
-        header={<Text>通知</Text>}
-        footer={
-          <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            提交、推送、拉取、克隆完成后的系统通知；失败通知为可选项
-          </Text>
-        }
-      >
-        <Toggle
-          title="完成通知"
-          systemImage="bell"
-          value={notifyEnabled}
-          onChanged={handleNotifyChanged}
-        />
-        <Toggle
-          title="失败通知"
-          systemImage="bell.badge"
-          value={errorNotifyEnabled}
-          onChanged={handleErrorNotifyChanged}
-        />
-      </Section>
-
       <Section
         header={<Text>GitHub Token</Text>}
         footer={

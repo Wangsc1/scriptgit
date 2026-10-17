@@ -73,6 +73,9 @@ export function useRepoDetailData({
     branches: [],
     current: null,
   })
+  const [branchesLoaded, setBranchesLoaded] = useState(false)
+  const [branchLoading, setBranchLoading] = useState(true)
+  const [branchError, setBranchError] = useState<string | null>(null)
   // 仅远端存在（本地无同名）的分支短名，用于分支列表标签与删除路由
   const [remoteOnlyBranches, setRemoteOnlyBranches] = useState<string[]>([])
   // 全部 origin 分支名：Picker 标签按「远端是否存在」显示 本地/远端
@@ -151,11 +154,24 @@ export function useRepoDetailData({
   }
 
   async function loadBranches() {
-    const b = await getManagedBranches(bookmarkName)
-    setBranchInfo({ branches: [...b.locals, ...b.remotes], current: b.current })
-    setRemoteOnlyBranches(b.remotes)
-    setRemoteBranchNames(b.remoteNames)
-    refreshMeta()
+    setBranchLoading(true)
+    try {
+      const b = await getManagedBranches(bookmarkName)
+      // 只有完整成功结果才能替换已知快照；失败时保留本地、远端和当前分支。
+      setBranchInfo({ branches: [...b.locals, ...b.remotes], current: b.current })
+      setRemoteOnlyBranches(b.remotes)
+      setRemoteBranchNames(b.remoteNames)
+      setBranchesLoaded(true)
+      setBranchError(null)
+      refreshMeta()
+    } catch (error: any) {
+      const message = String(error?.message || error)
+      const code = String(error?.code || "")
+      setBranchError(code && !message.includes(code) ? `${code}: ${message}` : message)
+      throw error
+    } finally {
+      setBranchLoading(false)
+    }
   }
 
   async function loadRemote() {
@@ -368,6 +384,8 @@ export function useRepoDetailData({
     historyLimited,
     trackedFiles,
     branchInfo,
+    branchesLoaded, branchLoading, branchError,
+    branchStateKnown: branchesLoaded && !branchLoading && branchError === null,
     remoteOnlyBranches,
     remoteBranchNames,
     mergeSources,

@@ -6,6 +6,7 @@ import {
   getGitdirPath,
   resolveWorkdir,
 } from "../repoStore"
+import { validateBranchName } from "../../utils/branch"
 import { isStatusMatrixClean } from "../../utils/stash"
 
 const GIT_REPOS_DIR = FileManager.appGroupDocumentsDirectory + "/git-repos"
@@ -141,9 +142,9 @@ export async function readSymbolicHeadBranch(fs: any): Promise<string | null> {
 }
 
 /**
- * 解析当前命名分支名（当前分支判定的唯一入口）。
- * 引擎解析不出时退回读 HEAD 符号引用（实测 unborn HEAD 引擎也能返回分支名，
- * 这里兜的是 HEAD 异常或引擎报错），只有 HEAD 缺失才返回 null。
+ * 严格读取 HEAD 后再询问引擎。部分引擎路径会把底层读取异常折叠为无分支，
+ * 因此不能仅凭 currentBranch 的空值认定 detached；真实缺失或分离 HEAD 才返回 null。
+ * 保留 readSymbolicHeadBranch 供其它既有调用使用，不扩大其它动作的容错修改。
  */
 export async function resolveCurrentBranch(
   git: any,
@@ -151,14 +152,21 @@ export async function resolveCurrentBranch(
   dir: string,
   gitdir: string
 ): Promise<string | null> {
-  let branch: string | null = null
+  let head: string
   try {
-    branch = await git.currentBranch({ fs, dir, gitdir, fullname: false })
-  } catch (_e) {
-    branch = null
+    head = String(await (fs.promises || fs).readFile(gitdir + "/HEAD", "utf8")).trim()
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return null
+    throw error
   }
-  if (!branch) branch = await readSymbolicHeadBranch(fs)
-  return branch || null
+  const symbolic = head.match(/^ref:\s*(refs\/\S+)$/)
+  const local = symbolic?.[1].startsWith("refs/heads/") ? symbolic[1].slice("refs/heads/".length) : null
+  if (local !== null) validateBranchName(local)
+  if (!symbolic && !/^[0-9a-f]{40}$/i.test(head)) throw new Error("HEAD 内容无效，无法读取当前分支")
+  // 引擎抛出的枚举/解析错误必须保留，不能用兜底值掩盖。
+  const branch = await git.currentBranch({ fs, dir, gitdir, fullname: false })
+  if (symbolic && local !== null) return branch || local
+  return null
 }
 
 /** 是否已有至少一次提交 */

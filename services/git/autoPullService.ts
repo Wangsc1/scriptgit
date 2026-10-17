@@ -1,7 +1,7 @@
 import { createHttpTransport } from "../gitCore"
 import { getAuth } from "../authStore"
 import { findRepo, updateBranchLastPulledAt } from "../repoStore"
-import { getCtx, resolveGitdir, type GitContext } from "./runtime"
+import { getCtx, resolveGitdir, resolveCurrentBranch, type GitContext } from "./runtime"
 import { parseUpstreamConfig, upstreamMergeBranch } from "../../utils/remote"
 import { checkRemoteCancelled, createGitOnProgress, type RemoteOpOptions } from "../../utils/remoteProgress"
 
@@ -17,11 +17,14 @@ async function inspect(ctx: GitContext): Promise<Baseline> {
   for (const marker of ["gitgit-merge-state.json", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "index.lock"]) {
     if (await FileManager.exists(gitdir + "/" + marker)) skip("存在未完成合并/变基或索引锁，请手动处理")
   }
-  const branch = await git.currentBranch({ fs, dir, gitdir, fullname: false })
+  const branch = await resolveCurrentBranch(git, fs, dir, gitdir)
   if (!branch) skip("HEAD 未指向本地分支")
   let oid: string
   try { oid = await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" }) }
-  catch { return skip("当前分支尚无提交") }
+  catch (error: any) {
+    if (error?.code === "NotFoundError") return skip("当前分支尚无提交")
+    throw error
+  }
   const upstream = parseUpstreamConfig(
     await git.getConfig({ fs, dir, gitdir, path: `branch.${branch}.remote` }),
     await git.getConfig({ fs, dir, gitdir, path: `branch.${branch}.merge` })
@@ -86,7 +89,7 @@ export async function autoPullInternal(bookmarkName: string, options?: AutoPullO
     checkRemoteCancelled(options)
     await git.checkout({ fs, dir, gitdir, ref: theirs, noUpdateHead: true, track: false, force: false })
     // 进入更新阶段不在工作区和分支 ref 之间响应取消，以免留下人为制造的半完成状态。
-    if (await git.currentBranch({ fs, dir, gitdir, fullname: false }) !== before.branch || await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" }) !== before.oid) throw new Error("更新期间外部分支已变化，请手动核对工作区")
+    if (await resolveCurrentBranch(git, fs, dir, gitdir) !== before.branch || await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" }) !== before.oid) throw new Error("更新期间外部分支已变化，请手动核对工作区")
     await git.writeRef({ fs, dir, gitdir, ref: `refs/heads/${before.branch}`, value: theirs, force: true })
     updateBranchLastPulledAt(bookmarkName, before.branch, Date.now())
     return { status: "updated", reason: "已快进更新" }

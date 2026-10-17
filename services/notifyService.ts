@@ -1,114 +1,18 @@
 /**
- * services/notifyService.ts - 本地通知封装
- *
- * 在 push/pull/commit/clone 等关键操作完成后发送即时通知。
- * 使用 Scripting 内置 Notification.schedule（省略 trigger 即立即发送）。
- * 错误类操作（push/pull/clone 失败）也会发送通知，方便后台操作时及时知晓。
+ * Compatibility entry points for existing operation callers.
+ * Operations already show their results inside the app (toast/dialog/result rows).
+ * Never read legacy notification preferences, request permission, or schedule system alerts.
  */
-
-import { Notification } from "scripting"
-import { readNotifyEnabled, readErrorNotifyEnabled } from "./storage"
-
-/** 同步操作类型 → 对应的完成提示文案 */
 type SyncKind = "commit" | "push" | "pull" | "fetch" | "clone"
 
-const KIND_TITLE: Record<SyncKind, string> = {
-  commit: "提交完成",
-  push: "推送完成",
-  pull: "拉取完成",
-  fetch: "获取完成",
-  clone: "克隆完成",
-}
-
-const KIND_ERROR_TITLE: Record<SyncKind, string> = {
-  commit: "提交失败",
-  push: "推送失败",
-  pull: "拉取失败",
-  fetch: "获取失败",
-  clone: "克隆失败",
-}
-
-// 固定随包资源，不接受外部路径；缺失/解码失败时通知照常发送（无自定义图标）。
-const NOTIFY_ICON_PATH = FileManager.scriptsDirectory + "/scriptgit/assets/notify-icon.png"
-let notifyIcon: any | null | undefined
-
-async function loadNotifyIcon(): Promise<any | null> {
-  if (notifyIcon !== undefined) return notifyIcon
-  try {
-    notifyIcon = (await FileManager.exists(NOTIFY_ICON_PATH)) ? Data.fromFile(NOTIFY_ICON_PATH) : null
-  } catch (_e) {
-    notifyIcon = null
-  }
-  return notifyIcon
-}
-
-async function notificationIconOptions(): Promise<{ iconImageData?: any }> {
-  const iconImageData = await loadNotifyIcon()
-  return iconImageData ? { iconImageData } : {}
-}
-
-function redactSensitive(value?: string): string | undefined {
-  if (!value) return value
-  return value
-    .replace(/([?&](?:token|access_token|auth|password)=)[^&#\s]+/gi, "$1***")
-    .replace(/(https?:\/\/)[^/@\s]+@/gi, "$1***@")
-    .replace(/\b(?:gh[opusr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "***")
-}
-
-/**
- * 发送一条操作完成通知
- * @param kind 操作类型
- * @param repoName 仓库名称
- * @param detail 详情（如 commit oid、提交数）
- */
 export async function notifySync(
-  kind: SyncKind,
-  repoName: string,
-  detail?: string
-): Promise<void> {
-  if (!readNotifyEnabled()) return
-  try {
-    await Notification.schedule({
-      title: KIND_TITLE[kind],
-      subtitle: redactSensitive(repoName),
-      body: redactSensitive(detail),
-      ...(await notificationIconOptions()),
-      silent: false,
-      threadIdentifier: "gitgit-sync",
-      interruptionLevel: "active",
-      // 点击通知重新打开 scriptgit
-      tapAction: { type: "runScript", scriptName: "scriptgit" },
-    })
-  } catch (e) {
-    // 通知失败不应阻断主流程（可能是未授权通知权限）
-    console.warn("⚠️ 发送通知失败: " + e)
-  }
-}
+  _kind: SyncKind,
+  _repoName: string,
+  _detail?: string
+): Promise<void> {}
 
-/**
- * 发送操作失败通知
- * @param kind 操作类型（用于标题文案）
- * @param repoName 仓库名称
- * @param message 错误信息
- */
 export async function notifyError(
-  kind: SyncKind,
-  repoName: string,
-  message: string
-): Promise<void> {
-  if (!readErrorNotifyEnabled()) return
-  try {
-    await Notification.schedule({
-      title: KIND_ERROR_TITLE[kind],
-      subtitle: redactSensitive(repoName),
-      body: redactSensitive(message),
-      ...(await notificationIconOptions()),
-      silent: false,
-      threadIdentifier: "gitgit-error",
-      interruptionLevel: "active",
-      tapAction: { type: "runScript", scriptName: "scriptgit" },
-    })
-  } catch (e) {
-    console.warn("⚠️ 发送通知失败: " + e)
-  }
-}
+  _kind: SyncKind,
+  _repoName: string,
+  _message: string
+): Promise<void> {}

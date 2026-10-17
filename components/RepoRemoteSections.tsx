@@ -11,6 +11,7 @@ import { pullActionFooterHint } from "../utils/branchMerge"
 
 export function RepoRemoteSections({
   branchInfo,
+  branchUnavailable = false,
   upstream,
   pulledLabel,
   hasRemote,
@@ -26,6 +27,7 @@ export function RepoRemoteSections({
   onPull,
 }: {
   branchInfo: BranchInfo
+  branchUnavailable?: boolean
   upstream: UpstreamConfig | null
   pulledLabel: string
   hasRemote: boolean
@@ -49,7 +51,7 @@ export function RepoRemoteSections({
             <Spacer />
             <Button
               action={onRollback}
-              disabled={mutating || mergeInProgress || !hasCommits}
+              disabled={branchUnavailable || mutating || mergeInProgress || !hasCommits}
             >
               <HStack alignment="center" spacing={4}>
                 <Image
@@ -60,7 +62,7 @@ export function RepoRemoteSections({
                 <Text font="caption" foregroundStyle={COLOR_ORANGE}>回滚</Text>
               </HStack>
             </Button>
-            <Button action={onCompare} disabled={mutating}>
+            <Button action={onCompare} disabled={branchUnavailable || mutating}>
               <HStack alignment="center" spacing={4}>
                 <Image
                   systemName="arrow.left.arrow.right"
@@ -80,19 +82,19 @@ export function RepoRemoteSections({
         }
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            {pullActionFooterHint(branchInfo.current, upstream)}
+            {branchUnavailable ? "分支信息未确认，读取成功后再操作" : pullActionFooterHint(branchInfo.current, upstream)}
             {"\n"}
             最近拉取：{pulledLabel}
           </Text>
         }
       >
-        <Button action={onPush} disabled={mutating || mergeInProgress}>
+        <Button action={onPush} disabled={branchUnavailable || mutating || mergeInProgress}>
           <HStack alignment="center" spacing={6}>
             <Image systemName="arrow.up.circle" />
             <Text>推送 Push</Text>
           </HStack>
         </Button>
-        <Button action={onPull} disabled={mutating || mergeInProgress}>
+        <Button action={onPull} disabled={branchUnavailable || mutating || mergeInProgress}>
           <HStack alignment="center" spacing={6}>
             <Image systemName="arrow.down.circle" />
             <Text>拉取 Pull</Text>
@@ -108,13 +110,13 @@ export function RepoRemoteSections({
         header={<Text>上传</Text>}
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            本地仓库 · 默认分支 {branchInfo.current || DEFAULT_BRANCH}
-            · 需至少一次提交后再上传
+            {branchUnavailable ? "分支信息未确认，读取成功后再上传" : `本地仓库 · 默认分支 ${branchInfo.current || DEFAULT_BRANCH} · 需至少一次提交后再上传`}
           </Text>
         }
       >
         <Button
           title="上传到 GitHub"
+          disabled={branchUnavailable || mutating}
           systemImage="arrow.up.circle"
           action={onUpload}
         />
