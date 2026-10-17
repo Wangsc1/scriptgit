@@ -135,13 +135,40 @@ export function RepoListPage() {
   }
 
   const pulling = useRef<Promise<void> | null>(null)
+  const singlePull = useRef<Promise<void> | null>(null)
+  const [pullBusy, setPullBusy] = useState(false)
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
+
+  function pullOne(repo: RepoMeta): Promise<void> {
+    if (pulling.current) return pulling.current
+    if (singlePull.current) return singlePull.current
+    setPullBusy(true)
+    const pending = Promise.resolve().then(async () => {
+      try {
+        await yieldForUi()
+        if (!alive.current || !listRepos().some(item => item.bookmarkName === repo.bookmarkName)) return
+        const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true })
+        if (!alive.current) return
+        refreshRepo(repo)
+        showAlert(result.status === "skipped" ? "未拉取" : "拉取完成", `${repo.name}：${result.reason}`)
+      } catch (e: any) {
+        if (alive.current) showAlert("拉取失败", `${repo.name}：${String(e?.message || e)}`)
+      }
+    }).finally(() => {
+      if (singlePull.current === pending) singlePull.current = null
+      if (alive.current && !pulling.current) setPullBusy(false)
+    })
+    singlePull.current = pending
+    return pending
+  }
 
   // 下拉刷新显式拉取所有来源，复用在途任务；不先做一次无用的全仓扫描。
   function refreshAndPullAll(): Promise<void> {
     if (pulling.current) return pulling.current
+    setPullBusy(true)
     const pending = Promise.resolve().then(async () => {
+      if (singlePull.current) await singlePull.current
       const targets = listRepos()
       const notes: string[] = []
       let updated = 0, unchanged = 0
@@ -162,7 +189,10 @@ export function RepoListPage() {
       if (!alive.current) return
       await refreshAll(true)
       if (alive.current && notes.length) showAlert("批量拉取结果", `已更新 ${updated} 个，已是最新或本地领先 ${unchanged} 个。\n${notes.join("\n")}`)
-    }).finally(() => { if (pulling.current === pending) pulling.current = null })
+    }).finally(() => {
+      if (pulling.current === pending) pulling.current = null
+      if (alive.current) setPullBusy(false)
+    })
     pulling.current = pending
     return pending
   }
@@ -292,6 +322,12 @@ export function RepoListPage() {
               trailingSwipeActions={{
                 allowsFullSwipe: false,
                 actions: [
+                  <Button
+                    title="拉取"
+                    tint="systemBlue"
+                    disabled={pullBusy}
+                    action={() => pullOne(repo)}
+                  />,
                   <Button
                     title="删除"
                     tint="systemRed"

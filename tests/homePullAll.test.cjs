@@ -1,7 +1,7 @@
 /* Real homepage refresh callback, mocked safe-pull facade: no network/write effects. */
 const assert = require('node:assert/strict')
-const { load, mount, ui, tick, deferred } = require('./remoteFiles.test.cjs')
-function page(rows, pull, refresh) {
+const { load, mount, ui, all, tick, deferred } = require('./remoteFiles.test.cjs')
+function page(rows, pull, refresh, refreshOne = () => {}) {
   const scripting = new Proxy(ui, { get(target, key) { return key === 'Navigation' ? { useDismiss: () => () => {} } : target[key] } })
   return load('pages/RepoListPage.tsx', {
     scripting,
@@ -12,7 +12,7 @@ function page(rows, pull, refresh) {
     '../utils/github': { githubRepoFromRemoteUrl: () => null },
     '../utils/remoteProgress': { yieldForUi: async () => {} },
     '../utils/repoSort': { sortReposByGithubUpdated: value => value },
-    '../hooks/useRepoListStatus': { useRepoListStatus: () => ({ statusMap: {}, snapshotMap: {}, repoRefreshMap: {}, githubUpdatedProgress: {}, refreshAll: refresh }) },
+    '../hooks/useRepoListStatus': { useRepoListStatus: () => ({ statusMap: {}, snapshotMap: {}, repoRefreshMap: {}, githubUpdatedProgress: {}, refreshAll: refresh, refreshRepo: refreshOne }) },
     '../hooks/useStartupAutoPull': { useStartupAutoPull() {} },
     '../hooks/useRepoVisibilities': { useRepoVisibilities: () => ({}) },
   }).RepoListPage
@@ -42,6 +42,23 @@ async function main() {
   const e = mount(page(nextRows, async key => { stopped.push(key); await later.promise; return { status: 'unchanged' } }, async () => { throw Error('must not refresh after unmount') }), {})
   const pending = e.tree.props.refreshable(); await tick(); e.unmount(); later.resolve(); await pending
   assert.deepEqual(stopped, ['a']); assert.equal(e.lateWrites, 0)
-  console.log('PASS 下拉涵盖所有来源、重复下拉单飞、单仓跳过/失败不阻断、最后仅刷新一次、卸载停止后续任务')
+  const oneGate = deferred(), oneCalls = [], refreshed = []
+  const single = mount(page(rows, async (key, options) => {
+    oneCalls.push(key); assert.equal(options.includeAllSources, true)
+    await oneGate.promise; return { status: 'updated', reason: '已快进更新' }
+  }, async () => { throw Error('single pull must not refresh all repos') }, repo => refreshed.push(repo.bookmarkName)), {})
+  const actions = () => { single.render(); return all(single.tree).filter(n => n.props.trailingSwipeActions).map(n => n.props.trailingSwipeActions) }
+  let swipes = actions()
+  assert.equal(swipes[1].allowsFullSwipe, false)
+  assert.deepEqual(swipes[1].actions.map(n => n.props.title), ['拉取', '删除'])
+  assert.equal(swipes[1].actions[0].props.tint, 'systemBlue'); assert.equal(swipes[1].actions[0].props.systemImage, undefined)
+  const action = swipes[1].actions[0].props.action
+  const one = action(), again = action(); assert.equal(one, again)
+  assert.ok(actions().every(swipe => swipe.actions[0].props.disabled))
+  await tick(); assert.deepEqual(oneCalls, ['local'])
+  oneGate.resolve(); await one
+  assert.deepEqual(refreshed, ['local']); assert.ok(actions().every(swipe => !swipe.actions[0].props.disabled))
+  assert.equal(single.tree.props.alert.title, '拉取完成'); single.unmount()
+  console.log('PASS 下拉涵盖所有来源、重复下拉单飞、单仓跳过/失败不阻断、最后仅刷新一次、卸载停止后续任务；蓝色左滑仅拉取目标仓库且防重复')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
