@@ -62,23 +62,11 @@ export function CommitChangesSections({
   }
   return (
     <>
-      <Section
-        header={<Text>本次更改（{snapshot.total} 个文件）</Text>}
-        footer={
-          <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            相对第一个父提交{parentOid ? "" : "（根提交，全部为新增）"}；已加载 {snapshot.doneCount}/
-            {snapshot.visible.length} 个文件，+{snapshot.added} -{snapshot.deleted}
-          </Text>
-        }
-      >
-        <Text foregroundStyle={COLOR_SECONDARY_LABEL}>
-          共 {snapshot.total} 个文件，当前显示 {snapshot.visible.length} 个
-          {snapshot.failedCount > 0 ? `，${snapshot.failedCount} 个读取失败` : ""}
-        </Text>
-        {snapshot.failedCount > 0 ? (
-          <Button title="重试失败的文件" action={() => loader.retry()} />
-        ) : null}
-      </Section>
+      {snapshot.failedCount > 0 ? (
+        <Section>
+          <Button title={`重试失败的文件（${snapshot.failedCount}）`} action={() => loader.retry()} />
+        </Section>
+      ) : null}
       {snapshot.visible.map((entry) => {
         const diff = entry.diff
         const truncated = diff ? diff.lines.length > COMMIT_CHANGES_MAX_RENDER_LINES : false

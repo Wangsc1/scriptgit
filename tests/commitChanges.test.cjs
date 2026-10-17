@@ -75,7 +75,7 @@ async function main(){try{
  })
  await test('root commit works and every file is an addition; merge uses first parent only',async()=>{
   reset();let h=await open(c1);assert.match(JSON.stringify(h.tree),/根提交/);picker(h).props.onChanged('changes');h.render();let node=section(h),c=mount(node.type,node.props);await until(()=>node.props.loader.snapshot().doneCount===4,'root done')
-  assert.equal(node.props.parentOid,null);assert.ok(node.props.loader.entries.every(e=>e.diff.added&&e.deleted===0));assert.match(text(c.render()),/根提交，全部为新增/);assert.equal(node.props.loader.entries.find(e=>e.filepath==='img.png').diff.binary,true);c.unmount();h.unmount()
+  assert.equal(node.props.parentOid,null);assert.ok(node.props.loader.entries.every(e=>e.diff.added&&e.deleted===0));assert.doesNotMatch(text(c.render()),/本次更改|当前显示|已加载/);assert.equal(node.props.loader.entries.find(e=>e.filepath==='img.png').diff.binary,true);c.unmount();h.unmount()
   h=await open(merge);picker(h).props.onChanged('changes');h.render();node=section(h);const detail=await commitService.getCommitDetail('repo',merge);assert.equal(detail.parentCount,2);assert.equal(node.props.parentOid,c5)
   assert.deepEqual(node.props.loader.entries.map(e=>e.filepath),detail.files.map(f=>f.filepath));h.unmount()
  })
