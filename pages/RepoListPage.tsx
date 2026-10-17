@@ -10,6 +10,7 @@
 
 import {
   List,
+  DisclosureGroup,
   Section,
   Text,
   HStack,
@@ -53,6 +54,7 @@ import { yieldForUi } from "../utils/remoteProgress"
 import { sortReposByGithubUpdated } from "../utils/repoSort"
 import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
+import { useStartupAutoPull } from "../hooks/useStartupAutoPull"
 
 export function RepoListPage() {
   // 关闭 present 的根界面（设置已独立为 Tab）
@@ -67,6 +69,10 @@ export function RepoListPage() {
   const {
     statusMap, snapshotMap, repoRefreshMap, progress, githubUpdatedProgress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
   } = useRepoListStatus(setRepos)
+  const autoPull = useStartupAutoPull(key => {
+    const repo = repos.find(item => item.bookmarkName === key)
+    if (repo) void refreshRepo(repo)
+  })
   // 移除仓库忙态：删 gitdir 缓存对大仓库可能耗时，用全屏遮罩
   const [removingName, setRemovingName] = useState<string | null>(null)
 
@@ -235,6 +241,12 @@ export function RepoListPage() {
         </Toolbar>
       }
     >
+      {autoPull.results.length > 0 ? <Section>
+        <DisclosureGroup label={<Text>启动自动拉取结果</Text>}>
+          {autoPull.results.map(item => <Text key={item.key} font="caption" foregroundStyle={item.status === "failed" || item.status === "waiting" ? COLOR_ORANGE : COLOR_SECONDARY_LABEL}>{item.name} · {item.reason}</Text>)}
+          {autoPull.running ? <Button title="停止后续自动拉取" action={autoPull.stop} /> : null}
+        </DisclosureGroup>
+      </Section> : null}
       {repos.length > 0 ? <Section>
         {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
         {githubUpdatedProgress.failed > 0 ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>部分 GitHub 更新时间未刷新，保留已有时间缓存。{githubUpdatedProgress.error}</Text> : null}

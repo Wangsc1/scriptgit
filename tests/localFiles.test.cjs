@@ -166,7 +166,7 @@ async function main(){
   assert.equal(all(body).some(n=>n.type==='Text'&&n.children.includes('embyicon.json')),false)
   assert.doesNotMatch(text(r),/保存到本地|删除文件|重新加载文件|修改仅保存到本地工作区。请到「改动」页手动暂存、提交，再推送。/)
   const strip=body.find(n=>n.type==='List'),nativeEditor=body.find(n=>n.type==='Editor')
-  assert.equal(strip.props.listStyle,'plain');assert.equal(strip.props.frame.height,64);assert.equal(strip.props.clipped,true);assert.equal(all(strip.children).some(n=>n.type==='Editor'),false);assert.equal(nativeEditor.props.refreshable,undefined);assert.equal(body.at(-1),nativeEditor);assert.match(text(r),/下拉刷新/)
+  assert.equal(strip.props.listStyle,'plain');assert.equal(strip.props.frame.height,64);assert.equal(strip.props.clipped,true);assert.equal(all(strip.children).some(n=>n.type==='Editor'),false);assert.equal(nativeEditor.props.refreshable,undefined);assert.equal(body.at(-1),nativeEditor);assert.doesNotMatch(text(r),/下拉刷新/);assert.equal(typeof strip.props.refreshable,'function');assert.equal(strip.props.frame.height>0,true)
   c.content='draft';await disk('embyicon.json','disk new');confirm=false;await refresh();assert.equal(reloaded,0);assert.equal(c.content,'draft');assert.match(confirmations.at(-1).title,/重新加载并放弃草稿/);assert.equal(changed,0);assert.equal(node(r,'List').props.disabled,false)
   const confirmGate=deferred();let prompts=0;global.Dialog.confirm=async()=>{prompts++;return confirmGate.promise}
   const pending=refresh();assert.ok(pending instanceof Promise);await tick();assert.equal(toolbar().topBarLeading.props.disabled,true);assert.equal(toolbar().topBarTrailing.props.disabled,true);assert.equal(node(r,'List').props.disabled,true)

@@ -31,7 +31,7 @@ function readPage(e){
     scripting,'../services/repoStore':{listRepos:()=>e.repos,sourceLabel:()=> '克隆'},'../services/gitService':{},
     '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'./RepoDetailPage':{RepoDetailPage:'RepoDetailPage'},'./ClonePage':{ClonePage:'ClonePage'},'./GitHubFilesPage':{GitHubFilesPage:'GitHubFilesPage'},
     '../constants/colors':load('constants/colors.ts'),'../utils/mergeConflict':{formatRepoListMergeSummary:()=>null},'../utils/github':{githubRepoFromRemoteUrl:()=>null},'../utils/remoteProgress':{},'../utils/repoSort':{sortReposByGithubUpdated:r=>r},
-    '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},
+    '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../hooks/useStartupAutoPull':{useStartupAutoPull:()=>({running:false,results:[],stop(){}})},'../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},
   }).RepoListPage
 }
 async function main(){

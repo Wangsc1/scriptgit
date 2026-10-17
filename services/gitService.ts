@@ -6,6 +6,8 @@
  */
 
 import { runWithBackgroundKeepAlive } from "./git/runtime"
+import { autoPullInternal, type AutoPullOutcome } from "./git/autoPullService"
+export type { AutoPullOutcome } from "./git/autoPullService"
 import {
   applyStashInternal,
   dropStashInternal,
@@ -370,6 +372,11 @@ export async function push(
       pushInternal(bookmarkName, remote, ref, force, options)
     )
   )
+}
+
+/** 启动自动拉取专用：同仓真实 mutation 全程持锁，不采用手动合并路径。 */
+export function autoPullFastForward(bookmarkName: string, options?: RemoteOpOptions): Promise<AutoPullOutcome> {
+  return runRepoMutation(bookmarkName, () => autoPullInternal(bookmarkName, options), false)
 }
 
 export async function pull(

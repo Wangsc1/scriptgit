@@ -60,9 +60,9 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
         topBarTrailing: controller !== null && !file.readOnlyReason ? <Button title="保存" action={() => operate("save")} disabled={busy} /> : undefined,
       }}>
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
-      {/* 独立 List 承接下拉，不将原生 Editor 嵌入列表或向其传入 refreshable。 */}
+      {/* 官方仅支持可滚动 List 的 refreshable；原生 Editor 无公开顶部/下拉接口，故保留非零高度独立刷新区，不显示说明文字。 */}
       <List listStyle="plain" frame={{ height: 64 }} clipped disabled={busy} refreshable={() => operate("reload")}>
-        <Text font="caption">下拉刷新</Text>
+        <Text font="caption"> </Text>
       </List>
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}

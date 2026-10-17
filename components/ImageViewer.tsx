@@ -16,11 +16,12 @@ function buildHTML(url: string, compactImage: boolean): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=6, user-scalable=yes${compactImage ? ", viewport-fit=cover" : ""}">
 <style>
+${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color-scheme: dark) { html, body { background: #242424 !important; } .failed { color: #fff; } }\n  @media (prefers-color-scheme: light) { .failed { color: #111; } }" : ""}
   html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background: #000;
+    background: ${compactImage ? "#fff" : "#000"};
     -webkit-user-select: none;
     user-select: none;
   }
@@ -63,7 +64,7 @@ function buildHTML(url: string, compactImage: boolean): string {
     to { transform: rotate(360deg); }
   }
   .failed {
-    color: #fff;
+    color: ${compactImage ? "#111" : "#fff"};
     font: 15px -apple-system;
   }
 </style>
@@ -102,11 +103,28 @@ function buildHTML(url: string, compactImage: boolean): string {
   // 仅在未缩放且未发生位移时把单击视为关闭
   var startX = 0
   var startY = 0
+  var multiTouch = false
+  var pullClosed = false
   document.addEventListener("touchstart", function (event) {
     var touch = event.touches[0]
+    multiTouch = event.touches.length > 1
+    pullClosed = false
     startX = touch.clientX
     startY = touch.clientY
   }, { passive: true })
+  ${compactImage ? `// 仅未缩放、单指、明显竖向下拉时由受控 bridge 关闭；缩放/平移/多指不会误关。
+  document.addEventListener("touchmove", function (event) {
+    if (event.touches.length > 1) { multiTouch = true; return }
+    if (multiTouch || pullClosed) return
+    var touch = event.touches[0]
+    var dx = touch.clientX - startX
+    var dy = touch.clientY - startY
+    var scale = window.visualViewport ? window.visualViewport.scale : 1
+    if (scale <= 1.01 && dy > 120 && Math.abs(dx) < dy * 0.5) {
+      pullClosed = true
+      window.webkit.messageHandlers.closeViewer.postMessage(null)
+    }
+  }, { passive: true })` : ""}
 
   document.addEventListener("touchend", function (event) {
     if (event.touches.length > 0) {
@@ -115,7 +133,7 @@ function buildHTML(url: string, compactImage: boolean): string {
     var touch = event.changedTouches[0]
     var moved = Math.abs(touch.clientX - startX) > 8 || Math.abs(touch.clientY - startY) > 8
     var zoomed = window.visualViewport && window.visualViewport.scale > 1.01
-    if (moved || zoomed) {
+    if (pullClosed || multiTouch || moved || zoomed) {
       return
     }
     window.webkit.messageHandlers.closeViewer.postMessage(null)
@@ -167,10 +185,10 @@ export function ImageViewer({
   return (
     <ZStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      background="black"
+      background={compactImage ? { light: "white", dark: "#242424" } : "black"}
       ignoresSafeArea={{ regions: "all", edges: "all" }}
     >
-      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
+      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint={compactImage ? { light: "#555555", dark: "white" } : "white"} />}
       <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <WebView controller={controller} />
       </VStack>
