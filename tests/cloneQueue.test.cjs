@@ -36,7 +36,7 @@ function env(overrides={}) {
   const fm=fakeFM(), rows=[]
   const workspace=load('services/cloneWorkspace.ts')
   const store=load('services/repoStore.ts',{
-    './cloneWorkspace':workspace,
+    './cloneWorkspace':workspace,'../utils/repoUpdated':load('utils/repoUpdated.ts',{'./github':load('utils/github.ts')}),
     './storage':{readRepos:()=>rows,writeRepos:v=>{rows.splice(0,rows.length,...v)},readSnapshots:()=>({}),writeSnapshots:()=>{}},
   })
   let seq=0

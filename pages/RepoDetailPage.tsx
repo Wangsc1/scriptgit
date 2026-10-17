@@ -403,6 +403,7 @@ export function RepoDetailPage({
         stashes={data.stashes}
         log={data.log}
         trackedFiles={data.trackedFiles}
+        onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
         loading={data.loading}
         mergeInProgress={data.mergeInProgress}
         onOpenCommitForm={worktree.openCommitForm}

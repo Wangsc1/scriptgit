@@ -144,6 +144,7 @@ async function readChanges(bookmarkName: string, source: string): Promise<FileCh
       status,
       staged: head !== stage,
       unstaged: work !== stage,
+      worktreeDeleted: work === 0,
     })
   }
   rememberChangesCount(bookmarkName, changes.length, revision)

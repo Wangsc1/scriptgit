@@ -10,6 +10,19 @@ import type {
   RepoSnapshot,
 } from "../types/git"
 
+import { githubUpdatedTime } from "./repoUpdated"
+
+/** 按 GitHub updated_at 新到旧；未知排后，同时间稳定按名称，不看本地待处理状态。 */
+export function sortReposByGithubUpdated(repos: RepoMeta[]): RepoMeta[] {
+  return repos.slice().sort((a, b) => {
+    const left = githubUpdatedTime(a), right = githubUpdatedTime(b)
+    if (left !== null && right !== null && left !== right) return right - left
+    if (left !== null && right === null) return -1
+    if (left === null && right !== null) return 1
+    return compareName(a, b)
+  })
+}
+
 /** 首字符是否为 ASCII（数字/英文等） */
 function isAsciiLeading(name: string): boolean {
   return name.length > 0 && name.charCodeAt(0) < 128

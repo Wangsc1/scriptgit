@@ -77,6 +77,7 @@ export function RepoDetailTabContent({
   historyLoading,
   historyLimited,
   githubFullName,
+  onWorktreeChanged,
 }: {
   tab: RepoDetailTab
   onTabChange: (tab: RepoDetailTab) => void | Promise<void>
@@ -112,6 +113,7 @@ export function RepoDetailTabContent({
   historyLoading: boolean
   historyLimited: boolean
   githubFullName: string | null
+  onWorktreeChanged: () => void | Promise<void>
 }) {
   return (
     <>
@@ -158,7 +160,7 @@ export function RepoDetailTabContent({
           onDropStash={onDropStash}
         />
       ) : tab === 2 ? (
-        <FilesTab files={trackedFiles} loading={loading} />
+        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} />
       ) : (
         <HistoryTab
           log={log}

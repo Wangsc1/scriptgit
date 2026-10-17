@@ -40,7 +40,6 @@ import { initRepo, removeRepo } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
-import { GitHubFilesPage } from "./GitHubFilesPage"
 import {
   COLOR_LABEL,
   COLOR_SECONDARY_LABEL,
@@ -52,7 +51,7 @@ import {
 import { formatRepoListMergeSummary } from "../utils/mergeConflict"
 import { githubRepoFromRemoteUrl } from "../utils/github"
 import { yieldForUi } from "../utils/remoteProgress"
-import { sortReposForList } from "../utils/repoSort"
+import { sortReposByGithubUpdated } from "../utils/repoSort"
 import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
 
@@ -67,7 +66,7 @@ export function RepoListPage() {
     message: string
   } | null>(null)
   const {
-    statusMap, snapshotMap, repoRefreshMap, progress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
+    statusMap, snapshotMap, repoRefreshMap, progress, githubUpdatedProgress, refreshAll, refreshRepo, forgetRepo, appear, disappear,
   } = useRepoListStatus(setRepos)
   // 移除仓库忙态：删 gitdir 缓存对大仓库可能耗时，用全屏遮罩
   const [removingName, setRemovingName] = useState<string | null>(null)
@@ -147,7 +146,7 @@ export function RepoListPage() {
 
   const showRemovingOverlay = removingName != null
   // 仅影响展示顺序，持久化的仓库数组仍保持添加顺序
-  const sortedRepos = sortReposForList(repos, statusMap, snapshotMap)
+  const sortedRepos = sortReposByGithubUpdated(repos)
   // GitHub 仓库行显示公开/私有标识（本地无 GitHub 远端的仓库不显示）
   const visibilities = useRepoVisibilities(
     sortedRepos.map((repo) => ({
@@ -240,13 +239,11 @@ export function RepoListPage() {
       {repos.length > 0 ? <Section header={<Text>后台状态刷新</Text>}>
         <Text>{progress.running ? `正在检查 ${progress.completed}/${progress.total} · ${progress.current || "准备中"}` : `本轮已处理 ${progress.completed}/${progress.total}`}</Text>
         {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
+        <Text font="caption">按 GitHub 最近更新时间从新到旧排列；未知时间排后。</Text>
+        {githubUpdatedProgress.running ? <Text font="caption">GitHub 更新时间刷新 {githubUpdatedProgress.completed}/{githubUpdatedProgress.total}</Text> : null}
+        {githubUpdatedProgress.failed > 0 ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>部分 GitHub 更新时间未刷新，保留已有时间缓存。{githubUpdatedProgress.error}</Text> : null}
         <Button title="重试状态刷新" action={() => refreshAll(true)} disabled={progress.running} />
       </Section> : null}
-      <Section>
-        <NavigationLink destination={<GitHubFilesPage />}>
-          <Text>GitHub 远端文件浏览与编辑</Text>
-        </NavigationLink>
-      </Section>
       {repos.length === 0 ? (
         <Section>
           <Text font="callout" foregroundStyle={COLOR_SECONDARY_LABEL}>

@@ -31,7 +31,9 @@ import {
   getTrackedFiles,
 } from "./git/statusQueryService"
 import { getRepoListStatus } from "./git/repoStatusReadService"
-import { runStatusMutation } from "./git/statusScanService"
+import { runStatusMutation, runStatusRead } from "./git/statusScanService"
+import { readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
+export type { LocalWorktreeFile } from "./git/localFileService"
 export { getRepoListStatus }
 export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
 import {
@@ -112,6 +114,17 @@ async function runRepoMutation<T>(
   } finally {
     if (started && refreshSnapshot) await refreshRepoSnapshot(bookmarkName)
   }
+}
+
+/** 本地文件操作只改工作区；不暂存/提交/推送，也不额外启动收尾全仓扫描。 */
+export function readLocalWorktreeFile(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
+  return runStatusRead(bookmarkName, () => readLocalFileInternal(bookmarkName, path))
+}
+export function saveLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeFile, text: string): Promise<LocalWorktreeFile> {
+  return runRepoMutation(bookmarkName, () => saveLocalFileInternal(bookmarkName, file, text), false)
+}
+export function deleteLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeFile): Promise<void> {
+  return runRepoMutation(bookmarkName, () => deleteLocalFileInternal(bookmarkName, file), false)
 }
 
 export function removeRepo(bookmarkName: string): Promise<void> {

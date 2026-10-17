@@ -20,7 +20,7 @@ const status=(extra={})=>({branch:'main',uncommitted:0,ahead:0,behind:0,syncStat
 const repo=key=>({name:key,bookmarkName:key,repoId:key,source:'clone',createdAt:0})
 function hookEnv(keys,read,snapshot=async()=>({})){
   const repos=keys.map(repo),calls=[];let published=[]
-  const hook=load('hooks/useRepoListStatus.ts',{scripting:ui,'../services/repoStore':{listRepos:()=>repos,readSnapshots:snapshot},'../services/gitService':{getCachedRepoStatus:()=>undefined,getRepoListStatus:(key,_,options)=>{calls.push([key,options]);return read(key)}},'../utils/repoSort':{sortReposForList:r=>r}}).useRepoListStatus
+  const hook=load('hooks/useRepoListStatus.ts',{'./useRepoGithubUpdated':{useRepoGithubUpdated:()=>({progress:{running:false,failed:0},refresh:async()=>{},stop(){}})},scripting:ui,'../services/repoStore':{listRepos:()=>repos,readSnapshots:snapshot},'../services/gitService':{getCachedRepoStatus:()=>undefined,getRepoListStatus:(key,_,options)=>{calls.push([key,options]);return read(key)}},'../utils/repoSort':{sortReposByGithubUpdated:r=>r}}).useRepoListStatus
   const h=mount(()=>global.__jsx('Harness',{api:hook(value=>{published=value})}),{})
   const api=()=>{h.render();return h.tree.props.api}
   return {h,api,calls,repos,published:()=>published,hook}
@@ -30,7 +30,7 @@ function readPage(e){
   return load('pages/RepoListPage.tsx',{
     scripting,'../services/repoStore':{listRepos:()=>e.repos,sourceLabel:()=> '克隆'},'../services/gitService':{},
     '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'./RepoDetailPage':{RepoDetailPage:'RepoDetailPage'},'./ClonePage':{ClonePage:'ClonePage'},'./GitHubFilesPage':{GitHubFilesPage:'GitHubFilesPage'},
-    '../constants/colors':load('constants/colors.ts'),'../utils/mergeConflict':{formatRepoListMergeSummary:()=>null},'../utils/github':{githubRepoFromRemoteUrl:()=>null},'../utils/remoteProgress':{},'../utils/repoSort':{sortReposForList:r=>r},
+    '../constants/colors':load('constants/colors.ts'),'../utils/mergeConflict':{formatRepoListMergeSummary:()=>null},'../utils/github':{githubRepoFromRemoteUrl:()=>null},'../utils/remoteProgress':{},'../utils/repoSort':{sortReposByGithubUpdated:r=>r},
     '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},
   }).RepoListPage
 }

@@ -211,7 +211,6 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     <Section header={<Text>按 GitHub 用户名批量添加</Text>}>
       {!hasToken() ? <Text>未配置 Token：仅公开仓库，可匿名加载与克隆。</Text> : null}
       <FormRow label="用户名" prompt="输入至少 2 个字符搜索用户，或填写完整 login" value={username} onChanged={(value: string) => changeUsername(value)} />
-      <Text font="caption">搜索Github用户名</Text>
       {userSearch.loading ? <Text>搜索用户中…</Text> : null}
       {userSearch.error ? <Text foregroundStyle="red">{userSearch.error}</Text> : null}
       {userSearch.error ? <Button title="重试用户搜索" action={userSearch.retry} disabled={cloning || userSearch.loading} /> : null}

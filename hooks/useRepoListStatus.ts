@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "scripting"
 import type { RepoListStatus, RepoMeta, RepoSnapshot } from "../types/git"
 import { listRepos, readSnapshots } from "../services/repoStore"
 import { getCachedRepoStatus, getRepoListStatus } from "../services/gitService"
-import { sortReposForList } from "../utils/repoSort"
+import { sortReposByGithubUpdated } from "../utils/repoSort"
+import { useRepoGithubUpdated } from "./useRepoGithubUpdated"
 
 export type RepoRefreshState = { phase: "queued" | "reading" | "slow" | "error" | "deferred"; message?: string }
 const VIEW_WAIT_MS = 10_000
@@ -30,6 +31,7 @@ function waitForView(promise: Promise<unknown>, remaining: number): Promise<bool
 }
 
 export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
+  const githubUpdated = useRepoGithubUpdated(setRepos)
   const [statusMap, setStatusMap] = useState<Record<string, RepoListStatus>>(() => cachedStatuses(listRepos()))
   const [snapshotMap, setSnapshotMap] = useState<Record<string, RepoSnapshot>>({})
   const [repoRefreshMap, setRepoRefreshMap] = useState<Record<string, RepoRefreshState>>({})
@@ -52,6 +54,7 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
   }
 
   function stop() {
+    githubUpdated.stop()
     state.current.active = false
     state.current.epoch++
     state.current.rerun = false
@@ -114,7 +117,7 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     // 首屏先交还事件循环，仓库和操作入口不必等文件系统或 Git 扫描。
     await new Promise<void>(resolve => setTimeout(resolve, 0))
     let completed = 0
-    for (const repo of sortReposForList(latest, statuses, snapshots)) {
+    for (const repo of sortReposByGithubUpdated(latest)) {
       if (!current()) break
       if (!exists(repo.bookmarkName)) continue
       setProgress({ running: true, completed, total: latest.length, current: repo.name })
@@ -127,6 +130,7 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
 
   function refreshAll(force = false): Promise<void> {
     if (!state.current.active) return Promise.resolve()
+    void githubUpdated.refresh(force)
     if (state.current.pending) {
       if (force) { state.current.forceNext = true; state.current.rerun = true }
       return state.current.pending
@@ -168,5 +172,5 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     setRepoRefreshMap(previous => { const next = { ...previous }; delete next[bookmarkName]; return next })
   }
 
-  return { statusMap, snapshotMap, repoRefreshMap, progress, refreshAll, refreshRepo, forgetRepo, appear, disappear: stop }
+  return { statusMap, snapshotMap, repoRefreshMap, progress, githubUpdatedProgress: githubUpdated.progress, refreshAll, refreshRepo, forgetRepo, appear, disappear: stop }
 }

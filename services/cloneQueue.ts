@@ -54,8 +54,10 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
         } else {
           seen.add(targetKey)
           let upstream: { url: string } | undefined
+          let githubUpdatedAt = request.githubRepo?.updatedAt
           if (request.githubRepo) {
             const detail = await getRepo(request.githubRepo.fullName)
+            githubUpdatedAt = detail.updatedAt || githubUpdatedAt
             if (detail.fork) {
               if (!detail.parent) throw new Error("无法读取 fork 源仓库信息")
               upstream = { url: detail.parent.url }
@@ -85,7 +87,7 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
           await FileManager.rename(stage, path)
           published = true
           const repo = await registerRepoByPath(path, request.name, request.url, repoId,
-            destination.kind === "external" ? destination.accessBookmarkName : null)
+            destination.kind === "external" ? destination.accessBookmarkName : null, githubUpdatedAt)
           result = { ...base, status: "cloned", message: "已克隆并加入本地列表", repo }
         }
       } catch (e: any) {

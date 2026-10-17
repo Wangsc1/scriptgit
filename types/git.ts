@@ -28,6 +28,9 @@ export interface RepoMeta {
   accessBookmarkName?: string
   /** 远端地址（可选，clone/push/pull 使用） */
   remoteUrl?: string
+  /** GitHub API updated_at 的缓存及其规范 owner/repo；不是本地修改/克隆时间。 */
+  githubUpdatedAt?: string
+  githubUpdatedRepo?: string
   /** 默认分支（可选，仅做展示记忆） */
   defaultBranch?: string
   /** 上传已创建但尚未推送的远端地址，可用于失败后重试 */
@@ -79,6 +82,8 @@ export interface FileChange {
   staged: boolean
   /** 工作区与索引不同，可继续暂存 */
   unstaged: boolean
+  /** 工作区实际缺失；不能仅凭索引删除状态判断磁盘文件不存在。 */
+  worktreeDeleted?: boolean
 }
 
 /** Stash 列表项，index 对应 stash@{index} */

@@ -10,6 +10,7 @@
 
 import type { RepoMeta, RepoSnapshot, RepoSource } from "../types/git"
 import { isAppOwnedWorkdir } from "./cloneWorkspace"
+import { githubUpdatedPatch } from "../utils/repoUpdated"
 import {
   readRepos,
   writeRepos,
@@ -211,7 +212,8 @@ export async function registerRepoByPath(
   name: string,
   remoteUrl?: string,
   existingRepoId?: string,
-  parentAccessBookmark?: string | null
+  parentAccessBookmark?: string | null,
+  githubUpdatedAt?: string
 ): Promise<RepoMeta> {
   const repoId = existingRepoId || createRepoId()
 
@@ -239,6 +241,7 @@ export async function registerRepoByPath(
     workdirRelative: workdirRelative ?? undefined,
     accessBookmarkName,
     remoteUrl,
+    ...(githubUpdatedPatch(remoteUrl, githubUpdatedAt) || {}),
     source: "clone",
     createdAt: Date.now(),
   }
