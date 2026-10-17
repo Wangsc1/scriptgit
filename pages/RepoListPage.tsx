@@ -40,7 +40,7 @@ import {
   sourceLabel,
   updateBranchLastPulledAt,
 } from "../services/repoStore"
-import { getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
+import { getChanges, restoreFiles, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
@@ -55,6 +55,7 @@ import { githubRepoFromRemoteUrl } from "../utils/github"
 import { yieldForUi } from "../utils/remoteProgress"
 import { sortReposByGithubUpdated } from "../utils/repoSort"
 import { useRepoListStatus, type RepoRefreshState } from "../hooks/useRepoListStatus"
+import { getRepoPendingAlert } from "../utils/repoDetailAlerts"
 import { useRepoSyncActions } from "../hooks/useRepoSyncActions"
 import { useRepoVisibilities } from "../hooks/useRepoVisibilities"
 
@@ -64,6 +65,9 @@ export function RepoListPage() {
   const [repos, setRepos] = useState<RepoMeta[]>(() => listRepos())
   const [showClone, setShowClone] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<RepoMeta | null>(null)
+  const [pendingRestore, setPendingRestore] = useState<RepoMeta | null>(null)
+  const [restoringName, setRestoringName] = useState<string | null>(null)
+  const restoring = useRef(false)
   const [alertState, setAlertState] = useState<{
     title: string
     message: string
@@ -166,14 +170,14 @@ export function RepoListPage() {
   })
   useEffect(() => { if (pushTarget) void sync.handlePush() }, [pushTarget])
   function pushOne(repo: RepoMeta) {
-    if (pushGate.current || pulling.current || singlePull.current) return
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current) return
     pushGate.current = true
     setPushTarget(repo)
   }
 
   function pullOne(repo: RepoMeta): Promise<void> {
     if (pulling.current) return pulling.current
-    if (pushGate.current) return Promise.resolve()
+    if (restoring.current || pushGate.current) return Promise.resolve()
     if (singlePull.current) return singlePull.current
     setPullBusy(true)
     const pending = Promise.resolve().then(async () => {
@@ -198,7 +202,7 @@ export function RepoListPage() {
   // 下拉刷新显式拉取所有来源，复用在途任务；不先做一次无用的全仓扫描。
   function refreshAndPullAll(): Promise<void> {
     if (pulling.current) return pulling.current
-    if (pushGate.current) return Promise.resolve()
+    if (restoring.current || pushGate.current) return Promise.resolve()
     setPullBusy(true)
     setBatchProgress({ completed: 0, total: 1, current: "准备拉取…" })
     const pending = Promise.resolve().then(async () => {
@@ -238,8 +242,31 @@ export function RepoListPage() {
     return pending
   }
 
+  async function doRestore() {
+    const repo = pendingRestore
+    setPendingRestore(null)
+    if (!repo || restoring.current || pushGate.current || pulling.current || singlePull.current) return
+    restoring.current = true
+    setRestoringName(repo.name)
+    try {
+      const status = await getRepoListStatus(repo.bookmarkName, undefined, { source: "列表还原", force: true })
+      if (status.error || !status.workdirOk) throw new Error(status.error || "无法读取仓库")
+      if (status.mergeInProgress || status.conflictCount) throw new Error("仓库存在未完成合并，请进入仓库处理")
+      const changes = await getChanges(repo.bookmarkName, "列表还原")
+      await restoreFiles(repo.bookmarkName, changes.map(change => change.filepath))
+      if (alive.current) showAlert("还原完成", repo.name)
+    } catch (e: any) {
+      if (alive.current) showAlert("还原失败", String(e?.message || e))
+    } finally {
+      restoring.current = false
+      if (alive.current) { setRestoringName(null); refreshRepo(repo) }
+    }
+  }
+
   const activeAlert =
-    pendingDelete != null
+    pendingRestore != null
+      ? { ...getRepoPendingAlert({ type: "restore", filepath: pendingRestore.name }), isConfirm: true as const }
+      : pendingDelete != null
       ? {
           title: "移除仓库？",
           message: `将从列表移除「${pendingDelete.name}」，并清除本地 Git 缓存；不会删除工作区文件。`,
@@ -270,7 +297,9 @@ export function RepoListPage() {
       navigationTitle="scriptgit"
       navigationBarTitleDisplayMode="large"
       overlay={
-        pushProgress
+        restoringName
+          ? { alignment: "center", content: <BusyOverlay title="正在还原改动" message={restoringName} /> }
+          : pushProgress
           ? { alignment: "center", content: <BusyOverlay title={pushProgress.title} message={pushProgress.message} onCancel={pushProgress.onCancel} /> }
           : showRemovingOverlay
           ? {
@@ -306,6 +335,7 @@ export function RepoListPage() {
         onChanged: (presented: boolean) => {
           if (!presented) {
             setPendingDelete(null)
+            setPendingRestore(null)
             setAlertState(null)
           }
         },
@@ -314,9 +344,9 @@ export function RepoListPage() {
             <Button
               title="取消"
               role="cancel"
-              action={() => setPendingDelete(null)}
+              action={() => { setPendingDelete(null); setPendingRestore(null) }}
             />
-            <Button title="移除" role="destructive" action={doDelete} />
+            <Button title={pendingRestore ? "还原" : "移除"} role="destructive" action={pendingRestore ? doRestore : doDelete} />
           </>
         ) : (
           <Button title="好" role="cancel" action={() => setAlertState(null)} />
@@ -369,19 +399,22 @@ export function RepoListPage() {
               trailingSwipeActions={{
                 allowsFullSwipe: false,
                 actions: [
+                  ...((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
+                    ? [<Button title="还原" tint="systemOrange" disabled={pullBusy || pushTarget !== null || restoringName !== null}
+                        action={() => { if (!restoring.current && !pushGate.current && !pulling.current && !singlePull.current) setPendingRestore(repo) }} />] : []),
                   <Button
                     title="拉取"
                     tint="systemBlue"
-                    disabled={pullBusy || pushTarget !== null}
+                    disabled={pullBusy || pushTarget !== null || restoringName !== null}
                     action={() => pullOne(repo)}
                   />,
                   ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
                     || (statusMap[repo.bookmarkName]?.ahead ?? snapshotMap[repo.bookmarkName]?.ahead ?? 0) > 0)
-                    ? [<Button title="提交" tint="systemGreen" disabled={pullBusy || pushTarget !== null} action={() => pushOne(repo)} />] : []),
+                    ? [<Button title="提交" tint="systemGreen" disabled={pullBusy || pushTarget !== null || restoringName !== null} action={() => pushOne(repo)} />] : []),
                   <Button
                     title="删除"
                     tint="systemRed"
-                    disabled={pullBusy || pushTarget !== null}
+                    disabled={pullBusy || pushTarget !== null || restoringName !== null}
                     action={() => setPendingDelete(repo)}
                   />,
                 ],

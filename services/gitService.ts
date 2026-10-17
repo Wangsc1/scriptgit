@@ -321,6 +321,14 @@ export async function restoreFile(
   )
 }
 
+/** 多文件还原持有同一个写屏障，只在结束时刷新一次摘要。 */
+export function restoreFiles(bookmarkName: string, filepaths: string[]): Promise<void> {
+  return runRepoMutation(bookmarkName, async () => {
+    if (await getMergeConflictState(bookmarkName)) throw new Error("仓库存在未完成合并，请进入仓库处理")
+    for (const filepath of [...new Set(filepaths)]) await restoreFileInternal(bookmarkName, filepath)
+  })
+}
+
 export async function addRemote(
   bookmarkName: string,
   remote: string,

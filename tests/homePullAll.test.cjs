@@ -11,6 +11,7 @@ function page(rows, pull, refresh, refreshOne = () => {}, overrides = {}) {
     '../constants/colors': {}, '../utils/mergeConflict': {},
     '../utils/github': { githubRepoFromRemoteUrl: () => null },
     '../utils/remoteProgress': { yieldForUi: async () => {} },
+    '../utils/repoDetailAlerts': load('utils/repoDetailAlerts.ts', { './format': {} }),
     '../utils/repoSort': { sortReposByGithubUpdated: value => value },
     '../hooks/useRepoListStatus': { useRepoListStatus: () => ({ statusMap: {}, snapshotMap: {}, repoRefreshMap: {}, githubUpdatedProgress: {}, refreshAll: refresh, refreshRepo: refreshOne }) },
     '../hooks/useStartupAutoPull': { useStartupAutoPull() { throw Error('App opening must not start auto pull') } },
