@@ -7,12 +7,12 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'scriptgit-local-test-')),dir=tmp
 fs.mkdirSync(dir);fs.mkdirSync(outside)
 let writes=0,removes=0,confirm=true,confirmations=[],controllers=[],root=dir
 // Native FileManager semantics on a disposable directory; never touches user repositories.
-global.FileManager={scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,documentsDirectory:tmp,
+global.FileManager={temporaryDirectory:tmp,scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,documentsDirectory:tmp,
  readDirectory:async p=>fs.promises.readdir(p),
  createDirectory:async p=>fs.promises.mkdir(p),
  exists:async p=>fs.existsSync(p),isLink:async p=>{try{return (await fs.promises.lstat(p)).isSymbolicLink()}catch(e){if(e.code==='ENOENT')return false;throw e}},
  isDirectory:async p=>(await fs.promises.stat(p)).isDirectory(),isFile:async p=>(await fs.promises.stat(p)).isFile(),
- stat:async p=>{const s=await fs.promises.stat(p);return {size:s.size,modificationDate:s.mtimeMs,type:s.isDirectory()?'directory':'file'}},
+ stat:async p=>{const s=await fs.promises.stat(p);return {size:s.size,creationDate:s.birthtimeMs,modificationDate:s.mtimeMs,type:s.isDirectory()?'directory':'file'}},
  readAsData:async p=>new Data(await fs.promises.readFile(p)),writeAsData:async(p,data)=>{writes++;await fs.promises.writeFile(p,data.bytes)},
  copyFile:async (src,dest)=>fs.promises.copyFile(src,dest,fs.constants.COPYFILE_EXCL),rename:async (src,dest)=>fs.promises.rename(src,dest),
  remove:async p=>{removes++;await fs.promises.rm(p,{recursive:true})},
@@ -325,6 +325,98 @@ async function main(){
   props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
   props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
   h.unmount()
+ })
+ await test('root additions create empty arbitrary-extension files/empty dirs and native binary imports; real Git A with unchanged HEAD/index',async()=>{
+  const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  assert.equal(await service.createLocalWorktreeEntry('repo','created.tsx',false,dir),'created.tsx');assert.equal(fs.readFileSync(dir+'/created.tsx').length,0)
+  await service.createLocalWorktreeEntry('repo','README-without-extension',false,dir);await service.createLocalWorktreeEntry('repo','empty-created',true,dir)
+  assert.deepEqual(fs.readdirSync(dir+'/empty-created'),[])
+  const source=outside+'/original binary.BIN',bytes=Buffer.from([0,255,4,128,0,13,10]);fs.writeFileSync(source,bytes)
+  const read=FileManager.readAsData;FileManager.readAsData=async()=>{throw Error('must not read import payload into JS')}
+  try{assert.equal(await service.importLocalWorktreeFile('repo',source,'original binary.BIN',dir),'original binary.BIN')}finally{FileManager.readAsData=read}
+  assert.deepEqual(fs.readFileSync(dir+'/original binary.BIN'),bytes);assert.deepEqual(fs.readFileSync(source),bytes)
+  const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='created.tsx').slice(1),[0,2,0]);assert.deepEqual(matrix.find(r=>r[0]==='original binary.BIN').slice(1),[0,2,0]);assert.equal(matrix.some(r=>r[0].startsWith('empty-created/')),false)
+  assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+ })
+ await test('root addition safety, case/Unicode conflict, exact selected file without probing system ancestors, identity change and partial copy preservation',async()=>{
+  const source=outside+'/original binary.BIN'
+  for(const name of ['', '.', '..', '../escape','folder/escape','/tmp/escape','a\\b','.git','.GIT',' bad','bad.']){
+   await assert.rejects(service.createLocalWorktreeEntry('repo',name,false));await assert.rejects(service.importLocalWorktreeFile('repo',source,name))
+  }
+  for(const name of ['CREATED.TSX','empty-created','ORIGINAL BINARY.bin'])await assert.rejects(service.createLocalWorktreeEntry('repo',name,false),/同名|存在/)
+  await disk('é.txt','kept');await assert.rejects(service.createLocalWorktreeEntry('repo','e\u0301.txt',false),/同名/)
+  fs.symlinkSync(source,outside+'/import-link');await assert.rejects(service.importLocalWorktreeFile('repo',outside+'/import-link','unsafe.bin'),/符号链接/)
+  // Access to a selected file does not authorize probing its system ancestors.
+  const isLink=FileManager.isLink,ancestors=new Set();let ancestor=path.dirname(source)
+  while(ancestor!==path.dirname(ancestor)){ancestors.add(ancestor);ancestor=path.dirname(ancestor)}ancestors.add(ancestor)
+  let ancestorProbes=0
+  FileManager.isLink=async p=>{if(ancestors.has(p)){ancestorProbes++;throw Error('ungranted ancestor access')}return isLink(p)}
+  try{await service.importLocalWorktreeFile('repo',source,'ancestor-denied.bin')}finally{FileManager.isLink=isLink}
+  assert.equal(ancestorProbes,0);assert.deepEqual(fs.readFileSync(dir+'/ancestor-denied.bin'),fs.readFileSync(source))
+  // Model a normal system directory alias such as /var -> /private/var.
+  fs.mkdirSync(outside+'/real');fs.writeFileSync(outside+'/real/file','safe');fs.symlinkSync(outside+'/real',outside+'/parent-link')
+  FileManager.isLink=async p=>{if(p===outside+'/parent-link')ancestorProbes++;return isLink(p)}
+  try{await service.importLocalWorktreeFile('repo',outside+'/parent-link/file','system-alias.bin')}finally{FileManager.isLink=isLink}
+  assert.equal(ancestorProbes,0);assert.equal(fs.readFileSync(dir+'/system-alias.bin','utf8'),'safe')
+  assert.ok(fs.lstatSync(outside+'/parent-link').isSymbolicLink());assert.equal(fs.readFileSync(outside+'/real/file','utf8'),'safe')
+  await assert.rejects(service.importLocalWorktreeFile('repo',outside,'folder-source'),/普通文件/)
+  await assert.rejects(service.createLocalWorktreeEntry('repo','wrong-root',false,outside),/工作区/)
+  const readDir=FileManager.readDirectory;FileManager.readDirectory=async p=>{const names=await readDir(p);if(p===dir)root=outside;return names}
+  try{await assert.rejects(service.createLocalWorktreeEntry('repo','relocated',true),/工作区/)}finally{root=dir;FileManager.readDirectory=readDir}
+  const stat=FileManager.stat;let checks=0;FileManager.stat=async p=>{const value=await stat(p);if(p===dir&&++checks>1)value.creationDate++;return value}
+  try{await assert.rejects(service.createLocalWorktreeEntry('repo','replaced-root',true),/身份/)}finally{FileManager.stat=stat}
+  const copy=FileManager.copyFile;FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('disk full')}
+  try{await assert.rejects(service.importLocalWorktreeFile('repo',source,'partial-import.bin'),/disk full.*部分导入/)}finally{FileManager.copyFile=copy}
+  assert.equal(fs.readFileSync(dir+'/partial-import.bin','utf8'),'partial');assert.ok(fs.existsSync(source));assert.ok(!fs.existsSync(outside+'/relocated'))
+  // External creation between preflight and native copy must never be overwritten.
+  FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'external');return copy(s,d)}
+  try{await assert.rejects(service.createLocalWorktreeEntry('repo','race-create.txt',false),/存在|EEXIST|核对/)}finally{FileManager.copyFile=copy}
+  assert.equal(fs.readFileSync(dir+'/race-create.txt','utf8'),'external')
+ })
+ await test('root addition facade waits status reader and rejects concurrent writers; no extra snapshot scan',async()=>{
+  const gate=deferred(),ctxRevision=coordinator.revision(ctx.gitdir);let started=false
+  const read=coordinator.read(ctx.gitdir,async()=>{started=true;await gate.promise});await tick();assert.equal(started,true)
+  const create=service.createLocalWorktreeEntry('repo','locked-created',true)
+  await tick();assert.equal(fs.existsSync(dir+'/locked-created'),false)
+  await assert.rejects(service.importLocalWorktreeFile('repo',outside+'/original binary.BIN','locked-import.bin'),/写|操作/)
+  gate.resolve();await read;await create;assert.ok(fs.existsSync(dir+'/locked-created'));assert.ok(coordinator.revision(ctx.gitdir)>ctxRevision)
+ })
+ await test('actual root add menu order/group/icon, declarative creation, import/cancel/conflict/partial refresh and merge/busy guards',async()=>{
+  let updates=0,selected=[],pickCalls=0,photoCalls=0
+  global.DocumentPicker={pickFiles:async opts=>{pickCalls++;assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
+  global.PHPickerFilter={images:()=> 'images'};global.Photos={pick:async()=>{photoCalls++;return []}}
+  const props={files:['folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:async()=>{updates++},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
+  function action(title){h.render();return all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title===title)}
+  const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
+  assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
+  assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入图片','photo']])
+  function sheet(){h.render();return h.tree.props.sheet.content.props}
+  nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
+  await action('创建文件').props.action();assert.equal(sheet().title,'创建文件');sheet().onCancel();assert.equal(updates,0)
+  await action('创建文件').props.action();await sheet().onConfirm('ui-created.json');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
+  assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
+  await action('创建目录').props.action();await sheet().onConfirm('ui-empty');assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
+  await action('创建文件').props.action();await sheet().onConfirm('UI-CREATED.JSON');assert.match(sheet().error,/同名/);sheet().onCancel()
+  const before=updates;await action('导入文件').props.action();await action('导入图片').props.action();assert.equal(updates,before);assert.equal(photoCalls,1)
+  const photoBytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);fs.writeFileSync(outside+'/picker-original.PNG',photoBytes)
+  global.Photos.pick=async opts=>{assert.deepEqual(opts,{filter:'images',limit:1});return [{itemProvider:{registeredTypes:['public.png','public.image'],loadFilePath:async type=>{assert.equal(type,'public.png');return outside+'/picker-original.PNG'}}}]}
+  await action('导入图片').props.action();assert.deepEqual(fs.readFileSync(dir+'/picker-original.PNG'),photoBytes);assert.equal(fs.existsSync(outside+'/picker-original.PNG'),false)
+  assert.ok(nodes().some(n=>n.type==='Image'&&n.props.systemName==='photo'&&n.props.foregroundStyle==='systemGreen'))
+  const bytes=Buffer.from([0,255,20]);fs.writeFileSync(outside+'/ui-native.bin',bytes);selected=[outside+'/ui-native.bin'];await action('导入文件').props.action();assert.deepEqual(fs.readFileSync(dir+'/ui-native.bin'),bytes)
+  await action('导入文件').props.action();assert.match(text(h),/同名|存在/);assert.ok(fs.existsSync(outside+'/ui-native.bin'))
+  const originalCopy=FileManager.copyFile;FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('UI disk full')}
+  fs.writeFileSync(outside+'/ui-partial.bin','original');selected=[outside+'/ui-partial.bin'];const partialRefresh=updates
+  try{await action('导入文件').props.action()}finally{FileManager.copyFile=originalCopy}
+  assert.match(text(h),/UI disk full.*部分导入/);assert.ok(updates>partialRefresh);assert.equal(fs.readFileSync(dir+'/ui-partial.bin','utf8'),'partial');assert.equal(fs.readFileSync(outside+'/ui-partial.bin','utf8'),'original')
+  const gate=deferred();global.DocumentPicker.pickFiles=async()=>{pickCalls++;await gate.promise;return []}
+  const pending=action('导入文件').props.action();const busyCalls=pickCalls;assert.equal(action('创建文件').props.disabled,true);await action('导入文件').props.action();assert.equal(pickCalls,busyCalls);gate.resolve();await pending
+  props.mergeInProgress=true;assert.equal(action('创建文件').props.disabled,true);await action('创建文件').props.action();await action('导入文件').props.action();assert.equal(pickCalls,busyCalls)
+  props.mergeInProgress=false;const detached=deferred();fs.writeFileSync(outside+'/detached-import.bin','not copied')
+  global.DocumentPicker.pickFiles=async()=>{await detached.promise;return [outside+'/detached-import.bin']}
+  const afterUnmount=action('导入文件').props.action();h.unmount();detached.resolve();await afterUnmount
+  assert.equal(fs.existsSync(dir+'/detached-import.bin'),false);assert.equal(h.lateWrites,0)
  })
  await test('parent editor controller lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0

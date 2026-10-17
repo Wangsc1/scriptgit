@@ -33,7 +33,7 @@ async function main() {
   const FilesTab = load('pages/FilesTab.tsx', {
     scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
     '../utils/format': { formatBytes: String, formatDate: String }, '../services/repoStore': { resolveWorkdir: () => '/mock' },
-    '../services/gitService': {}, '../constants/colors': {},
+    '../services/gitService': {}, '../services/localFileImport': {}, '../constants/colors': {},
   }).FilesTab
   const h = mount(FilesTab, { files: paths, changes: [{ filepath: paths[0], status: '*modified' }], bookmarkName: 'mock', loading: false, onOpen() {}, onWorktreeChanged() {}, onPush() {}, onRestore() {}, mergeInProgress: false })
   await tick()

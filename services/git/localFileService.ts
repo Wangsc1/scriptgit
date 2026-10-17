@@ -218,3 +218,84 @@ export function copyLocalDirectoryInternal(bookmarkName: string, path: string, n
 export function renameLocalDirectoryInternal(bookmarkName: string, path: string, name: string): Promise<LocalDirectoryResult> {
   return changeDirectory(bookmarkName, path, name, false)
 }
+
+/** Root-only additions. The UI never infers a destination from expanded folders. */
+async function additionRoot(bookmarkName: string, expectedRoot?: string, creationDate?: number) {
+  const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
+  if (!root.startsWith("/") || root.split("/").some(p => p === "." || p === "..") || (expectedRoot !== undefined && root !== expectedRoot)) throw new Error("工作区路径已变化")
+  if (await FileManager.isLink(root) || !(await FileManager.isDirectory(root))) throw new Error("工作区不是安全目录")
+  const stat = await FileManager.stat(root)
+  if (creationDate !== undefined && stat.creationDate !== creationDate) throw new Error("工作区目录身份已变化，未继续写入")
+  return { root, creationDate: stat.creationDate }
+}
+async function additionTarget(bookmarkName: string, name: string, expectedRoot?: string) {
+  validNewName(name)
+  const identity = await additionRoot(bookmarkName, expectedRoot)
+  async function check() {
+    await additionRoot(bookmarkName, identity.root, identity.creationDate)
+    const fold = (value: string) => value.normalize("NFC").toLowerCase()
+    const names = await FileManager.readDirectory(identity.root)
+    if (names.some(entry => fold(entry.split("/").pop() || entry) === fold(name))) throw new Error("根目录已有同名目标（含大小写重名），未覆盖")
+    const target = identity.root + "/" + name
+    if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new Error("目标已存在，未覆盖")
+    await additionRoot(bookmarkName, identity.root, identity.creationDate)
+    return target
+  }
+  return { ...identity, check }
+}
+
+export async function createLocalEntryInternal(bookmarkName: string, name: string, directory: boolean, expectedRoot?: string): Promise<string> {
+  const destination = await additionTarget(bookmarkName, name, expectedRoot)
+  if (directory) {
+    const target = await destination.check()
+    try {
+      await FileManager.createDirectory(target, false)
+      await additionRoot(bookmarkName, destination.root, destination.creationDate)
+      return name
+    } catch (error: any) {
+      throw new Error(String(error?.message || error) + "；目标目录可能已创建，未自动删除，请刷新核对")
+    }
+  }
+  // writeAsData overwrites existing files. Write only inside our exclusively created
+  // staging directory, then native copyFile (no overwrite) into the worktree.
+  const staging = FileManager.temporaryDirectory.replace(/\/+$/, "") + "/scriptgit-empty-" + Date.now() + "-" + Math.random().toString(36).slice(2)
+  await FileManager.createDirectory(staging, false)
+  try {
+    await FileManager.writeAsData(staging + "/empty", Data.fromRawString("", "utf-8")!)
+    await FileManager.copyFile(staging + "/empty", await destination.check())
+    await additionRoot(bookmarkName, destination.root, destination.creationDate)
+    return name
+  } catch (error: any) {
+    throw new Error(String(error?.message || error) + "；未自动删除任何工作区目标，请刷新核对")
+  } finally {
+    // Only the scratch directory created above belongs to this operation.
+    try { if (!(await FileManager.isLink(staging))) await FileManager.remove(staging) } catch (_) { /* Scratch cleanup must not hide the operation result. */ }
+  }
+}
+
+/** sourcePath must be the exact picker-authorized file (or its exported temporary representation). */
+export async function importLocalFileInternal(bookmarkName: string, sourcePath: string, name: string, expectedRoot?: string): Promise<string> {
+  if (!sourcePath.startsWith("/") || sourcePath.includes("\\") || /[\x00-\x1f\x7f]/.test(sourcePath) || sourcePath.split("/").some(p => p === "." || p === ".." || p.toLowerCase() === ".git")) throw new Error("导入来源路径不安全")
+  const destination = await additionTarget(bookmarkName, name, expectedRoot)
+  async function sourceStat() {
+    // The picker grants this exact path, not its system ancestors. Normal iOS
+    // aliases (e.g. /var -> /private/var) must not invalidate the selected file.
+    if (await FileManager.isLink(sourcePath) || !(await FileManager.isFile(sourcePath)) || await FileManager.isDirectory(sourcePath)) throw new Error("导入来源不是普通文件或已变为符号链接")
+    return FileManager.stat(sourcePath)
+  }
+  const before = await sourceStat()
+  const target = await destination.check()
+  const latest = await sourceStat()
+  if (before.size !== latest.size || before.modificationDate !== latest.modificationDate || before.creationDate !== latest.creationDate) throw new Error("导入来源已变化，未复制")
+  try {
+    await FileManager.copyFile(sourcePath, target)
+    const after = await sourceStat()
+    await additionRoot(bookmarkName, destination.root, destination.creationDate)
+    const saved = await safeFile(bookmarkName, name)
+    const stat = await FileManager.stat(saved.absolute)
+    if (stat.size !== before.size || after.size !== before.size || after.modificationDate !== before.modificationDate || after.creationDate !== before.creationDate) throw new Error("导入期间文件发生变化")
+    return name
+  } catch (error: any) {
+    throw new Error(String(error?.message || error) + "；目标可能已部分导入，源文件保留，未自动删除任何源文件或目标，请刷新核对")
+  }
+}

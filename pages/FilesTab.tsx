@@ -1,11 +1,12 @@
-import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
+import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { createLocalWorktreeEntry, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
+import { pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
 import type { FileChange } from "../types/git"
 
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
@@ -279,13 +280,78 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
 
+  const [creation, setCreation] = useState<{ directory: boolean; root: string } | null>(null)
+  const [creationError, setCreationError] = useState("")
+  function startCreation(directory: boolean) {
+    if (state.current.busy || loading || mergeInProgress) return
+    try {
+      setCreationError(""); setError("")
+      setCreation({ directory, root: resolveWorkdir(bookmarkName).replace(/\/+$/, "") })
+    } catch (e: any) { setError(String(e?.message || e)) }
+  }
+  function cancelCreation() { if (!state.current.busy) setCreation(null) }
+  function showAddition(path: string, directory: boolean) {
+    if (!state.current.alive) return
+    if (directory) setDirectories(previous => [...new Set([...previous, path])])
+    else setAdded(previous => [...new Set([...previous, path])])
+    setDeleted(previous => previous.filter(value => value !== path))
+    setRenamedFiles(previous => previous.filter(entry => entry.path !== path))
+    setCopied(previous => [...previous.filter(entry => entry.path !== path), { path, before: changes, directory }])
+  }
+  async function confirmCreation(name: string) {
+    if (!creation || state.current.busy || mergeInProgress) return
+    state.current.busy = true; setBusy(true); setCreationError(""); setError("")
+    try {
+      const path = await createLocalWorktreeEntry(bookmarkName, name, creation.directory, creation.root)
+      showAddition(path, creation.directory)
+      if (state.current.alive) setCreation(null)
+      await onWorktreeChanged()
+    } catch (e: any) {
+      if (state.current.alive) { setCreationError(String(e?.message || e)); setError(String(e?.message || e)) }
+      try { await onWorktreeChanged() } catch (_) { /* Preserve the original failure, including partial results. */ }
+    } finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
+  }
+  async function importSelection(photo: boolean) {
+    if (state.current.busy || loading || mergeInProgress) return
+    state.current.busy = true; setBusy(true); setError("")
+    let picked: PickedLocalFile | null = null
+    try {
+      const expectedRoot = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
+      picked = await (photo ? pickLocalPhoto() : pickLocalDocument())
+      if (!picked || !state.current.alive) return // Cancellation is a zero-write operation.
+      const path = await importLocalWorktreeFile(bookmarkName, picked.sourcePath, picked.name, expectedRoot)
+      showAddition(path, false)
+      await onWorktreeChanged()
+    } catch (e: any) {
+      if (state.current.alive) setError(String(e?.message || e))
+      try { await onWorktreeChanged() } catch (_) { /* Partial imports must be reflected without removing them. */ }
+    } finally {
+      if (picked) {
+        try { await picked.release() } catch (_) { if (state.current.alive) setError("导入流程已结束，但照片临时副本清理失败；请核对工作区结果") }
+      }
+      state.current.busy = false; if (state.current.alive) setBusy(false)
+    }
+  }
+
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
   return <Section sheet={{
-    isPresented: directoryForm !== null,
-    onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
-    content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
-  }} header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
+    isPresented: directoryForm !== null || creation !== null,
+    onChanged: (presented: boolean) => { if (!presented) { cancelDirectoryForm(); cancelCreation() } },
+    content: creation ? <NameInputSheet key={creation.directory ? "create-directory" : "create-file"} title={creation.directory ? "创建目录" : "创建文件"} initialName="" message="添加到仓库工作区根目录。不覆盖同名目标；文件初始为空，扩展名不限；空目录仅在当前会话可见，Git 不跟踪。" busy={busy} error={creationError} onCancel={cancelCreation} onConfirm={confirmCreation} /> : directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
+  }} header={<HStack frame={{ maxWidth: Infinity }}>
+    <Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
+    <Menu label={<Image systemName="plus" />} disabled={busy || loading || mergeInProgress}>
+      <Section header={<Text>添加到仓库</Text>}>
+        <Button title="创建文件" systemImage="doc.text" disabled={busy || loading || mergeInProgress} action={() => startCreation(false)} />
+        <Button title="创建目录" systemImage="folder" disabled={busy || loading || mergeInProgress} action={() => startCreation(true)} />
+      </Section>
+      <Section>
+        <Button title="导入文件" systemImage="doc.text" disabled={busy || loading || mergeInProgress} action={() => importSelection(false)} />
+        <Button title="导入图片" systemImage="photo" disabled={busy || loading || mergeInProgress} action={() => importSelection(true)} />
+      </Section>
+    </Menu>
+  </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
     {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}

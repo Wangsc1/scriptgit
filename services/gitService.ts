@@ -34,7 +34,7 @@ import {
 } from "./git/statusQueryService"
 import { getRepoListStatus } from "./git/repoStatusReadService"
 import { runStatusMutation, runStatusRead } from "./git/statusScanService"
-import { copyLocalDirectoryInternal, renameLocalDirectoryInternal, deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
+import { createLocalEntryInternal, importLocalFileInternal, copyLocalDirectoryInternal, renameLocalDirectoryInternal, deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
 export type { LocalWorktreeFile } from "./git/localFileService"
 export { getRepoListStatus }
 export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
@@ -119,6 +119,13 @@ async function runRepoMutation<T>(
 }
 
 /** 本地文件操作只改工作区；不暂存/提交/推送，也不额外启动收尾全仓扫描。 */
+export function createLocalWorktreeEntry(bookmarkName: string, name: string, directory: boolean, expectedRoot?: string): Promise<string> {
+  return runRepoMutation(bookmarkName, () => createLocalEntryInternal(bookmarkName, name, directory, expectedRoot), false)
+}
+export function importLocalWorktreeFile(bookmarkName: string, sourcePath: string, name: string, expectedRoot?: string): Promise<string> {
+  return runRepoMutation(bookmarkName, () => importLocalFileInternal(bookmarkName, sourcePath, name, expectedRoot), false)
+}
+
 export function readLocalWorktreeFile(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
   return runStatusRead(bookmarkName, () => readLocalFileInternal(bookmarkName, path))
 }
