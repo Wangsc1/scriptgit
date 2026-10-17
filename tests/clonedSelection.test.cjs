@@ -75,14 +75,14 @@ async function main(){
     assert.equal(node(h,'Button','克隆所选仓库').props.disabled,true);assert.equal(row(h,'bob/a').props.disabled,false)
     row(h,'bob/a').props.action();assert.equal(node(h,'Button','克隆所选仓库').props.disabled,false);h.unmount()
   })
-  await test('home dismiss xmark is white, settings dismiss xmark stays black; unrelated search xmark unchanged',async()=>{
+  await test('home and settings dismiss xmarks are white; unrelated search xmark unchanged',async()=>{
     const root=path.join(__dirname,'..')
     for(const file of ['pages/RepoListPage.tsx','pages/SettingsPage.tsx']){
       const source=ts.createSourceFile(file,fs.readFileSync(path.join(root,file),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
       assert.equal(source.parseDiagnostics.length,0);let count=0
       const attr=(n,key)=>n.attributes.properties.find(p=>p.name?.text===key)?.initializer
       const visit=n=>{if(ts.isJsxSelfClosingElement(n)&&n.tagName.getText(source)==='Image'&&attr(n,'systemName')?.text==='xmark'){
-        count++;assert.equal(attr(n,'foregroundStyle')?.text,file==='pages/RepoListPage.tsx'?'white':'black')
+        count++;assert.equal(attr(n,'foregroundStyle')?.text,'white')
         let p=n.parent;while(p&&!ts.isJsxElement(p))p=p.parent
         assert.equal(p.openingElement.tagName.getText(source),'Button');assert.equal(attr(p.openingElement,'action').expression.getText(source),'dismiss')
         p=p.parent;while(p&&(!ts.isJsxElement(p)||p.openingElement.tagName.getText(source)!=='ToolbarItem'))p=p.parent
