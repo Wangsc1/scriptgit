@@ -25,7 +25,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const controller = editor.controller
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
-  // 打开内容只使用已读取的快照：不读 HEAD，不做行差异计算。
+  // 首屏只使用已读取快照；数量统计延后加载，不阻塞编辑器呈现。
   const selection = useObservable(0)
   const [viewKind, setViewKind] = useState(0)
   const versionRef = useRef<FileVersions | null>(null)
@@ -36,8 +36,9 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const [diffBusy, setDiffBusy] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadingVersions = useRef(false)
-  async function loadDiff() {
-    if (!controller || file.readOnlyReason || loadingVersions.current || selection.value !== 1) return
+  const statsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  async function loadDiff(background = false) {
+    if (!controller || file.readOnlyReason || loadingVersions.current || (!background && selection.value !== 1)) return
     loadingVersions.current = true
     setDiffBusy(true); setVersionsError("")
     try {
@@ -45,7 +46,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       if (!alive.current) return
       versionRef.current = v
       // 离开改动项后不再计算，返回原内容从不等待此请求。
-      if (selection.value !== 1) return
+      if (!background && selection.value !== 1) return
       const draft = controller.content
       setDiff(editorDiff(v, draft))
       setDiffRevision(n => n + 1)
@@ -62,18 +63,28 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       setViewKind(value)
       if (timer.current) clearTimeout(timer.current)
       // 先呈现页签/加载态，再开始 HEAD 读取和差异计算。
-      if (value === 1) { setDiffBusy(true); timer.current = setTimeout(() => void loadDiff(), 0) }
+      if (value === 1) {
+        if (statsTimer.current) clearTimeout(statsTimer.current)
+        setDiffBusy(true); timer.current = setTimeout(() => void loadDiff(), 0)
+      }
     }
     selection.subscribe(onSelection)
+    // 给原生编辑器首屏留出时间；统计使用真实 HEAD/草稿，不显示猜测数字。
+    if (initialHasChanges) statsTimer.current = setTimeout(() => void loadDiff(true), 500)
     if (controller) controller.onContentChanged = () => {
       if (!alive.current) return
-      // 原内容输入只做字符串比较，不计算 LCS、不读取磁盘。
-      setHasChanges(initialHasChanges || controller.content !== baseline.current.text)
+      // 输入当下只比较字符串；停顿后再更新增删统计。
+      const changed = initialHasChanges || controller.content !== baseline.current.text
+      setHasChanges(changed)
+      setDiff(null)
+      if (statsTimer.current) clearTimeout(statsTimer.current)
+      if (changed) statsTimer.current = setTimeout(() => void loadDiff(true), 500)
     }
     return () => {
       alive.current = false
       selection.unsubscribe(onSelection)
       if (timer.current) clearTimeout(timer.current)
+      if (statsTimer.current) clearTimeout(statsTimer.current)
       if (controller) controller.onContentChanged = undefined
       controller?.dispose()
     }
@@ -124,12 +135,12 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
-      {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy}
+      {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
         content={<Editor controller={controller} scriptName="scriptgit" showAccessoryView={false} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
           <VStack spacing={0} padding={{ horizontal: 5, vertical: 10 }}>
             {versionsError ? <VStack spacing={6}><Text font="caption" foregroundStyle="red">{versionsError}</Text>
-              <Button title="重试读取改动" action={loadDiff} disabled={busy || diffBusy} /></VStack> :
+              <Button title="重试读取改动" action={() => loadDiff()} disabled={busy || diffBusy} /></VStack> :
               diffBusy || !diff ? <ProgressView /> : <>
                 <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL}>−{deleted} +{added}</Text>
                 {added === 0 && deleted === 0 && controller.content !== versionRef.current?.original ?

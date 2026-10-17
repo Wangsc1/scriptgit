@@ -39,6 +39,16 @@ async function main(){
  wait=deferred();const slow=open();let tabs=find(slow,'FileChangeSwitcher');tabs.props.selection.value=1;await pause();tabs.props.selection.value=0
  assert.equal(find(slow,'Editor').props.controller,controllers.at(-1));const beforeResolve=diffCalls
  slow.unmount();wait.resolve();await tick();assert.equal(slow.lateWrites,0);assert.equal(diffCalls,beforeResolve);wait=null
+ // Opening stays immediate; after the first screen, real line counts arrive without selecting the changes tab.
+ const counted=open(),countedController=controllers.at(-1),beforeStatsReads=versionCalls
+ assert.equal(find(counted,'FileChangeSwitcher').props.stats,null)
+ await new Promise(r=>setTimeout(r,540))
+ assert.equal(versionCalls,beforeStatsReads+1);assert.deepEqual(find(counted,'FileChangeSwitcher').props.stats,{added:1,deleted:1})
+ countedController.content=versions.original;countedController.onContentChanged()
+ assert.equal(find(counted,'FileChangeSwitcher').props.stats,null)
+ await new Promise(r=>setTimeout(r,540))
+ assert.deepEqual(find(counted,'FileChangeSwitcher').props.stats,{added:0,deleted:0});assert.equal(versionCalls,beforeStatsReads+1)
+ assert.equal(find(counted,'FileChangeSwitcher').props.selection.value,0);counted.unmount()
  const added=editorDiff({...versions,original:null,added:true},'new\n');assert.equal(added.lines.filter(l=>l.type==='add').length,1)
  assert.equal(editorDiff({...versions,original:''},'').lines.length,0)
  const deleted=editorDiff(versions,'');assert.equal(deleted.lines.filter(l=>l.type==='del').length,3)
@@ -55,11 +65,11 @@ async function main(){
  const standard=mount(DiffViewer,{diff:sample});assert.ok(all(expand(standard.tree)).some(n=>n.props.frame?.width===28));compact.unmount();standard.unmount()
  const {FileChangeSwitcher}=load('components/FileChangeSwitcher.tsx',{scripting:ui,'../constants/colors':{COLOR_ACCENT:'blue'}})
  const selection={value:0}
- const switcher=mount(FileChangeSwitcher,{selection,content:__jsx('Editor',{}),changes:__jsx('Text',{},'diff'),disabled:false})
+ const switcher=mount(FileChangeSwitcher,{stats:{added:1,deleted:1},selection,content:__jsx('Editor',{}),changes:__jsx('Text',{},'diff'),disabled:false})
  assert.equal(switcher.tree.type,'TabView');assert.equal(switcher.tree.props.selection,selection)
- assert.deepEqual(all(switcher.tree).filter(n=>n.type==='Tab').map(n=>[n.props.title,n.props.value,n.props.systemImage]),[['原内容',0,'doc.text'],['改动项',1,'plusminus']])
+ assert.deepEqual(all(switcher.tree).filter(n=>n.type==='Tab').map(n=>[n.props.title,n.props.value,n.props.systemImage]),[['原内容',0,'doc.text'],['改动项 -1 +1',1,undefined]])
  assert.equal(all(switcher.tree).some(n=>n.props.glassEffect||n.props.safeAreaInset||n.props.padding),false)
  switcher.unmount()
- console.log('PASS 首屏零HEAD读取/零差异计算、内容输入不算差异、原生TabView不设边距偏移、默认全屏内容、条件双按钮、红删绿增/行内高亮、即时草稿、切换零写入、同一控制器、自动保存、重试及卸载安全')
+ console.log('PASS 首屏不等统计、后台真实增删计数/草稿更新、无符号图标、输入当下不算差异、原生TabView不设边距偏移、默认全屏内容、条件双按钮、红删绿增/行内高亮、即时草稿、切换零写入、同一控制器、自动保存、重试及卸载安全')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})
