@@ -132,8 +132,10 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const added = diff?.lines.filter(line => line.type === "add").length ?? 0
   const deleted = diff?.lines.filter(line => line.type === "del").length ?? 0
 
-  return <NavigationStack>
-    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
+  return <NavigationStack preferredColorScheme="dark" background="#242424">
+    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background="#242424" foregroundStyle="white" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+      toolbarBackground={{ style: "#242424", bars: ["navigationBar"] }}
+      toolbarBackgroundVisibility={{ visibility: "visible", bars: ["navigationBar"] }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
       toolbar={{
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
@@ -144,7 +146,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
         content={<LocalCodeEditor controller={controller} onBack={back} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-          background={{ light: "white", dark: "#242424" }}
+          background="#242424" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
           simultaneousGesture={DragGesture({ minDistance: 20, coordinateSpace: "local" }).onEnded(details => {
             if (details.startLocation.x <= 24 && details.translation.width >= 80 && details.translation.width > Math.abs(details.translation.height) * 1.5) void back()
           })}>

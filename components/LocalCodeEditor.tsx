@@ -1,4 +1,4 @@
-import { VStack, Text, ProgressView, WebView, useEffect, useState, useColorScheme } from "scripting"
+import { VStack, Text, ProgressView, WebView, useEffect, useState } from "scripting"
 import type { LocalCodeEditorController } from "../services/localCodeEditor"
 
 /** The parent owns saving and disposal. Tab unmounts only detach listeners. */
@@ -7,7 +7,6 @@ export function LocalCodeEditor({ controller, onBack }: {
   onBack?: () => void | Promise<void>
 }) {
   const [, refresh] = useState(0)
-  const scheme = useColorScheme()
   useEffect(() => {
     let mounted = true
     const unsubscribe = controller.subscribe(() => { if (mounted) refresh(value => value + 1) })
@@ -15,10 +14,10 @@ export function LocalCodeEditor({ controller, onBack }: {
     return () => { mounted = false; unsubscribe() }
   }, [controller])
   useEffect(() => controller.attachBack(onBack), [controller, onBack])
-  useEffect(() => { controller.setDark(scheme === "dark") }, [controller, scheme])
+  useEffect(() => { controller.setDark(true) }, [controller])
 
   return <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-    background={{ light: "white", dark: "#242424" }}>
+    background="#242424" ignoresSafeArea={{ regions: "container", edges: "bottom" }}>
     {controller.phase === "idle" || controller.phase === "loading" ? <VStack spacing={6} padding={12}>
       <ProgressView /><Text font="caption">正在加载本地编辑器…</Text>
     </VStack> : null}
@@ -27,6 +26,6 @@ export function LocalCodeEditor({ controller, onBack }: {
     </Text> : null}
     {controller.webController ? <WebView controller={controller.webController}
       frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-      background={{ light: "white", dark: "#242424" }} /> : null}
+      background="#242424" ignoresSafeArea={{ regions: "container", edges: "bottom" }} /> : null}
   </VStack>
 }

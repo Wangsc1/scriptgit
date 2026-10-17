@@ -52,21 +52,24 @@ async function main(){
  assert.match(local.html,/initial-scale=1, minimum-scale=1, maximum-scale=6, user-scalable=yes/);assert.match(local.html,/图片加载失败/)
  // Execute the delivered touch handlers: edge right-back only, not ordinary panning/zoom/diagonal/multitouch.
  const vm=require('node:vm')
- function gesture({x=10,y=100,dx=100,dy=0,scale=1,multi=false,cancel=false}={}){
+ function gesture({x=10,y=100,dx=100,dy=0,scale=1,multi=false,cancel=false,fast=false}={}){
   const listeners={},classes={add(){}},photo={complete:true,naturalWidth:1,classList:classes,addEventListener(){}},stage={},spinner={classList:classes};let count=0
   const context={document:{getElementById:id=>({photo,stage,spinner}[id]),addEventListener:(name,fn)=>listeners[name]=fn},window:{visualViewport:{scale},webkit:{messageHandlers:{closeViewer:{postMessage:()=>count++}}}}}
   vm.runInNewContext(local.html.match(/<script>([\s\S]*?)<\/script>/)[1],context)
   const touch={clientX:x,clientY:y};listeners.touchstart({touches:multi?[touch,touch]:[touch]})
   if(cancel)listeners.touchcancel({})
-  const end={clientX:x+dx,clientY:y+dy};listeners.touchmove({touches:[end]});listeners.touchmove({touches:[end]});listeners.touchend({touches:[],changedTouches:[end]});return count
+  const end={clientX:x+dx,clientY:y+dy};if(!fast){listeners.touchmove({touches:[end]});listeners.touchmove({touches:[end]})}listeners.touchend({touches:[],changedTouches:[end]});return count
  }
  assert.equal(gesture(),1);assert.equal(gesture({x:100}),0);assert.equal(gesture({scale:2}),0)
  assert.equal(gesture({dy:100}),0);assert.equal(gesture({multi:true}),0);assert.equal(gesture({cancel:true}),0)
  assert.equal(gesture({dx:0,dy:130}),1)
+ assert.equal(gesture({fast:true}),1);assert.equal(gesture({fast:true,scale:2}),0)
+ assert.equal(gesture({fast:true,multi:true}),0);assert.equal(gesture({fast:true,cancel:true}),0)
+ assert.equal(gesture({fast:true,x:100}),0)
  local.close();local.close();assert.equal(closed,1);compact.unmount();assert.equal(local.disposed,true)
  const normal=mount(ImageViewer,{url:'https://example.invalid/image.png',onClose(){}});await tick();const original=controllers.at(-1)
  assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
- const touchEnd=html=>html.slice(html.indexOf('document.addEventListener("touchend"'),html.indexOf('</script>'));assert.equal(touchEnd(local.html).replace('pullClosed || multiTouch || ',''),touchEnd(original.html).replace('pullClosed || multiTouch || ',''));normal.unmount()
+ assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
  for(const name of ['DiffPage','CommitDiffPage','GitHubItemDetailPage'])assert.doesNotMatch(fs.readFileSync(root+'/pages/'+name+'.tsx','utf8'),/compactImage/)
  console.log('PASS compact local image HTML caps 80%/60% inside safe-area stage, intrinsic small-image sizing, full-screen container, unchanged close/zoom/error script and shared default mode.')
  console.log('PASS real RepoDetailPage List owns editor/image sessions across Tab changes; explicit close, refresh, image route; no added Navigation.present/Script.exit path. Native lifecycle requires device validation.')

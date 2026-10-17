@@ -134,6 +134,16 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
       return
     }
     var touch = event.changedTouches[0]
+    ${compactImage ? `// Fast swipes may cross the threshold only in the final touchend sample.
+    var dx = touch.clientX - startX
+    var dy = touch.clientY - startY
+    var scale = window.visualViewport ? window.visualViewport.scale : 1
+    if (!pullClosed && !multiTouch && scale <= 1.01 &&
+      ((startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5) || (dy > 120 && Math.abs(dx) < dy * 0.5))) {
+      pullClosed = true
+      window.webkit.messageHandlers.closeViewer.postMessage(null)
+      return
+    }` : ""}
     var moved = Math.abs(touch.clientX - startX) > 8 || Math.abs(touch.clientY - startY) > 8
     var zoomed = window.visualViewport && window.visualViewport.scale > 1.01
     if (pullClosed || multiTouch || moved || zoomed) {

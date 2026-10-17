@@ -28,7 +28,10 @@ export function FileChangeSwitcher({ selection, content, changes, disabled, stat
       .catch(e => { console.warn("改动数量标签渲染失败: " + String(e)); if (alive) setFailed(true) })
     return () => { alive = false }
   }, [stamp])
-  return <TabView tabIndex={selection.value} onTabIndexChanged={value => selection.setValue(value)} disabled={disabled}>
+  return <TabView tabIndex={selection.value} onTabIndexChanged={value => selection.setValue(value)} disabled={disabled}
+    background="#242424" preferredColorScheme="dark"
+    ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+    toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["tabBar"] }}>
     <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} tag={0}
       ignoresSafeArea={{ regions: "container", edges: "bottom" }}
       toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["tabBar"] }}

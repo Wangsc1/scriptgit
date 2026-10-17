@@ -100,12 +100,12 @@ with sync_playwright() as p:
     assert scroller.evaluate("e=>e.scrollHeight > e.clientHeight")
     scroller.evaluate("e=>{e.scrollTop=500}")
     assert scroller.evaluate("e=>e.scrollTop") > 0
-    for scheme,expected in [("dark","rgb(36, 36, 36)"),("light","rgb(255, 255, 255)")]:
+    for scheme,expected in [("dark","rgb(36, 36, 36)"),("light","rgb(36, 36, 36)")]:
         page.emulate_media(color_scheme=scheme)
         page.evaluate("dark=>window.__localCodeEditor.setTheme(dark)", scheme=="dark")
         for selector in ["html","body",".cm-editor",".cm-content",".cm-gutters"]:
             actual=page.locator(selector).evaluate("e=>getComputedStyle(e).backgroundColor")
             assert actual==expected,(scheme,selector,actual)
     assert requests == [], requests
-    print("PASS soft wrapping, scrolling, exact #242424 dark/white light backgrounds and zero requests")
+    print("PASS soft wrapping, scrolling, fixed #242424 backgrounds in both system appearances and zero requests")
     browser.close()

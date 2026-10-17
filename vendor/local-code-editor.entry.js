@@ -45,7 +45,7 @@ function send(name, value) {
     if (result?.catch) result.catch(() => {})
   } catch (_) { /* Detached bridges must not interrupt editing. */ }
 }
-const media = window.matchMedia('(prefers-color-scheme: dark)')
+// The local file page deliberately stays dark regardless of device appearance.
 const view = new EditorView({
   parent: document.getElementById('editor'),
   state: EditorState.create({
@@ -57,7 +57,7 @@ const view = new EditorView({
       lineNumbers(), highlightActiveLine(), drawSelection(),
       history(), keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       indentOnInput(), bracketMatching(), syntaxHighlighting(defaultHighlightStyle, {fallback: true}),
-      language(config.ext), EditorView.lineWrapping, theme.of(media.matches ? dark : light),
+      language(config.ext), EditorView.lineWrapping, theme.of(dark),
       EditorView.theme({
         '&': {height: '100%', fontSize: '14px'},
         '.cm-scroller': {overflow: 'auto', fontFamily: 'ui-monospace, Menlo, monospace', WebkitOverflowScrolling: 'touch'},
@@ -71,16 +71,15 @@ const view = new EditorView({
     ],
   }),
 })
-function setTheme(isDark) {
+function setTheme() {
+  const isDark = true
   document.documentElement.style.backgroundColor = isDark ? '#242424' : '#ffffff'
   document.body.style.backgroundColor = isDark ? '#242424' : '#ffffff'
   document.getElementById('editor').style.backgroundColor = isDark ? '#242424' : '#ffffff'
   document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
   view.dispatch({effects: theme.reconfigure(isDark ? dark : light)})
 }
-setTheme(media.matches)
-if (media.addEventListener) media.addEventListener('change', event => setTheme(event.matches))
-else if (media.addListener) media.addListener(event => setTheme(event.matches))
+setTheme()
 window.__localCodeEditor = {
   activate(content) {
     if (view.state.sliceDoc() !== content) {
