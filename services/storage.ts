@@ -98,6 +98,7 @@ export function readGithubUser(): VerifiedGithubUser | null {
     if (!login) return null
     return {
       login,
+      id: Number.isSafeInteger((raw as VerifiedGithubUser).id) ? (raw as VerifiedGithubUser).id : undefined,
       avatarUrl: String((raw as VerifiedGithubUser).avatarUrl || ""),
     }
   }

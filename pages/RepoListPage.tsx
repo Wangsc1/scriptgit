@@ -362,7 +362,7 @@ export function RepoListPage() {
           <ToolbarItem placement="primaryAction">
             <Menu title="添加" fontWeight="semibold" systemImage="plus">
               <Button
-                title="添加本地仓库"
+                title="本地仓库"
                 systemImage="folder.badge.plus"
                 action={handleAddLocal}
               />

@@ -240,6 +240,7 @@ export interface RepoSnapshot {
 
 /** GitHub 用户信息 */
 export interface GitHubUser {
+  id?: number
   login: string
   name: string | null
   avatarUrl: string
@@ -250,6 +251,7 @@ export interface GitHubUser {
 
 /** Token 验证成功后缓存的 GitHub 用户（设置页展示用，非敏感） */
 export interface VerifiedGithubUser {
+  id?: number
   login: string
   avatarUrl: string
 }

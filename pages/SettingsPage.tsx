@@ -1,7 +1,7 @@
 /**
  * pages/SettingsPage.tsx - 设置页
  *
- * 配置 Git 提交身份（user.name / user.email）与 GitHub Token。
+ * 配置 GitHub Token；提交作者自动使用已验证的 GitHub 账号。
  * Token 用 SecureField 输入，保存到 Keychain。
  * 提示框统一用声明式 alert，避免部分场景命令式弹窗不显示。
  */
@@ -25,8 +25,6 @@ import type { Color } from "scripting"
 import { FormRow } from "../components/FormRow"
 import { AvatarView } from "../components/AvatarView"
 import {
-  getIdentity,
-  setIdentity,
   hasToken,
   setToken,
   clearToken,
@@ -46,7 +44,6 @@ import {
   getSlowOperations,
 } from "../utils/performance"
 import { checkTokenValidity } from "../api/githubApi"
-import type { GitIdentity } from "../services/authStore"
 import type { VerifiedGithubUser } from "../types/git"
 import {
   COLOR_SECONDARY_LABEL,
@@ -61,8 +58,6 @@ type AlertState = { title: string; message: string } | null
 export function SettingsPage() {
   // 与仓库 Tab 一致：左上角关闭 present 根界面
   const dismiss = Navigation.useDismiss()
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
   const [token, setTokenState] = useState("")
   const [tokenConfigured, setTokenConfigured] = useState(false)
   const [githubUser, setGithubUser] = useState<VerifiedGithubUser | null>(null)
@@ -72,7 +67,6 @@ export function SettingsPage() {
     status: "checking" | "valid" | "invalid" | "error"
     message?: string
   } | null>(null)
-  const [savingIdentity, setSavingIdentity] = useState(false)
   const [showClearAlert, setShowClearAlert] = useState(false)
   const [alertState, setAlertState] = useState<AlertState>(null)
   const [diagnosticCount, setDiagnosticCount] = useState(
@@ -94,11 +88,6 @@ export function SettingsPage() {
   }
 
   async function loadSettings() {
-    const identity = await getIdentity()
-    if (identity) {
-      setName(identity.name)
-      setEmail(identity.email)
-    }
     const configured = hasToken()
     setTokenConfigured(configured)
     // 恢复上次验证成功的用户；token 不存在时验证状态已随清除作废
@@ -117,6 +106,7 @@ export function SettingsPage() {
     if (result.status === "valid") {
       const next = {
         login: result.user.login,
+        id: result.user.id,
         avatarUrl: result.user.avatarUrl || "",
       }
       setGithubUser(next)
@@ -166,31 +156,6 @@ export function SettingsPage() {
     }
   }
 
-  async function handleSaveIdentity() {
-    setSavingIdentity(true)
-    try {
-      const n = name.trim()
-      const e = email.trim()
-      // 允许清空：清空后走默认 scriptgit
-      if (!n && !e) {
-        await setIdentity({ name: "", email: "" })
-        showAlert("已清除", "将使用默认身份 scriptgit / scriptgit@local")
-        return
-      }
-      if (!n || !e) {
-        showAlert("scriptgit", "姓名与邮箱需同时填写，或全部留空使用默认")
-        return
-      }
-      const identity: GitIdentity = { name: n, email: e }
-      await setIdentity(identity)
-      showAlert("已保存", "Git 身份已更新")
-    } catch (e: any) {
-      showAlert("保存失败", String(e?.message || e))
-    } finally {
-      setSavingIdentity(false)
-    }
-  }
-
   // 保存 token：先写 Keychain，再验证；验证失败不清 token
   async function handleSaveToken() {
     const trimmed = token.trim()
@@ -213,6 +178,7 @@ export function SettingsPage() {
       if (result.status === "valid") {
         const verified = {
           login: result.user.login,
+          id: result.user.id,
           avatarUrl: result.user.avatarUrl || "",
         }
         setGithubUser(verified)
@@ -265,6 +231,7 @@ export function SettingsPage() {
       if (result.status === "valid") {
         const verified = {
           login: result.user.login,
+          id: result.user.id,
           avatarUrl: result.user.avatarUrl || "",
         }
         setGithubUser(verified)
@@ -428,7 +395,7 @@ export function SettingsPage() {
         header={<Text>GitHub Token</Text>}
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            需开启 repo 和 workflow 权限
+            按需授予仓库与工作流权限。提交作者自动使用已验证的 GitHub 用户名，无需填写姓名或邮箱。
           </Text>
         }
       >
@@ -477,23 +444,6 @@ export function SettingsPage() {
             />
           </>
         )}
-      </Section>
-
-      <Section
-        header={<Text>Git 身份</Text>}
-        footer={
-          <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            不填写则默认使用 scriptgit / scriptgit@local 提交与拉取合并
-          </Text>
-        }
-      >
-        <FormRow label="姓名" value={name} prompt="scriptgit" onChanged={setName} />
-        <FormRow label="邮箱" value={email} prompt="scriptgit@local" onChanged={setEmail} />
-        <Button
-          title={savingIdentity ? "保存中…" : "保存身份"}
-          action={handleSaveIdentity}
-          disabled={savingIdentity}
-        />
       </Section>
 
       <Section

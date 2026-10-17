@@ -355,6 +355,7 @@ export async function getCommitCheckStatuses(
 export async function getCurrentUser(): Promise<GitHubUser> {
   const data = await ghFetch("/user")
   return {
+    id: data.id,
     login: data.login,
     name: data.name,
     avatarUrl: data.avatar_url,
@@ -459,6 +460,7 @@ export async function checkTokenValidity(): Promise<TokenCheckResult> {
     return {
       status: "valid",
       user: {
+        id: data.id,
         login: data.login,
         name: data.name,
         avatarUrl: data.avatar_url,

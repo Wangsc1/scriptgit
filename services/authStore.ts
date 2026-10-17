@@ -1,9 +1,9 @@
 /**
- * services/authStore.ts - GitHub token + Git 身份管理
+ * services/authStore.ts - GitHub token 与自动提交作者管理
  *
  * 职责：
  *  1. GitHub PAT 的 Keychain 存取（敏感凭据仍走系统 Keychain）
- *  2. Git 提交身份（user.name / user.email）的持久化（Storage private 域，旧实现为 JSON 文件）
+ *  2. 从当前 Token 已验证的 GitHub 账号生成提交作者（noreply 邮箱）
  *  3. 构造 isomorphic-git 认证对象（{ username, password }）
  *  4. Token 验证状态（GitHub 用户）持久化到 Storage private 域，token 变更/清除时作废
  */
@@ -15,8 +15,6 @@ import {
   DEFAULT_GIT_IDENTITY,
 } from "../constants/auth"
 import {
-  readIdentity,
-  writeIdentity,
   readGithubUser,
   writeGithubUser,
 } from "./storage"
@@ -87,37 +85,33 @@ export function getAuth(): { username: string; password: string } | null {
   return { username, password: token }
 }
 
-// === Git 提交身份 ===
+// === Git 提交作者：自动使用当前 Token 对应账号 ===
 
-/** 读取已保存的 Git 身份（未配置返回 null） */
-export async function getIdentity(): Promise<GitIdentity | null> {
-  return readIdentity()
-}
-
-/** 保存 Git 身份 */
-export async function setIdentity(identity: GitIdentity): Promise<void> {
-  writeIdentity(identity)
-}
-
-/**
- * 解析提交/拉取用作者。
- * 优先级：传入 override → 设置页已保存身份 → 默认 scriptgit。
- * 空字符串视为未填写。
- */
+/** 显式 override 供内部操作保留作者；不再读取旧的手工身份设置。 */
 export async function resolveAuthor(
   override?: { name?: string; email?: string } | null
 ): Promise<GitIdentity> {
   const oName = override?.name?.trim()
   const oEmail = override?.email?.trim()
   if (oName && oEmail) return { name: oName, email: oEmail }
-
-  const saved = await getIdentity()
-  const sName = saved?.name?.trim()
-  const sEmail = saved?.email?.trim()
-  if (sName && sEmail) return { name: sName, email: sEmail }
-
-  return {
-    name: DEFAULT_GIT_IDENTITY.name,
-    email: DEFAULT_GIT_IDENTITY.email,
+  const token = getToken()
+  if (!token) throw new Error("请先在设置中配置并验证 GitHub Token，提交作者将自动使用该账号")
+  let user = getVerifiedUser()
+  if (!user?.login || !Number.isSafeInteger(user.id) || Number(user.id) <= 0) {
+    const response = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      timeout: 20,
+      debugLabel: "scriptgit commit account",
+    })
+    if (!response.ok) throw new Error(`无法确认 GitHub 提交账号（HTTP ${response.status}），请在设置中验证 Token`)
+    const data = await response.json()
+    if (!/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(String(data.login || "")) || !Number.isSafeInteger(data.id) || data.id <= 0) {
+      throw new Error("GitHub 未返回有效账号，未创建提交")
+    }
+    user = { login: data.login, id: data.id, avatarUrl: String(data.avatar_url || "") }
+    if (getToken() !== token) throw new Error("GitHub Token 已更换，请重试提交")
+    saveVerifiedUser(user)
   }
+  if (getToken() !== token) throw new Error("GitHub Token 已更换，请重试提交")
+  return { name: user.login, email: `${user.id}+${user.login}@users.noreply.github.com` }
 }
