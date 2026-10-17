@@ -435,7 +435,7 @@ async function main(){
  })
  await test('actual root add menu order/group/icon, declarative creation, import/cancel/conflict/partial refresh and merge/busy guards',async()=>{
   let updates=0,selected=[],selectedDirectory=null,pickCalls=0,photoCalls=0
-  global.DocumentPicker={pickDirectory:async()=>{pickCalls++;return selectedDirectory},pickFiles:async opts=>{pickCalls++;assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
+  global.DocumentPicker={pickFiles:async opts=>{pickCalls++;if(opts.types){assert.deepEqual(opts,{types:['public.folder'],allowsMultipleSelection:false,shouldShowFileExtensions:true});return selectedDirectory?[selectedDirectory]:[]}assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
   global.PHPickerFilter={images:()=> 'images'};global.Photos={pick:async()=>{photoCalls++;return []}}
   const props={files:['folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:async()=>{updates++},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,{useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts');let creation
@@ -454,6 +454,12 @@ async function main(){
   await dispatch('创建文件');await sheet().onConfirm('ui-created.json');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
   assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
   await dispatch('创建目录');await sheet().onConfirm('ui-empty');assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
+  for(let refresh=0;refresh<3;refresh++){
+   props.changes=[...props.changes];const emptyRow=nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty'));const label=all(emptyRow.props.label)
+   assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'created empty directory stays green after actual changes-array replacement')
+   assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
+  }
+
   await dispatch('创建文件');await sheet().onConfirm('UI-CREATED.JSON');assert.match(sheet().error,/同名/);sheet().onCancel()
   const before=updates;await dispatch('导入文件');await dispatch('导入目录');await dispatch('导入图片');assert.equal(updates,before);assert.equal(photoCalls,1)
   selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
@@ -472,7 +478,7 @@ async function main(){
   try{await dispatch('导入目录')}finally{FileManager.copyFile=originalCopy}
   assert.match(text(h),/directory disk full.*部分导入/);assert.ok(updates>dirRefresh);assert.equal(fs.readFileSync(dir+'/UI Partial Directory/file','utf8'),'partial');assert.equal(fs.readFileSync(selectedDirectory+'/file','utf8'),'original')
   const gate=deferred();global.DocumentPicker.pickFiles=async()=>{pickCalls++;await gate.promise;return []}
-  action('导入文件').props.action();h.render();const busyCalls=pickCalls;assert.equal(action('创建文件').props.disabled,true);action('导入文件').props.action();assert.equal(pickCalls,busyCalls);gate.resolve();await settleImport()
+  action('导入文件').props.action();h.render();await tick();const busyCalls=pickCalls;assert.equal(action('创建文件').props.disabled,true);action('导入文件').props.action();assert.equal(pickCalls,busyCalls);gate.resolve();await settleImport()
   props.mergeInProgress=true;assert.equal(action('创建文件').props.disabled,true);action('创建文件').props.action();action('导入文件').props.action();assert.equal(pickCalls,busyCalls)
   props.mergeInProgress=false;const detached=deferred();fs.writeFileSync(outside+'/detached-import.bin','not copied')
   global.DocumentPicker.pickFiles=async()=>{await detached.promise;return [outside+'/detached-import.bin']}
@@ -548,6 +554,46 @@ async function main(){
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
   const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
+ })
+ await test('drag move uses real native rename, Git D/A only, same name/Unicode/path/link/root/lock protections and failure preserves bytes',async()=>{
+  await disk('drag-source.bin',Buffer.from([0,255,6]));await git.add({fs,dir,filepath:'drag-source.bin'});await git.commit({fs,dir,author:{name:'test',email:'test@example.invalid'},message:'drag baseline'})
+  fs.mkdirSync(dir+'/drag-target');const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'}),removedBefore=removes
+  assert.equal(await service.moveLocalWorktreeFile('repo','drag-source.bin','drag-target',dir),'drag-target/drag-source.bin')
+  assert.equal(fs.existsSync(dir+'/drag-source.bin'),false);assert.deepEqual(fs.readFileSync(dir+'/drag-target/drag-source.bin'),Buffer.from([0,255,6]));assert.equal(removes,removedBefore)
+  const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='drag-source.bin'),['drag-source.bin',1,0,1]);assert.deepEqual(matrix.find(r=>r[0]==='drag-target/drag-source.bin'),['drag-target/drag-source.bin',0,2,0]);assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+  const changes=await service.getChanges('repo');assert.ok(changes.some(c=>c.filepath==='drag-source.bin'&&c.worktreeDeleted));assert.ok(changes.some(c=>c.filepath==='drag-target/drag-source.bin'&&c.status==='*added'))
+  await disk('drag-conflict','source');await disk('drag-target/DRAG-CONFLICT','target');await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','drag-target',dir),/同名/)
+  await disk('é.txt','unicode');await disk('drag-target/e\u0301.txt','target');await assert.rejects(service.moveLocalWorktreeFile('repo','é.txt','drag-target',dir),/同名/)
+  for(const [src,dest] of [['../outside/a','drag-target'],['.git/config','drag-target'],['drag-conflict','../outside'],['drag-conflict','.git'],['drag-target','folder'],['drag-conflict','drag-conflict'],['folder/b.txt','folder']])await assert.rejects(service.moveLocalWorktreeFile('repo',src,dest,dir))
+  fs.symlinkSync(dir+'/drag-conflict',dir+'/drag-link');fs.symlinkSync(dir+'/drag-target',dir+'/drag-link-dir');await assert.rejects(service.moveLocalWorktreeFile('repo','drag-link','folder',dir),/符号链接/);await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','drag-link-dir',dir),/符号链接/)
+  await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',outside),/工作区路径/)
+  const nativeRename=FileManager.rename;FileManager.rename=async()=>{throw Error('native move denied')};try{await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',dir),/native move denied/)}finally{FileManager.rename=nativeRename}
+  assert.equal(fs.readFileSync(dir+'/drag-conflict','utf8'),'source');assert.equal(fs.existsSync(dir+'/folder/drag-conflict'),false);assert.equal(removes,removedBefore)
+  const gate=deferred();let began=false;const lock=coordinator.mutate(ctx.gitdir,async()=>{began=true;await gate.promise});while(!began)await tick();await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',dir),/其它写操作/);gate.resolve();await lock;fs.unlinkSync(dir+'/drag-link');fs.unlinkSync(dir+'/drag-link-dir')
+ })
+ await test('actual file onDrag and directory onDrop wiring: authenticated session, synchronous load, move refresh, menu retained, busy/merge/external/cancel guards',async()=>{
+  global.UUID={string:()=>require('node:crypto').randomUUID()};global.ItemProvider={fromText:text=>({loadText:async()=>text})}
+  await disk('drag-ui.txt','move bytes');await disk('drag-cancel.txt','cancel bytes');fs.mkdirSync(dir+'/drag-ui-target')
+  const props={files:['drag-ui.txt','drag-cancel.txt','drag-ui-target/existing'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onOpen(){},onPush(){},onRestore(){},onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');updates++}}
+  let updates=0;const h=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function nodes(){h.render();return all(expand(h.tree))}
+  function file(name){return nodes().find(n=>n.type==='Button'&&n.props.onDrag&&JSON.stringify(n.children).includes(name))}
+  function folder(){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('drag-ui-target'))}
+  function info(provider){let inScope=true;return {hasItemsConforming:types=>{assert.deepEqual(types,['public.plain-text']);return true},itemProviders:types=>{assert.equal(inScope,true);return [{loadText(){assert.equal(inScope,true,'load must start within performDrop');inScope=false;return provider.loadText()}}]}}}
+  assert.ok(all(file('drag-ui.txt').props.contextMenu.menuItems).some(n=>n.props.title==='重命名'))
+  assert.equal(folder().props.onDrag,undefined);assert.equal(folder().props.onDrop.validateDrop(info(ItemProvider.fromText('external'))),false)
+  const cancelled=file('drag-cancel.txt').props.onDrag.data();await tick();assert.equal(updates,0);assert.equal(fs.existsSync(dir+'/drag-cancel.txt'),true)
+  const provider=file('drag-ui.txt').props.onDrag.data(),drop=folder().props.onDrop;assert.equal(drop.dropUpdated(info(provider)),'move');assert.equal(drop.performDrop(info(provider)),true)
+  assert.equal(drop.performDrop(info(provider)),false,'duplicate while busy rejected')
+  for(let i=0;i<3000&&updates===0;i++){await new Promise(resolve=>setTimeout(resolve,10));h.render()}h.render();assert.equal(updates,1);assert.equal(fs.existsSync(dir+'/drag-ui.txt'),false);assert.equal(fs.readFileSync(dir+'/drag-ui-target/drag-ui.txt','utf8'),'move bytes')
+  assert.ok(props.changes.some(c=>c.filepath==='drag-ui-target/drag-ui.txt'&&c.status==='*added'));folder().props.onChanged(true);assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('已重命名')))
+  for(let i=0;i<10;i++){await tick();h.render()}
+  file('drag-cancel.txt').props.onDrag.data();assert.equal(folder().props.onDrop.performDrop(info(ItemProvider.fromText(JSON.stringify({path:'drag-cancel.txt',bookmarkName:'repo'})))),true)
+  for(let i=0;i<20;i++){await tick();h.render()}assert.match(text(h),/外来或过期/);assert.equal(fs.existsSync(dir+'/drag-cancel.txt'),true);assert.equal(updates,1)
+  const stale=file('drag-cancel.txt').props.onDrag.data();props.mergeInProgress=true;assert.equal(folder().props.onDrop,undefined);props.mergeInProgress=false;nodes();assert.equal(folder().props.onDrop.validateDrop(info(stale)),false)
+  file('drag-cancel.txt').props.onDrag.data();props.bookmarkName='other';nodes();assert.equal(folder().props.onDrop.validateDrop(info(cancelled)),false)
+  h.unmount();delete global.UUID;delete global.ItemProvider
  })
  console.log(`\n${count} local data/facade/UI groups passed; real disposable Git repo only, no network/user data.`)
 }

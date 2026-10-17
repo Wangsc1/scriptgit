@@ -127,6 +127,33 @@ export async function renameLocalFileInternal(bookmarkName: string, file: LocalW
   return path
 }
 
+/** Move one ordinary file into an existing directory; never copy/delete fallback. */
+export async function moveLocalFileInternal(bookmarkName: string, path: string, directory: string, expectedRoot: string): Promise<string> {
+  const source = await safeFile(bookmarkName, path)
+  const parent = await safeFile(bookmarkName, directory, true)
+  if (source.root !== expectedRoot || parent.root !== expectedRoot) throw new Error("工作区路径已变化，请重新拖动")
+  const name = path.split("/").pop() || ""
+  validNewName(name)
+  const targetPath = directory + "/" + name
+  if (targetPath === path) throw new Error("文件已在此目录中")
+  const target = parent.absolute + "/" + name
+  const folded = (value: string) => value.normalize("NFC").toLowerCase()
+  async function checkTarget() {
+    const names = await FileManager.readDirectory(parent.absolute)
+    if (names.some(entry => folded(entry.split("/").pop() || entry) === folded(name))) throw new Error("目标目录已有同名文件（含大小写或 Unicode 等价名称），未覆盖")
+    if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new Error("目标已存在，未覆盖")
+  }
+  await checkTarget()
+  const latestSource = await safeFile(bookmarkName, path)
+  const latestParent = await safeFile(bookmarkName, directory, true)
+  if (latestSource.root !== expectedRoot || latestParent.root !== expectedRoot || latestSource.absolute !== source.absolute || latestParent.absolute !== parent.absolute) throw new Error("工作区路径已变化，请重新拖动")
+  await checkTarget()
+  // FileManager.rename is the native move used by the existing rename action.
+  // No remove/rollback: a failed native operation must not delete source/target.
+  await FileManager.rename(source.absolute, target)
+  return targetPath
+}
+
 type DirectoryEntry = { path: string; directory: boolean; size: number; modified: number }
 
 /** 仅遍历路径和元数据；删除、复制、改名共用保护，不读取文件内容。 */

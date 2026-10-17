@@ -1,11 +1,13 @@
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
+import { LocalFileDragSession } from "../utils/localFileDrag"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { importLocalWorktreeDirectory, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
+import { localImportStep, localImportOnMain } from "../services/localImportExecution"
 import { pickLocalDirectory, pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
 import type { FileChange } from "../types/git"
 
@@ -24,7 +26,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -53,7 +55,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHin
     }
     swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
-      <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
+      <Button onDrag={!busy && !deleted && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? { data: () => dragFile(node.path), preview: <Text>{node.name}</Text> } : undefined} action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
@@ -79,14 +81,14 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHin
     folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
-  return <DisclosureGroup contextMenu={{ menuItems: <>
+  return <DisclosureGroup onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} contextMenu={{ menuItems: <>
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
   </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
@@ -120,6 +122,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   useEffect(() => {
     setRenamedFiles(previous => previous.filter(hasRenameChange))
   }, [changes])
+  // A newly created empty directory has no Git row. Keep its badge for this session.
+  const [sessionCreatedDirectories, setSessionCreatedDirectories] = useState<string[]>([])
   const [copied, setCopied] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasAddedChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (c.status === "added" || c.status === "*added") &&
@@ -133,8 +137,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     const added = changedDirectoryPaths(changes.filter(c => !c.worktreeDeleted && (c.status === "added" || c.status === "*added")).map(c => c.filepath))
     const other = changedDirectoryPaths(changes.filter(c => c.worktreeDeleted || (c.status !== "added" && c.status !== "*added")).map(c => c.filepath))
     for (const entry of activeCopies) if (entry.directory) added.add(entry.path)
+    for (const path of sessionCreatedDirectories) added.add(path)
     return new Set([...added].filter(path => !existing.has(path) && !other.has(path)))
-  }, [files, changes, activeCopies])
+  }, [files, changes, activeCopies, sessionCreatedDirectories])
   const [added, setAdded] = useState<string[]>([])
   const fileSignature = [...new Set([...files, ...changes.map(c => c.filepath), ...added])].join("\0")
   const visibleFiles = useMemo(() => fileSignature ? fileSignature.split("\0") : [], [fileSignature])
@@ -169,9 +174,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           const stat = await FileManager.stat(root + "/" + path)
           return { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) }
         }, () => cancelled || !state.current.alive)
-        if (!cancelled && state.current.alive) setMetadata(next)
+        if (!cancelled && state.current.alive) localImportOnMain("UI元数据结果", () => setMetadata(next))
       } catch (e: any) {
-        if (!cancelled && state.current.alive) setError("元数据读取失败: " + String(e?.message || e))
+        if (!cancelled && state.current.alive) localImportOnMain("UI元数据错误", () => setError("元数据读取失败: " + String(e?.message || e)))
       }
     }
     load()
@@ -203,6 +208,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           setDeleted(previous => [...previous, ...visibleFiles.filter(p => p.startsWith(path + "/"))])
           setAdded(previous => previous.filter(p => !p.startsWith(path + "/")))
           setDirectories(previous => previous.filter(p => p !== path && !p.startsWith(path + "/")))
+          setSessionCreatedDirectories(previous => previous.filter(p => p !== path && !p.startsWith(path + "/")))
         }
         await onWorktreeChanged()
         return
@@ -235,6 +241,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         setAdded(previous => [...previous.filter(p => kind !== "rename" || !p.startsWith(path + "/")), ...result.files])
         setDirectories(previous => [...previous.filter(p => kind !== "rename" || (p !== path && !p.startsWith(path + "/"))), ...result.directories])
         if (kind === "rename") {
+          setSessionCreatedDirectories(previous => previous.map(p => p === path || p.startsWith(path + "/") ? result.path + p.slice(path.length) : p))
           setDeleted(previous => [...previous, ...visibleFiles.filter(p => p.startsWith(path + "/"))])
           const targets = new Set([result.path, ...result.directories, ...result.files])
           setRenamedFiles(previous => [
@@ -289,43 +296,138 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }
   function showAddition(path: string, directory: boolean) {
     if (!state.current.alive) return
-    if (directory) setDirectories(previous => [...new Set([...previous, path])])
+    if (directory) {
+      setDirectories(previous => [...new Set([...previous, path])])
+      setSessionCreatedDirectories(previous => [...new Set([...previous, path])])
+    }
     else setAdded(previous => [...new Set([...previous, path])])
     setDeleted(previous => previous.filter(value => value !== path))
     setRenamedFiles(previous => previous.filter(entry => entry.path !== path))
     setCopied(previous => [...previous.filter(entry => entry.path !== path), { path, before: changes, directory }])
   }
+  const dragSession = useRef(new LocalFileDragSession())
+  // Repo switches, merge/other operations and unmount invalidate any old capability.
+  useEffect(() => { dragSession.current.clear(); return () => dragSession.current.clear() }, [bookmarkName, loading, mergeInProgress, creationActive])
+  function dragUnavailable() { return !state.current.alive || state.current.busy || loading || mergeInProgress || creationActive || directoryForm !== null }
+  function dragFile(path: string): ItemProvider {
+    dragSession.current.clear()
+    try {
+      if (dragUnavailable() || removed.has(path)) return ItemProvider.fromText("")
+      const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
+      return ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
+    } catch (e: any) {
+      if (state.current.alive) setError(String(e?.message || e))
+      return ItemProvider.fromText("")
+    }
+  }
+  // Official API: https://scriptingapp.github.io/guide/View%20Modifiers/onDrag%20and%20onDrop%20View%20Modifiers.md
+  // The published page gives no minimum app/iOS version; real gesture support
+  // (including coexistence with contextMenu) must be checked on the device.
+  function dropFolder(directory: string) {
+    const types = ["public.plain-text"]
+    const accepts = (info: DropInfo) => !dragUnavailable() && !deletedDirectories.has(directory) &&
+      dragSession.current.eligible(bookmarkName, directory) && info.hasItemsConforming(types)
+    return {
+      types,
+      validateDrop: accepts,
+      dropUpdated: (info: DropInfo) => accepts(info) ? "move" : "forbidden",
+      performDrop(info: DropInfo): boolean {
+        if (!accepts(info)) return false
+        try {
+          const providers = info.itemProviders(types)
+          if (providers.length !== 1) { dragSession.current.clear(); return false }
+          // Mandatory official lifetime rule: start loading NOW, before returning.
+          const text = providers[0].loadText()
+          state.current.busy = true
+          localImportOnMain("拖动UI开始", () => { setBusy(true); setError("") })
+          void finishDrop(text, directory)
+          return true
+        } catch (e: any) {
+          dragSession.current.clear(); state.current.busy = false
+          localImportOnMain("拖动UI错误", () => { setBusy(false); setError(String(e?.message || e)) })
+          return false
+        }
+      },
+    }
+  }
+  async function finishDrop(text: Promise<string | null>, directory: string) {
+    let enteredWrite = false
+    try {
+      const payload = await text
+      if (!state.current.alive) return
+      const root = await localImportStep("拖动工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
+      const drag = dragSession.current.consume(payload, bookmarkName, root, directory)
+      if (!drag) throw new Error("仅允许本页当前工作区的有效文件拖动；外来或过期内容未移动")
+      if (!state.current.alive || mergeInProgress || creationActive) return
+      enteredWrite = true
+      const target = await localImportStep("拖动移动/协调锁", () => moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root))
+      localImportOnMain("拖动UI结果", () => {
+        if (!state.current.alive) return
+        setAdded(previous => [...previous.filter(path => path !== drag.path), target])
+        setDeleted(previous => [...previous.filter(path => path !== target), drag.path])
+        setRenamedFiles(previous => [...previous.filter(entry => entry.path !== drag.path && entry.path !== target), { path: target, before: changes }])
+        setCopied(previous => previous.filter(entry => entry.path !== drag.path && entry.path !== target))
+      })
+      await localImportStep("拖动刷新改动", () => onWorktreeChanged())
+    } catch (e: any) {
+      let message = String(e?.message || e)
+      if (enteredWrite) {
+        try { await localImportStep("拖动失败后刷新", () => onWorktreeChanged()) }
+        catch (refreshError: any) { message += "\n" + String(refreshError?.message || refreshError) }
+      }
+      localImportOnMain("拖动错误结果", () => { if (state.current.alive) setError(message) })
+    } finally {
+      dragSession.current.clear(); state.current.busy = false
+      localImportOnMain("拖动UI收尾", () => { if (state.current.alive) setBusy(false) })
+    }
+  }
+
   async function importSelection(kind: "document" | "import-directory" | "photo") {
     if (state.current.busy || loading || mergeInProgress) return
-    state.current.busy = true; setBusy(true); setError("")
+    state.current.busy = true
     let picked: PickedLocalFile | null = null
+    let enteredWrite = false
+    let failure = ""
     try {
-      const expectedRoot = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
+      localImportOnMain("UI开始", () => { setBusy(true); setError("") })
+      const expectedRoot = await localImportStep("工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
+      if (!state.current.alive) return
       picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory() : pickLocalDocument())
-      if (!picked || !state.current.alive) return // Cancellation is a zero-write operation.
+      if (!picked || !state.current.alive) return
+      enteredWrite = true
       if (kind === "import-directory") {
-        const result = await importLocalWorktreeDirectory(bookmarkName, picked.sourcePath, expectedRoot)
-        if (state.current.alive) {
+        const result = await localImportStep("目录写入/协调锁", () => importLocalWorktreeDirectory(bookmarkName, picked!.sourcePath, expectedRoot))
+        localImportOnMain("UI目录结果", () => {
+          if (!state.current.alive) return
           setAdded(previous => [...new Set([...previous, ...result.files])])
           setDirectories(previous => [...new Set([...previous, ...result.directories])])
           setCopied(previous => [...previous,
             ...result.directories.map(path => ({ path, before: changes, directory: true })),
             ...result.files.map(path => ({ path, before: changes })),
           ])
-        }
+        })
       } else {
-        const path = await importLocalWorktreeFile(bookmarkName, picked.sourcePath, picked.name, expectedRoot)
-        showAddition(path, false)
+        const path = await localImportStep("文件写入/协调锁", () => importLocalWorktreeFile(bookmarkName, picked!.sourcePath, picked!.name, expectedRoot))
+        localImportOnMain("UI文件结果", () => showAddition(path, false))
       }
-      await onWorktreeChanged()
+      await localImportStep("刷新改动", () => onWorktreeChanged())
     } catch (e: any) {
-      if (state.current.alive) setError(String(e?.message || e))
-      try { await onWorktreeChanged() } catch (_) { /* Partial imports must be reflected without removing them. */ }
+      failure = String(e?.message || e)
+      if (enteredWrite) {
+        try { await localImportStep("失败后刷新", () => onWorktreeChanged()) }
+        catch (refreshError: any) { failure += "\n" + String(refreshError?.message || refreshError) }
+      }
     } finally {
       if (picked) {
-        try { await picked.release() } catch (_) { if (state.current.alive) setError("导入流程已结束，但临时资源或访问书签清理失败；请核对工作区结果") }
+        try { await localImportStep("释放临时资源", () => picked!.release()) }
+        catch (cleanupError: any) { failure += (failure ? "\n" : "") + String(cleanupError?.message || cleanupError) }
       }
-      state.current.busy = false; if (state.current.alive) setBusy(false)
+      state.current.busy = false
+      localImportOnMain("UI收尾", () => {
+        if (!state.current.alive) return
+        if (failure) setError(failure)
+        setBusy(false)
+      })
     }
   }
 
@@ -374,6 +476,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

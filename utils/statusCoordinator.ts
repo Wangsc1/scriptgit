@@ -63,8 +63,20 @@ export class StatusCoordinator<T> {
       // 只对写入的“准入等待”计时；真实读者仍登记，绝不超时释放正在执行的读/写。
       if (this.options.writeWaitMs) {
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("仓库仍有状态读取未结束，暂未执行写操作；请等待读取完成后重试")), this.options.writeWaitMs)
-          reads.then(() => { clearTimeout(timer); resolve() }, error => { clearTimeout(timer); reject(error) })
+          let timer: ReturnType<typeof setTimeout>
+          try {
+            timer = setTimeout(() => reject(new Error("仓库仍有状态读取未结束，暂未执行写操作；请等待读取完成后重试")), this.options.writeWaitMs)
+          } catch (error: any) {
+            reject(new Error("[StatusCoordinator.writeWaitTimer] " + String(error?.message || error)))
+            return
+          }
+          reads.then(() => {
+            try { clearTimeout(timer); resolve() }
+            catch (error: any) { reject(new Error("[StatusCoordinator.clearWriteWaitTimer] " + String(error?.message || error))) }
+          }, error => {
+            try { clearTimeout(timer) } catch (clearError: any) { reject(new Error("[StatusCoordinator.clearWriteWaitTimer] " + String(clearError?.message || clearError))); return }
+            reject(error)
+          })
         })
       } else await reads
       return await task()
@@ -110,17 +122,36 @@ export class StatusCoordinator<T> {
     this.activeScans.add(job)
     job.run.startedAt = Date.now()
     job.run.activeScans = this.activeScans.size
-    const timer = this.options.slowScanMs ? setTimeout(() => {
-      if (!this.activeScans.has(job)) return
-      this.slowScans.add(job)
-      this.drain()
-    }, this.options.slowScanMs) : null
-    Promise.resolve().then(() => job.task(job.run)).then(job.resolve, job.reject).finally(() => {
-      if (timer !== null) clearTimeout(timer)
+    let timer: ReturnType<typeof setTimeout> | null = null
+    try {
+      timer = this.options.slowScanMs ? setTimeout(() => {
+        if (!this.activeScans.has(job)) return
+        this.slowScans.add(job)
+        this.drain()
+      }, this.options.slowScanMs) : null
+    } catch (error: any) {
+      // No scan started. Reject the caller instead of leaving it pending after
+      // an unhandled timer-registration exception in this drain microtask.
+      this.activeScans.delete(job)
+      job.reject(new Error("[StatusCoordinator.slowScanTimer] " + String(error?.message || error)))
+      Promise.resolve().then(() => this.drain())
+      return
+    }
+    const finish = (failed: boolean, result: unknown) => {
+      try { if (timer !== null) clearTimeout(timer) }
+      catch (error: any) {
+        const cleanup = "[StatusCoordinator.clearSlowScanTimer] " + String(error?.message || error)
+        result = new Error(failed ? String((result as any)?.message || result) + "\n" + cleanup : cleanup)
+        failed = true
+      }
+      // The underlying task has fully settled, even when timer cleanup fails.
       this.activeScans.delete(job)
       this.slowScans.delete(job)
+      if (failed) job.reject(result)
+      else job.resolve(result as T)
       // 给完成回调让出时机，避免下一项抢在页面状态更新之前启动。
       Promise.resolve().then(() => this.drain())
-    })
+    }
+    Promise.resolve().then(() => job.task(job.run)).then(value => finish(false, value), error => finish(true, error))
   }
 }

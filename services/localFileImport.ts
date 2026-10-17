@@ -1,4 +1,4 @@
-import { pickDirectory } from "./repoStore"
+import { localImportStep } from "./localImportExecution"
 
 /** Picker APIs checked against the official llms.txt index, 2026-10-17:
  * /guide/Device%20Capabilities/DocumentPicker.md
@@ -13,7 +13,7 @@ export interface PickedLocalFile {
 }
 
 export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
-  const paths = await DocumentPicker.pickFiles({ allowsMultipleSelection: false, shouldShowFileExtensions: true })
+  const paths = await localImportStep("DocumentPicker.pickFiles", () => DocumentPicker.pickFiles({ allowsMultipleSelection: false, shouldShowFileExtensions: true }))
   if (!paths?.length) return null
   if (paths.length !== 1) throw new Error("请一次选择一个文件")
   const sourcePath = paths[0]
@@ -22,25 +22,21 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
   return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }
 
-/** Same bookmark-first picker used by Add Repository / Clone target selection. */
+/** Explicit UTI filter: Scripting PickFilesOption.types + Apple's UTType.folder
+ * https://scriptingapp.github.io/guide/Device%20Capabilities/DocumentPicker.md
+ * https://developer.apple.com/documentation/uniformtypeidentifiers/uttype-swift.struct/folder
+ * No directory-bookmark overload or silent fallback to an untyped picker.
+ */
 export async function pickLocalDirectory(): Promise<PickedLocalFile | null> {
-  const picked = await pickDirectory()
-  if (!picked) return null
-  let released = false
-  async function release() {
-    if (released) return
-    if (picked!.accessBookmarkName) FileManager.removeFileBookmark(picked!.accessBookmarkName)
-    released = true
-  }
-  try {
-    const sourcePath = picked.path.replace(/\/+$/, "")
-    // Defend against a provider/runtime returning a file despite the directory API.
-    if (!(await FileManager.isDirectory(sourcePath))) throw new Error("系统目录选择器未返回目录；请选择文件夹，不是文件")
-    return { sourcePath, name: sourcePath.split("/").pop() || "", release }
-  } catch (error) {
-    try { await release() } catch (_) { /* Preserve the selection error. */ }
-    throw error
-  }
+  const paths = await localImportStep("DocumentPicker.pickFiles(public.folder)", () => DocumentPicker.pickFiles({
+    types: ["public.folder"], allowsMultipleSelection: false, shouldShowFileExtensions: true,
+  }))
+  if (!paths?.length) return null
+  if (paths.length !== 1) throw new Error("请一次选择一个目录")
+  const sourcePath = paths[0].replace(/\/+$/, "")
+  if (!(await localImportStep("目录类型检查", () => FileManager.isDirectory(sourcePath)))) throw new Error("系统未返回目录（已限定 public.folder）；请选择文件夹，不是文件")
+  // pickFiles owns the per-run access scope; do not stop unrelated workspace scopes.
+  return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }
 
 const imageTypes: Record<string, string[]> = {
@@ -50,16 +46,17 @@ const imageTypes: Record<string, string[]> = {
   "public.avif": ["avif"], "public.jpeg-2000": ["jp2"],
 }
 export async function pickLocalPhoto(): Promise<PickedLocalFile | null> {
-  const results = await Photos.pick({ filter: PHPickerFilter.images(), limit: 1 })
+  const filter = await localImportStep("PHPickerFilter.images", () => PHPickerFilter.images())
+  const results = await localImportStep("Photos.pick", () => Photos.pick({ filter, limit: 1 }))
   if (!results?.length) return null
-  const provider = results[0].itemProvider
+  const provider = await localImportStep("照片itemProvider", () => results[0].itemProvider)
   const generic = new Set(["public.image", "public.data", "public.content", "public.item", "public.composite-content"])
   // Prefer the provider's first concrete type. Do not silently request a JPEG
   // alternative when its original/first representation is an unsupported RAW type.
-  const type = provider.registeredTypes.find(value => !generic.has(value))
+  const type = await localImportStep("照片registeredTypes", () => provider.registeredTypes.find(value => !generic.has(value)))
   const extensions = type ? imageTypes[type] : undefined
   if (!type || !extensions) throw new Error("照片未提供可识别的原格式文件类型；请使用“导入文件”选择原文件，未转换图片")
-  const sourcePath = await provider.loadFilePath(type)
+  const sourcePath = await localImportStep("ItemProvider.loadFilePath", () => provider.loadFilePath(type))
   if (!sourcePath) throw new Error("无法取得照片文件，未导入或转换图片")
   const exportedName = sourcePath.split("/").pop() || ""
   const ext = exportedName.split(".").pop()?.toLowerCase() || ""
@@ -73,7 +70,7 @@ export async function pickLocalPhoto(): Promise<PickedLocalFile | null> {
     async release() {
       // loadFilePath explicitly returns an owned temporary COPY. Never remove the
       // original photo or a DocumentPicker path, and never recursively remove directories.
-      if (!(await FileManager.isLink(sourcePath)) && await FileManager.isFile(sourcePath) && !(await FileManager.isDirectory(sourcePath))) await FileManager.remove(sourcePath)
+      if (!(await localImportStep("照片清理.isLink", () => FileManager.isLink(sourcePath))) && await localImportStep("照片清理.isFile", () => FileManager.isFile(sourcePath)) && !(await localImportStep("照片清理.isDirectory", () => FileManager.isDirectory(sourcePath)))) await localImportStep("照片清理.remove", () => FileManager.remove(sourcePath))
     },
   }
 }

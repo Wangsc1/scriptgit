@@ -31,9 +31,9 @@ async function main() {
   let statCalls = 0
   global.FileManager = { stat: async () => { statCalls++; return { size: 1, modificationDate: 2 } } }
   const FilesTab = load('pages/FilesTab.tsx', {
-    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
+    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
     '../utils/format': { formatBytes: String, formatDate: String }, '../services/repoStore': { resolveWorkdir: () => '/mock' },
-    '../services/gitService': {}, '../services/localFileImport': {}, '../constants/colors': {},
+    '../services/gitService': {}, '../services/localFileImport': {}, '../services/localImportExecution': load('services/localImportExecution.ts'), '../constants/colors': {},
   }).FilesTab
   const h = mount(FilesTab, { files: paths, changes: [{ filepath: paths[0], status: '*modified' }], bookmarkName: 'mock', loading: false, onOpen() {}, onWorktreeChanged() {}, onPush() {}, onRestore() {}, mergeInProgress: false })
   await tick()

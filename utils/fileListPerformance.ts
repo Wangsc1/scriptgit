@@ -41,7 +41,10 @@ export async function readMetadataBatched(
       try { result.set(path, await read(path)) }
       catch (_e) { /* 删除或不可访问只影响单个文件。 */ }
     }))
-    if (start + 4 < paths.length && !cancelled()) await new Promise<void>(resolve => setTimeout(resolve, 0))
+    if (start + 4 < paths.length && !cancelled()) await new Promise<void>((resolve, reject) => {
+      try { setTimeout(resolve, 0) }
+      catch (error: any) { reject(new Error("[readMetadataBatched.yieldTimer] " + String(error?.message || error))) }
+    })
   }
   return result
 }
