@@ -5,19 +5,26 @@ import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, re
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT } from "../constants/colors"
 
 function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void }) {
-  if (node.type === "file") return <HStack contextMenu={{ menuItems: <>
-    <Button title="复制文件" disabled={busy || removed.has(node.path)} action={() => manage(node.path, "copy")} />
-    <Button title="重命名" disabled={busy || removed.has(node.path)} action={() => manage(node.path, "rename")} />
-  </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: [
-    <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || removed.has(node.path)} action={() => remove(node.path)} />,
-  ] }}>
-    <Button action={() => open(node.path)} disabled={busy || removed.has(node.path)}>
-      <HStack alignment="center" spacing={10}>
-        <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
-        <Text font="body" foregroundStyle={COLOR_LABEL} lineLimit={2}>{node.name}{removed.has(node.path) ? "（已删除，不可编辑）" : ""}</Text>
+  if (node.type === "file") {
+    const deleted = removed.has(node.path)
+    return (
+      <HStack
+        contextMenu={{ menuItems: <>
+          <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
+          <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
+        </> }}
+        trailingSwipeActions={{ allowsFullSwipe: false, actions: [
+          <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />,
+        ] }}>
+        <Button action={() => open(node.path)} disabled={busy || deleted}>
+          <HStack alignment="center" spacing={10}>
+            <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
+            <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={2}>{node.name}{deleted ? "（已删除，不可编辑）" : ""}</Text>
+          </HStack>
+        </Button>
       </HStack>
-    </Button>
-  </HStack>
+    )
+  }
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
   </HStack>}>
