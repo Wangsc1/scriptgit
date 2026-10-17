@@ -290,12 +290,11 @@ export function RepoListPage() {
               key={repo.bookmarkName}
               alignment="center"
               trailingSwipeActions={{
-                allowsFullSwipe: true,
+                allowsFullSwipe: false,
                 actions: [
                   <Button
-                    title="移除"
+                    title="删除"
                     tint="systemRed"
-                    systemImage="trash"
                     action={() => setPendingDelete(repo)}
                   />,
                 ],
