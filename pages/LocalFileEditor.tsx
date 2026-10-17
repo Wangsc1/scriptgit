@@ -125,7 +125,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy}
-        content={<Editor controller={controller} scriptName="scriptgit" showAccessoryView />}
+        content={<Editor controller={controller} scriptName="scriptgit" showAccessoryView={false} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
           <VStack spacing={0} padding={{ horizontal: 5, vertical: 10 }}>
             {versionsError ? <VStack spacing={6}><Text font="caption" foregroundStyle="red">{versionsError}</Text>
@@ -138,7 +138,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
               </>}
           </VStack>
         </ScrollView> : <Text />}
-      /> : controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> :
+      /> : controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView={false} /> :
         (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
   </NavigationStack>

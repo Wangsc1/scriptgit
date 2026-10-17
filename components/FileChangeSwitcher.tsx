@@ -6,6 +6,6 @@ export function FileChangeSwitcher({ selection, content, changes, disabled }: {
 }) {
   return <TabView selection={selection} disabled={disabled}>
     <Tab title="原内容" systemImage="doc.text" value={0}>{content}</Tab>
-    <Tab title="改动项" systemImage="plusminus.square" value={1}>{changes}</Tab>
+    <Tab title="改动项" systemImage="plusminus" value={1}>{changes}</Tab>
   </TabView>
 }

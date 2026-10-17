@@ -18,7 +18,7 @@ function open(text=versions.current,initialHasChanges=true){return mount(LocalFi
 function find(h,type){h.render();return all(h.tree).find(n=>n.type===type)}
 async function main(){
  const pause=()=>new Promise(r=>setTimeout(r,10))
- const h=open(),c=controllers.at(-1);assert.equal(find(h,'Editor').props.controller,c)
+ const h=open(),c=controllers.at(-1);assert.equal(find(h,'Editor').props.controller,c);assert.equal(find(h,'Editor').props.showAccessoryView,false)
  assert.equal(h.tree.children[0].props.fullScreenCover,undefined)
  await pause();let bar=find(h,'FileChangeSwitcher');assert.equal(bar.props.selection.value,0)
  assert.equal(versionCalls,0);assert.equal(diffCalls,0);assert.equal(h.tree.children[0].props.safeAreaInset,undefined)
@@ -31,7 +31,7 @@ async function main(){
  assert.equal(writes.length,0);assert.equal(versionCalls,1)
  await h.tree.children[0].props.toolbar.topBarLeading.props.action();assert.deepEqual(writes,[c.content]);assert.equal(closed,1)
  h.unmount();assert.equal(c.disposed,true);assert.equal(c.onContentChanged,undefined)
- const clean=open(versions.original,false);await pause();assert.equal(find(clean,'FileChangeSwitcher'),undefined);const cc=controllers.at(-1)
+ const clean=open(versions.original,false);await pause();assert.equal(find(clean,'FileChangeSwitcher'),undefined);assert.equal(find(clean,'Editor').props.showAccessoryView,false);const cc=controllers.at(-1)
  const beforeCleanReads=versionCalls,beforeCleanDiff=diffCalls
  cc.content=versions.current;cc.onContentChanged();assert.ok(find(clean,'FileChangeSwitcher'));assert.equal(versionCalls,beforeCleanReads);assert.equal(diffCalls,beforeCleanDiff);clean.unmount()
  fail=true;const error=open();find(error,'FileChangeSwitcher').props.selection.value=1;await pause()
@@ -57,7 +57,7 @@ async function main(){
  const selection={value:0}
  const switcher=mount(FileChangeSwitcher,{selection,content:__jsx('Editor',{}),changes:__jsx('Text',{},'diff'),disabled:false})
  assert.equal(switcher.tree.type,'TabView');assert.equal(switcher.tree.props.selection,selection)
- assert.deepEqual(all(switcher.tree).filter(n=>n.type==='Tab').map(n=>[n.props.title,n.props.value]),[['原内容',0],['改动项',1]])
+ assert.deepEqual(all(switcher.tree).filter(n=>n.type==='Tab').map(n=>[n.props.title,n.props.value,n.props.systemImage]),[['原内容',0,'doc.text'],['改动项',1,'plusminus']])
  assert.equal(all(switcher.tree).some(n=>n.props.glassEffect||n.props.safeAreaInset||n.props.padding),false)
  switcher.unmount()
  console.log('PASS 首屏零HEAD读取/零差异计算、内容输入不算差异、原生TabView不设边距偏移、默认全屏内容、条件双按钮、红删绿增/行内高亮、即时草稿、切换零写入、同一控制器、自动保存、重试及卸载安全')
