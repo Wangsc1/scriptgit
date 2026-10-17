@@ -120,6 +120,15 @@ async function main(){try{
   assert.ok(all(legacy).some(n=>n.type==='Text'&&n.children[0]==='A'));assert.ok(all(legacy).some(n=>n.type==='Image'&&n.props.systemName==='doc'))
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname,'../pages/ComparePage.tsx'),'utf8'),/CommitChangesLoader|CommitChangesSections/)
  })
+ await test('detail root List owns pull-to-refresh, only retries failed diffs and can reload failed commit detail',async()=>{
+  reset();stats.failOnce.add('c.txt');const h=await open(c2);assert.equal(typeof h.tree.props.refreshable,'function')
+  const node=section(h),loader=node.props.loader,c=mount(node.type,node.props);await until(()=>loader.snapshot().doneCount===3&&loader.snapshot().failedCount===1,'one failed file')
+  const before=stats.reads.length;await h.tree.props.refreshable();await until(()=>loader.snapshot().doneCount===4,'refresh retried failed');assert.ok(stats.reads.slice(before).every(r=>r.file==='c.txt'));assert.equal(loader.snapshot().failedCount,0)
+  const duplicate=[h.tree.props.refreshable(),h.tree.props.refreshable()];await Promise.all(duplicate);assert.ok(stats.reads.slice(before).every(r=>r.file==='c.txt'),'refresh must not recompute successful diffs')
+  c.unmount();h.unmount()
+  const bad=mount(Page,{bookmarkName:'repo',oid:'0'.repeat(40)});await until(()=>{bad.render();return all(bad.tree).some(n=>n.type==='Text'&&String(n.children[0]).includes('加载失败'))||all(bad.tree).some(n=>JSON.stringify(n.children||'').includes('加载失败'))},'missing commit error');assert.equal(typeof bad.tree.props.refreshable,'function');await bad.tree.props.refreshable();bad.render()
+  assert.ok(all(bad.tree).some(n=>JSON.stringify(n.children||'').includes('加载失败')),'invalid commit stays visibly failed after reload');bad.unmount()
+ })
  console.log(groups+' commit-changes groups passed; disposable repo only, no network or user repositories.')
 }finally{fs.rmSync(tmp,{recursive:true,force:true})}}
 main().catch(e=>{console.error(e);process.exitCode=1})

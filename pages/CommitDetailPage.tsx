@@ -46,21 +46,29 @@ export function CommitDetailPage({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const loaderRef = useRef<CommitChangesLoader | null>(null)
 
+  const detailToken = useRef<{ cancelled: boolean } | null>(null)
+  const refreshing = useRef(false)
+
+  async function loadDetail(token: { cancelled: boolean }) {
+    try {
+      const next = await getCommitDetail(bookmarkName, oid, token)
+      if (!token.cancelled) { setError(null); setDetail(next) }
+    } catch (e: any) {
+      if (!token.cancelled) setError(String(e?.message || e))
+    }
+  }
+
   // 必须随 oid 变化重新拉取；导航 content 复用时 [] 会一直显示首次打开的提交
   useEffect(() => {
     const token = { cancelled: false }
+    detailToken.current = token
     setDetail(null)
     setError(null)
     setMode("changes")
-    getCommitDetail(bookmarkName, oid, token)
-      .then((next) => {
-        if (!token.cancelled) setDetail(next)
-      })
-      .catch((e: any) => {
-        if (!token.cancelled) setError(String(e?.message || e))
-      })
+    void loadDetail(token)
     return () => {
       token.cancelled = true
+      if (detailToken.current === token) detailToken.current = null
       // 离开或切换提交：释放旧加载器，迟到的 diff 结果不再写入
       loaderRef.current?.dispose()
       loaderRef.current = null
@@ -93,6 +101,20 @@ export function CommitDetailPage({
     }
   }, [githubFullName, oid])
 
+  // 顶部继续下拉会触发弹出页面的系统关闭；用下拉刷新接管。提交内容不可变，已加载内容不重算。
+  async function handleRefresh() {
+    if (refreshing.current) return
+    refreshing.current = true
+    try {
+      if (!detail || error) {
+        const token = detailToken.current
+        if (token) { setError(null); await loadDetail(token) }
+      } else {
+        loaderRef.current?.retry()
+      }
+    } finally { refreshing.current = false }
+  }
+
   const changeTree = detail
     ? buildFileTree(detail.files.map((file) => file.filepath))
     : []
@@ -107,6 +129,7 @@ export function CommitDetailPage({
       navigationTitle={title}
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"
+      refreshable={handleRefresh}
       fullScreenCover={{
         isPresented: previewUrl != null,
         onChanged: (isPresented: boolean) => {
