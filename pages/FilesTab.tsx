@@ -1,4 +1,4 @@
-import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, Dialog, useRef, useState, useEffect, useMemo, FileManager } from "scripting"
+import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
