@@ -1,44 +1,44 @@
 /** Official JS-context API (not DispatchQueue / UIKit dispatch):
  * https://scriptingapp.github.io/guide/Utilities/Thread.md
- * runInMain is synchronous and returns void. It does NOT promise that a later
- * Promise/native callback resumes on that same execution queue.
+ * Despite the page's "synchronous execution" wording, runInMain returns void
+ * and device evidence shows deferred callbacks. Await the callback, not dispatch.
+ * No guarantee is made about the execution queue after any await/native callback.
  */
 function mainFlag(): string {
   try { return typeof Thread === "undefined" ? "unknown" : String(Thread.isMainThread) } catch (_) { return "unknown" }
 }
 function message(error: any): string { return String(error?.message || error) }
 
-/** Initiate one phase on the documented main context; do not use a timer as dispatch. */
-export function localImportOnMain<T>(phase: string, task: () => T): T {
-  let value!: T
-  let called = false
-  let callMain = "unknown"
-  let failed = false
-  let taskError: unknown
-  const available = typeof Thread !== "undefined" && typeof Thread.runInMain === "function"
-  const execute = () => {
-    called = true; callMain = mainFlag()
-    try { value = task() } catch (error) { failed = true; taskError = error }
-  }
-  try {
-    if (available) Thread.runInMain(execute)
-    else execute() // Older runtime: no invented scheduler; diagnostic explicitly says unavailable.
-    if (!called) throw new Error("Thread.runInMain 未同步执行回调，与公开接口约定不符")
-    if (failed) throw taskError
-    return value
-  } catch (error) {
-    throw new Error(`[导入:${phase}; callMain=${callMain}; errorMain=${mainFlag()}; Thread=${available ? "runInMain" : "unavailable"}] ${message(error)}`)
-  }
+/** For asynchronous phases/UI only. Never use this to return a synchronous
+ * ItemProvider or performDrop boolean; those callbacks must return directly.
+ */
+export function localImportOnMain<T>(phase: string, task: () => T | Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let started = false
+    let cancelled = false
+    let callMain = "unknown"
+    const available = typeof Thread !== "undefined" && typeof Thread.runInMain === "function"
+    const dispatch = mainFlag() === "true" ? "direct-main" : available ? "runInMain" : "unavailable"
+    const fail = (error: unknown) => reject(new Error(`[导入:${phase}; callMain=${callMain}; errorMain=${mainFlag()}; Thread=${dispatch}] ${message(error)}`))
+    const execute = () => {
+      if (started || cancelled) return
+      started = true
+      callMain = mainFlag()
+      try { Promise.resolve(task()).then(resolve, fail) }
+      catch (error) { fail(error) }
+    }
+    try {
+      // isMainThread describes the CURRENT JS context, not an await continuation.
+      if (dispatch === "runInMain") Thread.runInMain(execute)
+      else execute() // Older runtime: no invented scheduler; diagnostic says unavailable.
+    } catch (error) {
+      // A dispatch failure before callback must not leave a delayed side effect.
+      // If execution already started, its own result/error remains authoritative.
+      if (!started) { cancelled = true; fail(error) }
+    }
+  })
 }
 
-export async function localImportStep<T>(phase: string, task: () => T | Promise<T>): Promise<T> {
-  let callMain = "unknown"
-  const dispatch = typeof Thread !== "undefined" && typeof Thread.runInMain === "function" ? "runInMain" : "unavailable"
-  try {
-    return await localImportOnMain(phase, () => { callMain = mainFlag(); return task() })
-  } catch (error) {
-    const text = message(error)
-    if (text.startsWith(`[导入:${phase};`)) throw error
-    throw new Error(`[导入:${phase}; callMain=${callMain}; errorMain=${mainFlag()}; Thread=${dispatch}] ${text}`)
-  }
+export function localImportStep<T>(phase: string, task: () => T | Promise<T>): Promise<T> {
+  return localImportOnMain(phase, task)
 }

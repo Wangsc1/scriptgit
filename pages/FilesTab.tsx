@@ -156,7 +156,12 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }, [visibleFiles, removed])
   const changesByPath = useMemo(() => new Map<string, FileChange>(changes.map(c => [c.filepath, c])), [changes])
   const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
-  const state = useRef({ alive: true, busy: false })
+  const state = useRef({ alive: true, busy: false, context: { bookmarkName, loading, mergeInProgress, creationActive } })
+  state.current.context = { bookmarkName, loading, mergeInProgress, creationActive }
+  function checkQueuedWrite() {
+    const current = state.current.context
+    if (!state.current.alive || current.bookmarkName !== bookmarkName || current.loading || current.mergeInProgress || current.creationActive) throw new Error("页面或工作区状态已变化，未开始写入")
+  }
   useEffect(() => () => { state.current.alive = false }, [])
   useEffect(() => {
     // 外部恢复或撤销删除后，新的改动结果应解除本页的即时删除标记。
@@ -174,12 +179,12 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           const stat = await FileManager.stat(root + "/" + path)
           return { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) }
         }, () => cancelled || !state.current.alive)
-        if (!cancelled && state.current.alive) localImportOnMain("UI元数据结果", () => setMetadata(next))
+        if (!cancelled && state.current.alive) await localImportOnMain("UI元数据结果", () => { if (!cancelled && state.current.alive) setMetadata(next) })
       } catch (e: any) {
-        if (!cancelled && state.current.alive) localImportOnMain("UI元数据错误", () => setError("元数据读取失败: " + String(e?.message || e)))
+        if (!cancelled && state.current.alive) await localImportOnMain("UI元数据错误", () => { if (!cancelled && state.current.alive) setError("元数据读取失败: " + String(e?.message || e)) })
       }
     }
-    load()
+    void load().catch(error => console.error(error))
     return () => { cancelled = true }
   }, [bookmarkName, metadataPaths, changes, removed])
   async function open(path: string) {
@@ -339,29 +344,32 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           // Mandatory official lifetime rule: start loading NOW, before returning.
           const text = providers[0].loadText()
           state.current.busy = true
-          localImportOnMain("拖动UI开始", () => { setBusy(true); setError("") })
-          void finishDrop(text, directory)
+          void finishDrop(text, directory).catch(error => console.error(error))
           return true
         } catch (e: any) {
           dragSession.current.clear(); state.current.busy = false
-          localImportOnMain("拖动UI错误", () => { setBusy(false); setError(String(e?.message || e)) })
+          void localImportOnMain("拖动UI错误", () => { if (state.current.alive) { setBusy(false); setError(String(e?.message || e)) } }).catch(error => console.error(error))
           return false
         }
       },
     }
   }
   async function finishDrop(text: Promise<string | null>, directory: string) {
+    // Observe native load rejection immediately, even if UI dispatch is delayed.
+    const loaded = text.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
     let enteredWrite = false
     try {
-      const payload = await text
+      await localImportOnMain("拖动UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
+      const result = await loaded
+      if (result.ok === false) throw result.error
+      const payload = result.value
       if (!state.current.alive) return
       const root = await localImportStep("拖动工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       const drag = dragSession.current.consume(payload, bookmarkName, root, directory)
       if (!drag) throw new Error("仅允许本页当前工作区的有效文件拖动；外来或过期内容未移动")
       if (!state.current.alive || mergeInProgress || creationActive) return
-      enteredWrite = true
-      const target = await localImportStep("拖动移动/协调锁", () => moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root))
-      localImportOnMain("拖动UI结果", () => {
+      const target = await localImportStep("拖动移动/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root) })
+      await localImportOnMain("拖动UI结果", () => {
         if (!state.current.alive) return
         setAdded(previous => [...previous.filter(path => path !== drag.path), target])
         setDeleted(previous => [...previous.filter(path => path !== target), drag.path])
@@ -375,10 +383,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         try { await localImportStep("拖动失败后刷新", () => onWorktreeChanged()) }
         catch (refreshError: any) { message += "\n" + String(refreshError?.message || refreshError) }
       }
-      localImportOnMain("拖动错误结果", () => { if (state.current.alive) setError(message) })
+      await localImportOnMain("拖动错误结果", () => { if (state.current.alive) setError(message) })
     } finally {
       dragSession.current.clear(); state.current.busy = false
-      localImportOnMain("拖动UI收尾", () => { if (state.current.alive) setBusy(false) })
+      await localImportOnMain("拖动UI收尾", () => { if (state.current.alive) setBusy(false) })
     }
   }
 
@@ -389,15 +397,14 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     let enteredWrite = false
     let failure = ""
     try {
-      localImportOnMain("UI开始", () => { setBusy(true); setError("") })
+      await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
       const expectedRoot = await localImportStep("工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       if (!state.current.alive) return
       picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory() : pickLocalDocument())
       if (!picked || !state.current.alive) return
-      enteredWrite = true
       if (kind === "import-directory") {
-        const result = await localImportStep("目录写入/协调锁", () => importLocalWorktreeDirectory(bookmarkName, picked!.sourcePath, expectedRoot))
-        localImportOnMain("UI目录结果", () => {
+        const result = await localImportStep("目录写入/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return importLocalWorktreeDirectory(bookmarkName, picked!.sourcePath, expectedRoot) })
+        await localImportOnMain("UI目录结果", () => {
           if (!state.current.alive) return
           setAdded(previous => [...new Set([...previous, ...result.files])])
           setDirectories(previous => [...new Set([...previous, ...result.directories])])
@@ -407,8 +414,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           ])
         })
       } else {
-        const path = await localImportStep("文件写入/协调锁", () => importLocalWorktreeFile(bookmarkName, picked!.sourcePath, picked!.name, expectedRoot))
-        localImportOnMain("UI文件结果", () => showAddition(path, false))
+        const path = await localImportStep("文件写入/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return importLocalWorktreeFile(bookmarkName, picked!.sourcePath, picked!.name, expectedRoot) })
+        await localImportOnMain("UI文件结果", () => showAddition(path, false))
       }
       await localImportStep("刷新改动", () => onWorktreeChanged())
     } catch (e: any) {
@@ -423,7 +430,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         catch (cleanupError: any) { failure += (failure ? "\n" : "") + String(cleanupError?.message || cleanupError) }
       }
       state.current.busy = false
-      localImportOnMain("UI收尾", () => {
+      await localImportOnMain("UI收尾", () => {
         if (!state.current.alive) return
         if (failure) setError(failure)
         setBusy(false)
@@ -450,7 +457,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
     if (kind === "file" || kind === "directory") startCreation(kind === "directory")
-    else void importSelection(kind)
+    else void importSelection(kind).catch(error => console.error(error))
   }, [additionRequest])
   const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null
 
