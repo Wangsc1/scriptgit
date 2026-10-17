@@ -34,7 +34,7 @@ import {
 } from "./git/statusQueryService"
 import { getRepoListStatus } from "./git/repoStatusReadService"
 import { runStatusMutation, runStatusRead } from "./git/statusScanService"
-import { readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
+import { deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
 export type { LocalWorktreeFile } from "./git/localFileService"
 export { getRepoListStatus }
 export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
@@ -136,6 +136,10 @@ export function saveLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeF
 }
 export function deleteLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeFile): Promise<void> {
   return runRepoMutation(bookmarkName, () => deleteLocalFileInternal(bookmarkName, file), false)
+}
+
+export function deleteLocalWorktreeDirectory(bookmarkName: string, path: string): Promise<void> {
+  return runRepoMutation(bookmarkName, () => deleteLocalDirectoryInternal(bookmarkName, path), false)
 }
 
 export function removeRepo(bookmarkName: string): Promise<void> {

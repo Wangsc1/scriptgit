@@ -2,7 +2,7 @@ import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, 
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, restoreFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
 import type { FileChange } from "../types/git"
 
@@ -21,7 +21,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -66,8 +66,16 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
       </Button>
     )
   }
-  return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
+  const hasChanges = [...changesByPath.keys()].some(path => path.startsWith(node.path + "/"))
+  const folderActions: any[] = []
+  if (hasChanges) {
+    folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => onRestore(node.path)} />)
+    folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
+  }
+  folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
+  return <DisclosureGroup trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
+    {hasChanges ? <Text font="caption2" foregroundStyle={COLOR_ORANGE}>已修改</Text> : null}
   </HStack>}>
     {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
   </DisclosureGroup>
@@ -134,10 +142,20 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     }
     await onWorktreeChanged()
   }
-  async function remove(path: string) {
+  async function remove(path: string, directory = false) {
     if (state.current.busy || removed.has(path)) return
     state.current.busy = true; setBusy(true); setError("")
     try {
+      if (directory) {
+        if (await Dialog.confirm({ title: "删除此本地文件夹？", message: `${path}\n将删除此文件夹及其全部内容（含未跟踪文件），不可撤销；不会自动暂存、提交或推送。`, confirmLabel: "删除文件夹" }) !== true || !state.current.alive) return
+        await deleteLocalWorktreeDirectory(bookmarkName, path)
+        if (state.current.alive) {
+          setDeleted(previous => [...previous, ...visibleFiles.filter(p => p.startsWith(path + "/"))])
+          setAdded(previous => previous.filter(p => !p.startsWith(path + "/")))
+        }
+        await onWorktreeChanged()
+        return
+      }
       const file = await readLocalWorktreeFile(bookmarkName, path)
       if (!state.current.alive) return
       if (await Dialog.confirm({ title: "删除此本地文件？", message: `${path}\n只删除当前工作区这个文件，不删除目录，也不会暂存、提交或推送。`, confirmLabel: "删除文件" }) !== true || !state.current.alive) return
@@ -145,6 +163,22 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       await changed(path, true)
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
+  }
+  async function restore(path: string) {
+    const targets = changes.filter(change => change.filepath.startsWith(path + "/"))
+    if (!targets.length) { onRestore(path); return }
+    if (state.current.busy || mergeInProgress) return
+    state.current.busy = true; setBusy(true); setError("")
+    let started = false
+    try {
+      if (await Dialog.confirm({ title: "还原此文件夹内的改动？", message: `${path}\n将丢弃该目录及子目录内 ${targets.length} 个文件的改动，不影响其他目录。此操作不可撤销。`, confirmLabel: "还原文件夹" }) !== true || !state.current.alive) return
+      started = true
+      for (const change of targets) await restoreFile(bookmarkName, change.filepath)
+    } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
+    finally {
+      try { if (started) await onWorktreeChanged() }
+      finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
+    }
   }
   async function manage(path: string, kind: "copy" | "rename") {
     if (state.current.busy || removed.has(path)) return
@@ -170,6 +204,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

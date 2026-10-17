@@ -14,13 +14,13 @@ global.FileManager={scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,document
  stat:async p=>{const s=await fs.promises.stat(p);return {size:s.size,modificationDate:s.mtimeMs,type:s.isDirectory()?'directory':'file'}},
  readAsData:async p=>new Data(await fs.promises.readFile(p)),writeAsData:async(p,data)=>{writes++;await fs.promises.writeFile(p,data.bytes)},
  copyFile:async (src,dest)=>fs.promises.copyFile(src,dest,fs.constants.COPYFILE_EXCL),rename:async (src,dest)=>fs.promises.rename(src,dest),
- remove:async p=>{removes++;await fs.promises.unlink(p)},
+ remove:async p=>{removes++;await fs.promises.rm(p,{recursive:true})},
 }
 global.Device={systemVersion:'26'}
 global.EditorController=class{constructor(options){Object.assign(this,options);controllers.push(this)}dispose(){this.disposed=true}}
 global.Dialog={confirm:async input=>{confirmations.push(input);return confirm}}
 const ctx={git,fs,dir,gitdir:dir+'/.git'}
-const runtime={resolveGitdir:()=>ctx.gitdir,getCtx:async()=>ctx}
+const runtime={resolveGitdir:()=>ctx.gitdir,getCtx:async()=>ctx,checkoutWithEmptyDirCleanup:(git,fs,options)=>git.checkout({fs,...options})}
 const store={resolveWorkdir:()=>root,findRepo:()=>({bookmarkName:'repo',name:'test',repoId:'repo'}),listRepos:()=>[],getGitdirPath:()=>ctx.gitdir}
 function loader(overrides={}){
  const cache=new Map()
@@ -103,16 +103,16 @@ async function main(){
   const pending=service.copyLocalWorktreeFile('repo',file,'barrier.bin').then(()=>done=true);await tick();assert.equal(done,false);assert.ok(!fs.existsSync(dir+'/barrier.bin'))
   await assert.rejects(service.renameLocalWorktreeFile('repo',file,'blocked.bin'),/写|操作/);gate.resolve();await active;await pending;assert.ok(fs.existsSync(dir+'/barrier.bin'));assert.ok(fs.existsSync(dir+'/native.bin'))
  })
- await test('file swipe/context menus: only leaves, cancel preserves row, confirm binary delete, copy/rename prompt/new tree and errors visible',async()=>{
+ await test('file swipe/context menus: folder delete available, cancel preserves row, confirm binary delete, copy/rename prompt/new tree and errors visible',async()=>{
   await disk('menu.bin',Buffer.from([0,255,1]));let updates=0,opened=null
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,props={files:['menu.bin','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen:f=>opened=f}
   const h=mount(FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='HStack'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
+  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
   const action=(name,title)=>all(row(name).props.contextMenu.menuItems).find(n=>n.type==='Button'&&n.props.title===title)
   const swipe=()=>row('menu.bin').props.trailingSwipeActions.actions[0]
   assert.equal(swipe().props.title,'删除');assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions.allowsFullSwipe,false)
-  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.trailingSwipeActions,undefined)
+  assert.deepEqual(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
   confirm=false;await swipe().props.action();assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false);assert.equal(updates,0)
   let next=null;global.Dialog.prompt=async()=>next
   await action('menu.bin','复制文件').props.action();await action('menu.bin','重命名').props.action();assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(updates,0)
@@ -123,7 +123,39 @@ async function main(){
   global.Dialog.confirm=async()=>{await disk('menu.bin','changed');return true};await swipe().props.action();assert.match(text(h),/修改|变化/);assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false)
   global.Dialog.confirm=async input=>{confirmations.push(input);return confirm};confirm=true;await swipe().props.action();assert.ok(!fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,true);assert.equal(updates,3)
   // 图片打开仅传预览快照，交由稳定父List路由ImageViewer。
-  await disk('click.png',Buffer.from([137,80,78,71]));props.files.push('click.png');h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.match(opened.previewUrl,/^data:image\/png;base64,/);assert.equal(opened.text,null);h.unmount()
+  await disk('click.png',Buffer.from([137,80,78,71]));props.files=[...props.files,'click.png'];h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.match(opened.previewUrl,/^data:image\/png;base64,/);assert.equal(opened.text,null);h.unmount()
+ })
+ await test('folder deletion: recursive content, root/traversal/symlink and nested Git protection; index/HEAD unchanged',async()=>{
+  const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  await disk('delete-folder/sub/untracked','data');await disk('delete-folder/a','data')
+  await service.deleteLocalWorktreeDirectory('repo','delete-folder');assert.ok(!fs.existsSync(dir+'/delete-folder'))
+  for(const unsafe of ['', '.', '..', '../outside', '.git', '/tmp']) await assert.rejects(service.deleteLocalWorktreeDirectory('repo',unsafe))
+  await disk('protected-folder/.git/config','nested git');await assert.rejects(service.deleteLocalWorktreeDirectory('repo','protected-folder'),/Git/);assert.ok(fs.existsSync(dir+'/protected-folder/.git/config'))
+  await disk('linked-folder/keep','data');fs.symlinkSync(outside,dir+'/linked-folder/link');await assert.rejects(service.deleteLocalWorktreeDirectory('repo','linked-folder'),/链接/);assert.ok(fs.existsSync(dir+'/linked-folder/keep'))
+  assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+ })
+ await test('folder swipe: nested changes show three text buttons, boundary excludes siblings, cancel and confirm recursive delete',async()=>{
+  await disk('swipe-folder/sub/a','data');let updates=0,pushes=0
+  const props={files:['swipe-folder/sub/a','swipe-folder-other/b'],loading:false,bookmarkName:'repo',changes:[{filepath:'swipe-folder/sub/a',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush:()=>pushes++,onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
+  let groups=folders(),a=groups[0].props.trailingSwipeActions.actions
+  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','提交','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
+  await a[1].props.action();assert.equal(pushes,1)
+  confirm=false;await a[0].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
+  confirm=false;await a[2].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
+  confirm=true;await a[2].props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
+ })
+ await test('folder restore confirms once and restores only changed descendants, leaving sibling changes',async()=>{
+  await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let updates=0
+  const props={files:['folder/b.txt','a.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'folder/b.txt',status:'*modified'},{filepath:'a.txt',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush(){},onRestore(){throw Error('single file handler must not receive directory')},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
+  confirm=true;await group.props.trailingSwipeActions.actions[0].props.action()
+  assert.doesNotMatch(text(h),/失败|Error/);assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'nested');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');assert.equal(confirmations.length,before+1);assert.equal(updates,1);h.unmount()
  })
  await test('documented Editor lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0

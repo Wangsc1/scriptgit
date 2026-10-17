@@ -61,8 +61,10 @@ const ui = new Proxy({}, { get(_, name) {
   if (name === 'useRef') return (initial) => {
     const h = active, i = h.cursor++; return h.slots[i] || (h.slots[i] = { current: initial })
   }
-  if (name === 'useMemo') return (factory) => {
-    const h = active, i = h.cursor++; if (!(i in h.slots)) h.slots[i] = factory(); return h.slots[i]
+  if (name === 'useMemo') return (factory, deps) => {
+    const h = active, i = h.cursor++, previous = h.slots[i]
+    if (!previous || !deps || !previous.deps || deps.some((value, index) => !Object.is(value, previous.deps[index]))) h.slots[i] = { value: factory(), deps }
+    return h.slots[i].value
   }
   if (name === 'useEffect') return (effect) => {
     const h = active, i = h.cursor++

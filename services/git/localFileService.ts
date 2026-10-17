@@ -11,7 +11,7 @@ export interface LocalWorktreeFile {
 }
 
 /** 每次重新恢复授权工作区，检查工作区根及其内每级路径；不探测授权范围外的系统祖先。 */
-async function safeFile(bookmarkName: string, path: string): Promise<{ root: string; absolute: string }> {
+async function safeFile(bookmarkName: string, path: string, directory = false): Promise<{ root: string; absolute: string }> {
   const parts = path.split("/")
   if (!path || path.startsWith("/") || path.includes("\\") || /[\x00-\x1f]/.test(path) || parts.some(p => !p || p === "." || p === ".." || p.toLowerCase() === ".git")) throw new Error("不允许操作此文件路径")
   const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
@@ -25,6 +25,10 @@ async function safeFile(bookmarkName: string, path: string): Promise<{ root: str
     if (await FileManager.isLink(current)) throw new Error("符号链接不允许编辑或删除")
     if (!(await FileManager.exists(current))) throw new Error("文件已不存在，请刷新文件或改动列表")
     if (current !== absolute && !(await FileManager.isDirectory(current))) throw new Error("父路径不是目录")
+  }
+  if (directory) {
+    if (!(await FileManager.isDirectory(absolute))) throw new Error("不是文件夹")
+    return { root, absolute }
   }
   if (await FileManager.isDirectory(absolute)) throw new Error("只允许操作普通单文件，不能删除目录")
   if (!(await FileManager.isFile(absolute))) throw new Error("不是普通文件")
@@ -117,4 +121,24 @@ export async function renameLocalFileInternal(bookmarkName: string, file: LocalW
   const { source, target, path } = await newTarget(bookmarkName, file, name)
   await FileManager.rename(source, target)
   return path
+}
+
+/** 独立目录删除入口；保留单文件入口原有的拒绝目录约束。 */
+export async function deleteLocalDirectoryInternal(bookmarkName: string, path: string): Promise<void> {
+  const { root, absolute } = await safeFile(bookmarkName, path, true)
+  async function validate(relative: string): Promise<void> {
+    const checked = await safeFile(bookmarkName, relative, true)
+    if (checked.root !== root) throw new Error("工作区路径已变化")
+    for (const name of await FileManager.readDirectory(checked.absolute)) {
+      if (!name || name.includes("/") || name.includes("\\") || name === "." || name === ".." || name.toLowerCase() === ".git") throw new Error("文件夹含不安全路径或 Git 元数据，拒绝删除")
+      const child = checked.absolute + "/" + name
+      if (await FileManager.isLink(child)) throw new Error("文件夹含符号链接，拒绝删除")
+      if (await FileManager.isDirectory(child)) await validate(relative + "/" + name)
+      else await safeFile(bookmarkName, relative + "/" + name)
+    }
+  }
+  await validate(path)
+  const checked = await safeFile(bookmarkName, path, true)
+  if (checked.root !== root) throw new Error("工作区路径已变化")
+  await FileManager.remove(absolute)
 }
