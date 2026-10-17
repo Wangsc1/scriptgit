@@ -1,4 +1,4 @@
-import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, FileManager } from "scripting"
+import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, Dialog, useRef, useState, useEffect, useMemo, FileManager } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
@@ -43,9 +43,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [added, setAdded] = useState<string[]>([])
-  const visibleFiles = [...new Set([...files, ...changes.map(c => c.filepath), ...added])]
+  const visibleFiles = useMemo(() => [...new Set([...files, ...changes.map(c => c.filepath), ...added])], [files, changes, added])
   const [deleted, setDeleted] = useState<string[]>([])
-  const removed = new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)])
+  const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
   const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
   const state = useRef({ alive: true, busy: false })
   useEffect(() => () => { state.current.alive = false }, [])
@@ -57,17 +57,17 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     let cancelled = false
     async function load() {
       try {
-        const root = resolveWorkdir(bookmarkName)
+        const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
         const next = new Map<string, { size: number; modified: number }>()
-        for (const path of visibleFiles) {
-          if (removed.has(path)) continue
+        await Promise.all(visibleFiles.map(async (path) => {
+          if (removed.has(path)) return
           try {
             const stat = await FileManager.stat(root + "/" + path)
-            next.set(path, { size: stat.size, modified: stat.modificationDate })
+            next.set(path, { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) })
           } catch (_e) {
             // 文件可能刚刚被删除或不可访问，跳过
           }
-        }
+        }))
         if (!cancelled && state.current.alive) setMetadata(next)
       } catch (_e) {
         // 工作区不可访问时静默，列表仍可显示文件名
@@ -75,7 +75,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     }
     load()
     return () => { cancelled = true }
-  }, [bookmarkName, visibleFiles.join("\n"), Array.from(removed).join("\n")])
+  }, [bookmarkName, visibleFiles])
   async function open(path: string) {
     if (state.current.busy || removed.has(path)) return
     setError("")
