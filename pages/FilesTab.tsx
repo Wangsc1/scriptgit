@@ -3,11 +3,28 @@ import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT } from "../constants/colors"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
+import type { FileChange } from "../types/git"
 
-function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void }) {
+function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
+  switch (status) {
+    case "added":
+    case "*added": return { text: "新增", color: "systemPurple" }
+    case "modified":
+    case "*modified": return { text: "已修改", color: COLOR_ORANGE }
+    case "deleted":
+    case "*deleted": return { text: "已删除", color: "systemRed" }
+    default:
+      if (unstaged) return { text: "已修改", color: COLOR_ORANGE }
+      return null
+  }
+}
+
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange> }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
+    const change = changesByPath.get(node.path)
+    const badge = deleted ? { text: "已删除", color: "systemRed" } : change ? statusBadge(change.status, change.unstaged) : null
     const metaParts: string[] = []
     if (node.size != null) metaParts.push(formatBytes(node.size))
     if (node.modified != null) metaParts.push(formatDate(node.modified))
@@ -18,10 +35,14 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node:
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: [
         <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />,
       ] }}>
-        <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
+        <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
-          <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0 }}>
-            <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
+          <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0, alignment: "leading" }}>
+            <HStack alignment="center" spacing={8} frame={{ maxWidth: Infinity, alignment: "leading" }}>
+              <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
+              {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
+              {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
+            </HStack>
             {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
           </VStack>
         </HStack>
@@ -31,7 +52,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node:
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
   </HStack>}>
-    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} />)}
+    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} />)}
   </DisclosureGroup>
 }
 
@@ -46,6 +67,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const visibleFiles = useMemo(() => [...new Set([...files, ...changes.map(c => c.filepath), ...added])], [files, changes, added])
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
+  const changesByPath = useMemo(() => new Map<string, FileChange>(changes.map(c => [c.filepath, c])), [changes])
   const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
   const state = useRef({ alive: true, busy: false })
   useEffect(() => () => { state.current.alive = false }, [])
@@ -124,6 +146,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} />)}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} changesByPath={changesByPath} />)}
   </Section>
 }

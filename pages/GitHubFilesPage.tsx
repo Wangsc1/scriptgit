@@ -114,9 +114,9 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
         if (!isDir && entry.lastModified) metaParts.push(formatISODate(entry.lastModified))
         return (
           <Button key={entry.path} action={() => isDir ? loadDirectory(entry.path) : openFile(entry)} disabled={busy}>
-            <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
+            <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
               <Text font="body">{isDir ? "📁" : "📄"}</Text>
-              <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0 }}>
+              <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0, alignment: "leading" }}>
                 <Text font="body" foregroundStyle={COLOR_LABEL} lineLimit={1}>{entry.name}</Text>
                 {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join(", ")}</Text> : null}
               </VStack>
