@@ -25,6 +25,10 @@ async function safeFile(bookmarkName: string, path: string, directory = false): 
     if (await FileManager.isLink(current)) throw new Error("符号链接不允许编辑或删除")
     if (!(await FileManager.exists(current))) throw new Error("文件已不存在，请刷新文件或改动列表")
     if (current !== absolute && !(await FileManager.isDirectory(current))) throw new Error("父路径不是目录")
+    if (await FileManager.isDirectory(current)) {
+      const entries = await FileManager.readDirectory(current)
+      if (entries.some(name => name.toLowerCase() === ".git")) throw new Error("嵌套 Git 仓库不允许操作")
+    }
   }
   if (directory) {
     if (!(await FileManager.isDirectory(absolute))) throw new Error("不是文件夹")
@@ -94,7 +98,7 @@ export async function readLocalFileForOpenInternal(bookmarkName: string, path: s
 }
 
 function validNewName(name: string): void {
-  if (!name || name !== name.trim() || name === "." || name === ".." || name.toLowerCase() === ".git" || /[\/\\:\x00-\x1f\x7f]/.test(name) || name.endsWith(".") || name.length > 240) throw new Error("请输入合法单文件名（不能含路径、.git、控制字符或结尾空格/点）")
+  if (!name || name !== name.trim() || name === "." || name === ".." || name.toLowerCase() === ".git" || /[\/\\:\x00-\x1f\x7f]/.test(name) || name.endsWith(".") || name.length > 240) throw new Error("请输入合法名称（不能含路径、.git、控制字符或结尾空格/点）")
 }
 async function newTarget(bookmarkName: string, file: LocalWorktreeFile, name: string): Promise<{ source: string; target: string; path: string }> {
   validNewName(name)
@@ -123,22 +127,94 @@ export async function renameLocalFileInternal(bookmarkName: string, file: LocalW
   return path
 }
 
-/** 独立目录删除入口；保留单文件入口原有的拒绝目录约束。 */
-export async function deleteLocalDirectoryInternal(bookmarkName: string, path: string): Promise<void> {
+type DirectoryEntry = { path: string; directory: boolean; size: number; modified: number }
+
+/** 仅遍历路径和元数据；删除、复制、改名共用保护，不读取文件内容。 */
+async function scanDirectory(bookmarkName: string, path: string, expectedRoot?: string) {
   const { root, absolute } = await safeFile(bookmarkName, path, true)
-  async function validate(relative: string): Promise<void> {
-    const checked = await safeFile(bookmarkName, relative, true)
+  if (expectedRoot && root !== expectedRoot) throw new Error("工作区路径已变化")
+  const entries: DirectoryEntry[] = []
+  async function visit(relative: string, directory: boolean) {
+    const checked = await safeFile(bookmarkName, relative, directory)
     if (checked.root !== root) throw new Error("工作区路径已变化")
-    for (const name of await FileManager.readDirectory(checked.absolute)) {
-      if (!name || name.includes("/") || name.includes("\\") || name === "." || name === ".." || name.toLowerCase() === ".git") throw new Error("文件夹含不安全路径或 Git 元数据，拒绝删除")
+    const stat = await FileManager.stat(checked.absolute)
+    entries.push({ path: relative, directory, size: stat.size, modified: stat.modificationDate })
+    if (!directory) return
+    for (const name of (await FileManager.readDirectory(checked.absolute)).sort()) {
+      if (!name || /[\/\\\x00-\x1f\x7f]/.test(name) || name === "." || name === ".." || name.toLowerCase() === ".git") throw new Error("文件夹含不安全路径或 Git 元数据，拒绝操作")
       const child = checked.absolute + "/" + name
-      if (await FileManager.isLink(child)) throw new Error("文件夹含符号链接，拒绝删除")
-      if (await FileManager.isDirectory(child)) await validate(relative + "/" + name)
-      else await safeFile(bookmarkName, relative + "/" + name)
+      if (await FileManager.isLink(child)) throw new Error("文件夹含符号链接，拒绝操作")
+      await visit(relative + "/" + name, await FileManager.isDirectory(child))
     }
   }
-  await validate(path)
-  const checked = await safeFile(bookmarkName, path, true)
-  if (checked.root !== root) throw new Error("工作区路径已变化")
-  await FileManager.remove(absolute)
+  await visit(path, true)
+  return { root, absolute, entries }
+}
+
+/** 保留单文件入口原有拒绝目录约束。 */
+export async function deleteLocalDirectoryInternal(bookmarkName: string, path: string): Promise<void> {
+  const checked = await scanDirectory(bookmarkName, path)
+  const latest = await safeFile(bookmarkName, path, true)
+  if (checked.root !== latest.root) throw new Error("工作区路径已变化")
+  await FileManager.remove(checked.absolute)
+}
+
+export interface LocalDirectoryResult { path: string; files: string[]; directories: string[] }
+
+async function changeDirectory(bookmarkName: string, path: string, name: string, copy: boolean): Promise<LocalDirectoryResult> {
+  validNewName(name)
+  const snapshot = await scanDirectory(bookmarkName, path)
+  const parent = snapshot.absolute.slice(0, snapshot.absolute.lastIndexOf("/"))
+  const target = parent + "/" + name
+  const slash = path.lastIndexOf("/")
+  const targetPath = (slash < 0 ? "" : path.slice(0, slash + 1)) + name
+  async function vacant(absolute: string) {
+    const folded = (value: string) => value.normalize("NFC").toLowerCase()
+    const base = absolute.slice(absolute.lastIndexOf("/") + 1)
+    const parent = absolute.slice(0, absolute.lastIndexOf("/"))
+    if ((await FileManager.readDirectory(parent)).some(entry => folded(entry) === folded(base)) || await FileManager.isLink(absolute) || await FileManager.exists(absolute)) throw new Error("同目录已有同名目标（含大小写重名），未覆盖")
+  }
+  await vacant(target)
+  const latest = await scanDirectory(bookmarkName, path, snapshot.root)
+  if (JSON.stringify(snapshot.entries) !== JSON.stringify(latest.entries)) throw new Error("文件夹已变化，请刷新后重试")
+  await vacant(target)
+  const mapped = (entry: DirectoryEntry) => targetPath + entry.path.slice(path.length)
+  if (!copy) {
+    // 原生 rename 支持目录；绝不用 copy + remove 模拟移动。
+    const source = await safeFile(bookmarkName, path, true)
+    if (source.root !== snapshot.root) throw new Error("工作区路径已变化")
+    await FileManager.rename(source.absolute, target)
+  } else {
+    // copyFile 只承诺文件：逐级建目录，叶子用原生二进制复制。
+    // 失败保留原件与部分目标，不做 remove 回滚，避免误删外部新增内容。
+    let started = false
+    try {
+      for (const entry of snapshot.entries) {
+        const source = await safeFile(bookmarkName, entry.path, entry.directory)
+        if (source.root !== snapshot.root) throw new Error("工作区路径已变化")
+        const stat = await FileManager.stat(source.absolute)
+        if (stat.size !== entry.size || stat.modificationDate !== entry.modified) throw new Error("源内容已变化")
+        const dest = snapshot.root + "/" + mapped(entry)
+        if (entry.path !== path) {
+          const checkedParent = await safeFile(bookmarkName, mapped(entry).slice(0, mapped(entry).lastIndexOf("/")), true)
+          if (checkedParent.root !== snapshot.root) throw new Error("工作区路径已变化")
+        }
+        await vacant(dest)
+        started = true
+        if (entry.directory) await FileManager.createDirectory(dest, false)
+        else await FileManager.copyFile(source.absolute, dest)
+      }
+      const after = await scanDirectory(bookmarkName, path, snapshot.root)
+      if (JSON.stringify(after.entries) !== JSON.stringify(snapshot.entries)) throw new Error("复制期间源文件夹已变化，请核对目标")
+    } catch (error: any) {
+      throw new Error(`${String(error?.message || error)}${started ? "；原文件夹保留，目标可能已部分复制，请核对；未自动删除任何内容" : ""}`)
+    }
+  }
+  return { path: targetPath, files: snapshot.entries.filter(e => !e.directory).map(mapped), directories: snapshot.entries.filter(e => e.directory).map(mapped) }
+}
+export function copyLocalDirectoryInternal(bookmarkName: string, path: string, name: string): Promise<LocalDirectoryResult> {
+  return changeDirectory(bookmarkName, path, name, true)
+}
+export function renameLocalDirectoryInternal(bookmarkName: string, path: string, name: string): Promise<LocalDirectoryResult> {
+  return changeDirectory(bookmarkName, path, name, false)
 }

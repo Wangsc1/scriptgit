@@ -120,7 +120,7 @@ export function RepoDetailTabContent({
         >
           <Text tag={0}>文件</Text>
           <Text tag={1}>Stash</Text>
-          <Text tag={2}>历史</Text>
+          <Text tag={2}>状态</Text>
         </Picker>
       </Section>
       {tab === 0 ? (

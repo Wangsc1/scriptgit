@@ -44,7 +44,7 @@ async function main(){
  })
  await test('homepage uses date sorter, has nonblocking refresh hint and no removed remote editing entry; detail remote entry remains',async()=>{
   const read=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8')
-  assert.match(read('pages/RepoListPage.tsx'),/sortReposByGithubUpdated\(repos\)/);assert.ok(!read('pages/RepoListPage.tsx').includes('GitHubFilesPage'));assert.ok(!read('pages/RepoListPage.tsx').includes('GitHub 远端文件浏览与编辑'));assert.match(read('pages/RepoListPage.tsx'),/保留已有时间缓存/);assert.match(read('pages/RepoDetailPage.tsx'),/远端文件编辑/)
+  assert.match(read('pages/RepoListPage.tsx'),/sortReposByGithubUpdated\(repos\)/);assert.ok(!read('pages/RepoListPage.tsx').includes('GitHubFilesPage'));assert.ok(!read('pages/RepoListPage.tsx').includes('GitHub 远端文件浏览与编辑'));assert.match(read('pages/RepoListPage.tsx'),/保留已有时间缓存/);assert.match(read('pages/RepoDetailPage.tsx'),/Edit Remote Files/)
  })
  console.log(`\n${count} GitHub date ordering/refresh groups passed; no network or real repository writes.`)
 }

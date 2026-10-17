@@ -24,6 +24,7 @@ import {
   RepoDetailTabContent,
 } from "../components/RepoDetailContent"
 import { RepoDetailDestination } from "../components/RepoDetailDestination"
+import { NameInputSheet } from "../components/NameInputSheet"
 import { CommitMessageSheet } from "../components/CommitMessageSheet"
 import { useOpBusy } from "../hooks/useOpBusy"
 import { useRepoDetailData } from "../hooks/useRepoDetailData"
@@ -130,6 +131,7 @@ export function RepoDetailPage({
     handleMergeIntoCurrent,
     handleSwitchBranch,
     handleRenameBranch,
+    renameFrom, renameError, cancelRenameBranch, confirmRenameBranch,
     handleCreateBranch,
   } = useRepoBranchActions({
     bookmarkName,
@@ -197,7 +199,10 @@ export function RepoDetailPage({
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
         content: localFile?.file.previewUrl ? <ImageViewer key={localFile.id} sessionId={localFile.id} url={localFile.file.previewUrl} compactImage onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
-          onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => { await data.refreshChangesAndSnapshot() }} /> : <Text>加载中…</Text>,
+          onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
+            try { await data.refreshChangesAndSnapshot() }
+            catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
+          }} /> : <Text>加载中…</Text>,
       }}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
@@ -236,7 +241,7 @@ export function RepoDetailPage({
       toolbar={{
         topBarTrailing: data.githubFullName ? (
           <Menu title="GitHub" systemImage="rectangle.stack">
-            <Button title="远端文件编辑" systemImage="doc.text" action={() => nav.openGitHubWorkPage(3)} />
+            <Button title="Edit Remote Files" systemImage="doc.text" action={() => nav.openGitHubWorkPage(3)} />
             <Button
               title="Issues"
               systemImage="smallcircle.filled.circle"
@@ -306,11 +311,13 @@ export function RepoDetailPage({
         ),
       }}
       sheet={{
-        isPresented: worktree.commitSheetMode != null,
+        isPresented: renameFrom != null || worktree.commitSheetMode != null,
         onChanged: (presented: boolean) => {
-          if (!presented) worktree.closeCommitSheet()
+          if (!presented) { cancelRenameBranch(); worktree.closeCommitSheet() }
         },
-        content: worktree.commitSheetMode === "amend" ? (
+        content: renameFrom != null ? (
+          <NameInputSheet key={`rename-${renameFrom}`} title="重命名分支" initialName={renameFrom} message="重命名当前分支；已发布的分支会同步远端（推送新分支并删除远端旧分支）。" busy={mutating} error={renameError} onCancel={cancelRenameBranch} onConfirm={confirmRenameBranch} />
+        ) : worktree.commitSheetMode === "amend" ? (
           <CommitMessageSheet
             key={`amend-${pendingActions.amendDraft.title}`}
             navigationTitle="重编提交"

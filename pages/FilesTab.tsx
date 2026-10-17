@@ -1,9 +1,10 @@
 import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
+import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
 import type { FileChange } from "../types/git"
 
@@ -22,11 +23,11 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHints, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
-    const badge = deleted ? { text: "已删除", color: "systemRed" } : change ? statusBadge(change.status, change.unstaged) : null
+    const badge = deleted ? { text: "已删除", color: "systemRed" } : renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE } : change ? statusBadge(change.status, change.unstaged) : null
     const meta = metadata.get(node.path)
     const metaParts: string[] = []
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
@@ -57,7 +58,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
         <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-            <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
+            <Image systemName="doc" foregroundStyle={!deleted && (badge?.text === "已修改" || renameHints.has(node.path)) ? COLOR_ORANGE : COLOR_SECONDARY_LABEL} />
             <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
             {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
             {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
@@ -74,11 +75,14 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
-  return <DisclosureGroup isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
+  return <DisclosureGroup contextMenu={{ menuItems: <>
+    <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
+    <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
+  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
-    {hasChanges ? <Text font="caption2" foregroundStyle={COLOR_ORANGE}>已修改</Text> : null}
+    {renameHints.has(node.path) || hasChanges ? <Text font="caption2" foregroundStyle={COLOR_ORANGE}>{renameHints.has(node.path) ? "已重命名" : "已修改"}</Text> : null}
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
@@ -102,10 +106,19 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
+  const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
+    !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
+  // 即时提示仅覆盖尚未刷新或仍有真实工作区改动的新目标；不伪造 Git rename 状态。
+  const renameHints = useMemo(() => new Set(renamedFiles.filter(entry => entry.before === changes || hasRenameChange(entry)).map(entry => entry.path)), [renamedFiles, changes])
+  useEffect(() => {
+    setRenamedFiles(previous => previous.filter(hasRenameChange))
+  }, [changes])
   const [added, setAdded] = useState<string[]>([])
   const fileSignature = [...new Set([...files, ...changes.map(c => c.filepath), ...added])].join("\0")
   const visibleFiles = useMemo(() => fileSignature ? fileSignature.split("\0") : [], [fileSignature])
-  const tree = useMemo(() => buildFileTree(visibleFiles), [visibleFiles])
+  const [directories, setDirectories] = useState<string[]>([])
+  const tree = useMemo(() => buildFileTree(visibleFiles, { directories }), [visibleFiles, directories])
   const metadataPaths = useMemo(() => expandedFilePaths(tree, expanded), [tree, expanded])
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
@@ -162,6 +175,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         if (state.current.alive) {
           setDeleted(previous => [...previous, ...visibleFiles.filter(p => p.startsWith(path + "/"))])
           setAdded(previous => previous.filter(p => !p.startsWith(path + "/")))
+          setDirectories(previous => previous.filter(p => p !== path && !p.startsWith(path + "/")))
         }
         await onWorktreeChanged()
         return
@@ -180,7 +194,42 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
     onRestore(path, targets.length ? targets.map(change => change.filepath) : undefined)
   }
-  async function manage(path: string, kind: "copy" | "rename") {
+  const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
+  const [directoryError, setDirectoryError] = useState("")
+  function cancelDirectoryForm() { if (!state.current.busy) setDirectoryForm(null) }
+  async function confirmDirectory(next: string) {
+    if (!directoryForm || state.current.busy || mergeInProgress) return
+    const { path, kind } = directoryForm
+    if (kind === "rename" && next === path.split("/").pop()) { setDirectoryForm(null); return }
+    state.current.busy = true; setBusy(true); setDirectoryError("")
+    try {
+      const result = await (kind === "copy" ? copyLocalWorktreeDirectory : renameLocalWorktreeDirectory)(bookmarkName, path, next)
+      if (state.current.alive) {
+        setAdded(previous => [...previous.filter(p => kind !== "rename" || !p.startsWith(path + "/")), ...result.files])
+        setDirectories(previous => [...previous.filter(p => kind !== "rename" || (p !== path && !p.startsWith(path + "/"))), ...result.directories])
+        if (kind === "rename") {
+          setDeleted(previous => [...previous, ...visibleFiles.filter(p => p.startsWith(path + "/"))])
+          const targets = new Set([result.path, ...result.directories, ...result.files])
+          setRenamedFiles(previous => [
+            ...previous.filter(entry => entry.path !== path && !entry.path.startsWith(path + "/") && !targets.has(entry.path)),
+            ...[...new Set([result.path, ...result.directories])].map(target => ({ path: target, before: changes, directory: true })),
+            ...result.files.map(target => ({ path: target, before: changes })),
+          ])
+        }
+        setDirectoryForm(null)
+      }
+      await onWorktreeChanged()
+    } catch (e: any) {
+      if (state.current.alive) { setDirectoryError(String(e?.message || e)); setError(String(e?.message || e)) }
+      // 部分复制也可能产生改动，刷新但绝不清理原件/目标。
+      try { await onWorktreeChanged() } catch (_e) { /* 保留原始错误 */ }
+    } finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
+  }
+  async function manage(path: string, kind: "copy" | "rename", directory = false) {
+    if (directory) {
+      if (state.current.busy || mergeInProgress) return
+      setDirectoryError(""); setDirectoryForm({ path, kind }); return
+    }
     if (state.current.busy || removed.has(path)) return
     state.current.busy = true; setBusy(true); setError("")
     try {
@@ -192,7 +241,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       const next = await Dialog.prompt({ title: kind === "copy" ? "复制文件到当前目录" : "重命名文件", message: "只修改本地工作区，不覆盖已有文件，不会暂存、提交或推送。", defaultValue, confirmLabel: "确认", cancelLabel: "取消" })
       if (next == null || !state.current.alive) return
       const target = await (kind === "copy" ? copyLocalWorktreeFile : renameLocalWorktreeFile)(bookmarkName, file, next)
-      if (state.current.alive) setAdded(previous => [...previous.filter(p => kind !== "rename" || p !== path), target])
+      if (state.current.alive) {
+        setAdded(previous => [...previous.filter(p => kind !== "rename" || p !== path), target])
+        if (kind === "rename") setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, before: changes }])
+      }
       await changed(path, kind === "rename")
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
@@ -200,9 +252,13 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
-  return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
+  return <Section sheet={{
+    isPresented: directoryForm !== null,
+    onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
+    content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
+  }} header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} renameHints={renameHints} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

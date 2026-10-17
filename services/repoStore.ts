@@ -324,6 +324,12 @@ export function getBranchLastPulledAt(
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
+/** 仓库最近一次真实成功拉取；切换分支不应退回较旧时间。 */
+export function getRepoLastPulledAt(repo: RepoMeta | null | undefined): number | null {
+  const times = Object.values(repo?.lastPulledAtByBranch || {}).filter(value => typeof value === "number" && Number.isFinite(value) && value > 0)
+  return times.length ? Math.max(...times) : null
+}
+
 export function branchLastPulledAtPatch(
   repo: RepoMeta,
   branch: string,
@@ -334,7 +340,7 @@ export function branchLastPulledAtPatch(
   return {
     lastPulledAtByBranch: {
       ...(repo.lastPulledAtByBranch || {}),
-      [normalized]: pulledAt,
+      [normalized]: Math.max(getBranchLastPulledAt(repo, normalized) || 0, pulledAt),
     },
   }
 }

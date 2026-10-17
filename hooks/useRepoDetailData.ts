@@ -28,7 +28,7 @@ import {
   listStashes,
   statusRevision,
 } from "../services/gitService"
-import { findRepo, getBranchLastPulledAt } from "../services/repoStore"
+import { findRepo, getRepoLastPulledAt } from "../services/repoStore"
 import { relativeTime } from "../utils/format"
 import { githubRepoFromRemoteUrl } from "../utils/github"
 import type { UpstreamConfig } from "../utils/remote"
@@ -90,10 +90,10 @@ export function useRepoDetailData({
   const [mergeInProgress, setMergeInProgress] = useState(false)
   const [conflictCount, setConflictCount] = useState(0)
 
-  function refreshMeta(branch = branchInfo.current) {
+  function refreshMeta() {
     const meta = findRepo(bookmarkName)
     if (!meta) return
-    setLastPulledAt(getBranchLastPulledAt(meta, branch))
+    setLastPulledAt(getRepoLastPulledAt(meta))
     setRepoSource(meta.source || "local")
     setDisplayName(meta.name || name)
   }
@@ -155,7 +155,7 @@ export function useRepoDetailData({
     setBranchInfo({ branches: [...b.locals, ...b.remotes], current: b.current })
     setRemoteOnlyBranches(b.remotes)
     setRemoteBranchNames(b.remoteNames)
-    refreshMeta(b.current)
+    refreshMeta()
   }
 
   async function loadRemote() {

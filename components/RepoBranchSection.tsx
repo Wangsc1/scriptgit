@@ -127,7 +127,7 @@ export function RepoBranchSection({
     >
       {branchInfo.branches.length > 0 ? (
         <Picker
-          title="当前分支"
+          title="更改分支"
           value={branchInfo.current ?? ""}
           onChanged={(value: string) => onSwitch(value)}
         >

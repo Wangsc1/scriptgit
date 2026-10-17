@@ -9,6 +9,7 @@ let writes=0,removes=0,confirm=true,confirmations=[],controllers=[],root=dir
 // Native FileManager semantics on a disposable directory; never touches user repositories.
 global.FileManager={scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,documentsDirectory:tmp,
  readDirectory:async p=>fs.promises.readdir(p),
+ createDirectory:async p=>fs.promises.mkdir(p),
  exists:async p=>fs.existsSync(p),isLink:async p=>{try{return (await fs.promises.lstat(p)).isSymbolicLink()}catch(e){if(e.code==='ENOENT')return false;throw e}},
  isDirectory:async p=>(await fs.promises.stat(p)).isDirectory(),isFile:async p=>(await fs.promises.stat(p)).isFile(),
  stat:async p=>{const s=await fs.promises.stat(p);return {size:s.size,modificationDate:s.mtimeMs,type:s.isDirectory()?'directory':'file'}},
@@ -20,14 +21,14 @@ global.Device={systemVersion:'26'}
 global.EditorController=class{constructor(options){Object.assign(this,options);controllers.push(this)}dispose(){this.disposed=true}}
 global.Dialog={confirm:async input=>{confirmations.push(input);return confirm}}
 const ctx={git,fs,dir,gitdir:dir+'/.git'}
-const runtime={resolveGitdir:()=>ctx.gitdir,getCtx:async()=>ctx,checkoutWithEmptyDirCleanup:(git,fs,options)=>git.checkout({fs,...options})}
-const store={resolveWorkdir:()=>root,findRepo:()=>({bookmarkName:'repo',name:'test',repoId:'repo'}),listRepos:()=>[],getGitdirPath:()=>ctx.gitdir}
+const runtime={runWithBackgroundKeepAlive:fn=>fn(),resolveGitdir:()=>ctx.gitdir,getCtx:async()=>ctx,checkoutWithEmptyDirCleanup:(git,fs,options)=>git.checkout({fs,...options})}
+const store={writeSnapshot(){},resolveWorkdir:()=>root,findRepo:()=>({bookmarkName:'repo',name:'test',repoId:'repo'}),listRepos:()=>[],getGitdirPath:()=>ctx.gitdir}
 function loader(overrides={}){
  const cache=new Map()
  function read(file){file=path.resolve(file);if(cache.has(file))return cache.get(file).exports
   const m={exports:{}};cache.set(file,m)
   const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx',jsxFragmentFactory:'__fragment'},fileName:file}).outputText
-  const req=name=>{if(name==='scripting')return ui;let dest=path.resolve(path.dirname(file),name);dest=['.ts','.tsx'].map(ext=>dest+ext).find(fs.existsSync)||dest
+  const req=name=>{if(name==='scripting')return new Proxy(ui,{get:(target,key)=>key==='Widget'?{reloadAll(){}}:target[key]});let dest=path.resolve(path.dirname(file),name);dest=['.ts','.tsx'].map(ext=>dest+ext).find(fs.existsSync)||dest
    if(dest.replace(/\.tsx?$/,'')===project+'/components/LocalCodeEditor')return {LocalCodeEditor:'LocalCodeEditor'}
    if(dest.replace(/\.tsx?$/,'')===project+'/services/localCodeEditor')return {createLocalCodeEditorController:options=>{const c=new global.EditorController(options);c.getContent=async()=>c.content;return c}}
    if(dest===project+'/services/repoStore.ts')return store
@@ -160,6 +161,106 @@ async function main(){
   assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
+ await test('directory native recursion includes binary/untracked/empty dirs; real Git A/D, unchanged HEAD/index and no JS content reads',async()=>{
+  await disk('recursive/sub/binary.bin',Buffer.alloc(1024*1024,0xa7));await disk('recursive/tracked.txt','tracked');fs.mkdirSync(dir+'/recursive/empty');await git.add({fs,dir,filepath:'recursive/tracked.txt'})
+  const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'}),read=FileManager.readAsData
+  FileManager.readAsData=async()=>{throw Error('must not read tree content into JS')}
+  const copied=await service.copyLocalWorktreeDirectory('repo','recursive','recursive copy')
+  assert.deepEqual(copied.files,['recursive copy/sub/binary.bin','recursive copy/tracked.txt']);assert.ok(copied.directories.includes('recursive copy/empty'))
+  assert.deepEqual(fs.readFileSync(dir+'/recursive copy/sub/binary.bin'),Buffer.alloc(1024*1024,0xa7));assert.ok(fs.statSync(dir+'/recursive copy/empty').isDirectory())
+  const renamed=await service.renameLocalWorktreeDirectory('repo','recursive','recursive renamed');assert.equal(renamed.path,'recursive renamed');assert.ok(!fs.existsSync(dir+'/recursive'));assert.equal(fs.readFileSync(dir+'/recursive renamed/tracked.txt','utf8'),'tracked');FileManager.readAsData=read
+  assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+  const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='recursive/tracked.txt'),['recursive/tracked.txt',0,0,3]);assert.deepEqual(matrix.find(r=>r[0]==='recursive renamed/tracked.txt'),['recursive renamed/tracked.txt',0,2,0])
+ })
+ await test('directory safety rejects roots/traversal/nested git/ancestor git/symlinks/collisions before mutation; failures never remove source or partial destination',async()=>{
+  const originalRemove=removes
+  for(const source of ['', '.', '..','../outside','.git','/tmp','linked-folder','protected-folder'])for(const fn of [service.copyLocalWorktreeDirectory,service.renameLocalWorktreeDirectory])await assert.rejects(fn('repo',source,'safe'))
+  await disk('nested-repo/.git','gitdir: outside');await disk('nested-repo/inside/a','safe');await assert.rejects(service.copyLocalWorktreeDirectory('repo','nested-repo/inside','new'),/Git/)
+  for(const name of ['', '.', '..','../escape','a/b','a\\b','.git','.GIT',' bad','bad.','bad:foo','RECURSIVE COPY','recursive renamed'])for(const fn of [service.copyLocalWorktreeDirectory,service.renameLocalWorktreeDirectory])await assert.rejects(fn('repo','recursive copy',name))
+  fs.symlinkSync(outside+'/absent',dir+'/dangling-dir');await assert.rejects(service.copyLocalWorktreeDirectory('repo','recursive copy','dangling-dir'),/同名|存在/)
+  await disk('partial/a','one');await disk('partial/b','two');const copy=FileManager.copyFile,rename=FileManager.rename
+  FileManager.copyFile=async(src,dest)=>{if(src.endsWith('/b'))throw Error('copy denied');return copy(src,dest)}
+  await assert.rejects(service.copyLocalWorktreeDirectory('repo','partial','partial target'),/copy denied.*部分复制/);FileManager.copyFile=copy
+  assert.equal(fs.readFileSync(dir+'/partial/a','utf8'),'one');assert.equal(fs.readFileSync(dir+'/partial/b','utf8'),'two');assert.equal(fs.readFileSync(dir+'/partial target/a','utf8'),'one');assert.ok(!fs.existsSync(dir+'/partial target/b'))
+  FileManager.rename=async()=>{throw Error('rename denied')};await assert.rejects(service.renameLocalWorktreeDirectory('repo','partial','denied-folder'),/rename denied/);FileManager.rename=rename;assert.ok(fs.existsSync(dir+'/partial/b'));assert.ok(!fs.existsSync(dir+'/denied-folder'));assert.equal(removes,originalRemove)
+ })
+ await test('directory revalidation rejects relocated workspace, malicious directory names and replaced destination parent without touching outside data',async()=>{
+  const readDirectory=FileManager.readDirectory,createDirectory=FileManager.createDirectory,before=removes
+  FileManager.readDirectory=async p=>{const names=await readDirectory(p);if(p===dir){root=outside}return names}
+  await assert.rejects(service.copyLocalWorktreeDirectory('repo','partial','relocated'),/变化|不存在/);root=dir;FileManager.readDirectory=readDirectory;assert.ok(!fs.existsSync(dir+'/relocated'))
+  FileManager.readDirectory=async p=>p===dir+'/partial'?[...(await readDirectory(p)),'../escape']:readDirectory(p)
+  await assert.rejects(service.renameLocalWorktreeDirectory('repo','partial','malicious'),/不安全/);FileManager.readDirectory=readDirectory;assert.ok(fs.existsSync(dir+'/partial/b'));assert.ok(!fs.existsSync(dir+'/malicious'))
+  FileManager.createDirectory=async p=>{await createDirectory(p);if(p===dir+'/replaced-target'){fs.rmdirSync(p);fs.symlinkSync(outside,p)}}
+  await assert.rejects(service.copyLocalWorktreeDirectory('repo','partial','replaced-target'),/链接/);FileManager.createDirectory=createDirectory
+  assert.ok(!fs.existsSync(outside+'/a'));assert.equal(fs.readFileSync(outside+'/secret','utf8'),'precious');assert.ok(fs.existsSync(dir+'/partial/b'));assert.equal(removes,before)
+ })
+ await test('directory mutation waits real read barrier, rejects duplicate writer, invalidates coordinator and preserves files',async()=>{
+  const gate=deferred(),active=coordinator.read(ctx.gitdir,()=>gate.promise),revision=coordinator.revision(ctx.gitdir);let done=false
+  const pending=service.copyLocalWorktreeDirectory('repo','partial','lock directory').then(()=>done=true);await tick();assert.equal(done,false);assert.ok(!fs.existsSync(dir+'/lock directory'))
+  await assert.rejects(service.renameLocalWorktreeDirectory('repo','partial','blocked-directory'),/写|操作/);gate.resolve();await active;await pending;assert.ok(coordinator.revision(ctx.gitdir)>revision);assert.ok(fs.existsSync(dir+'/partial/b'))
+ })
+ await test('real folder context menu uses declarative form, cancel/no-op no changes; copy/rename refresh paths incl untracked/empty dirs, unsafe and native errors visible',async()=>{
+  await disk('form-folder/sub/a','nested');await disk('form-folder/untracked.bin',Buffer.from([0,255]));fs.mkdirSync(dir+'/form-folder/empty');let updates=0
+  const props={files:['form-folder/sub/a'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function group(name){h.render();return all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
+  function action(name,title){return all(group(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action()}
+  function form(){h.render();assert.equal(h.tree.props.sheet.isPresented,true);return h.tree.props.sheet.content.props}
+  await action('form-folder','复制文件夹');assert.equal(form().initialName,'form-folder 副本');form().onCancel();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
+  await action('form-folder','重命名');await form().onConfirm('form-folder');h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
+  await action('form-folder','复制文件夹');await form().onConfirm('../bad');assert.match(form().error,/合法/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));form().onCancel()
+  await action('form-folder','复制文件夹');await form().onConfirm('form copy');assert.ok(group('form copy'));group('form copy').props.onChanged(true);assert.ok(group('empty'));assert.ok(fs.existsSync(dir+'/form copy/untracked.bin'));const afterCopy=updates
+  await action('form copy','重命名');await form().onConfirm('form renamed');assert.ok(group('form renamed'));assert.ok(!fs.existsSync(dir+'/form copy'));assert.equal(updates,afterCopy+1)
+  await action('form-folder','重命名');const rename=FileManager.rename;FileManager.rename=async()=>{throw Error('UI denied')};await form().onConfirm('denied form');FileManager.rename=rename;assert.match(form().error,/UI denied/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));form().onCancel();h.unmount()
+ })
+ await test('real facade unpublished branch rename preserves HEAD/index; duplicate and native failure leave branch intact',async()=>{
+  const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  const actual=ctx.git;let network=0;ctx.git={...git,push:async()=>{network++;throw Error('remote writes forbidden')},fetch:async()=>{network++;throw Error('network forbidden')}}
+  const result=await service.renameBranch('repo','main','renamed-local');assert.equal(result.pushedNewBranch,false);assert.equal(result.deletedOldRemoteBranch,false);assert.equal(network,0);assert.equal(await git.currentBranch({fs,dir,fullname:false}),'renamed-local')
+  await git.branch({fs,dir,ref:'already-local'});await assert.rejects(service.renameBranch('repo','renamed-local','already-local'),/已存在/)
+  ctx.git={...ctx.git,renameBranch:async()=>{throw Error('native ref denied')}};await assert.rejects(service.renameBranch('repo','renamed-local','denied-local'),/native ref denied/);assert.equal(await git.currentBranch({fs,dir,fullname:false}),'renamed-local')
+  ctx.git=actual;await service.renameBranch('repo','renamed-local','main');assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+ })
+ await test('modified/renamed file icons orange; rename label wins over modified/added, original Git status stays true and fresh clean state clears hints',async()=>{
+  for(const name of ['icon-normal','icon-mod','icon-add','icon-unstaged','icon-photo.png'])await disk(name,'data')
+  const props={files:['icon-normal','icon-mod','icon-add','icon-deleted','icon-unstaged','icon-photo.png','icon-folder/a'],loading:false,bookmarkName:'repo',changes:[{filepath:'icon-mod',status:'*modified'},{filepath:'icon-add',status:'*added'},{filepath:'icon-deleted',status:'*deleted',worktreeDeleted:true},{filepath:'icon-unstaged',status:'unknown',unstaged:true}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  const color=name=>all(row(name)).find(n=>n.type==='Image'&&n.props.systemName==='doc').props.foregroundStyle
+  assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');for(const name of ['icon-normal','icon-add','icon-deleted','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
+  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'systemBlue')
+  global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
+  for(const status of ['*added','*modified']){props.changes=[...props.changes.filter(c=>c.filepath!=='icon-renamed.png'),{filepath:'icon-renamed.png',status}];assert.equal(color('icon-renamed.png'),'systemOrange');const text=JSON.stringify(row('icon-renamed.png').children);assert.match(text,/已重命名/);assert.doesNotMatch(text,/已修改|新增/);assert.equal(props.changes.at(-1).status,status)}
+  props.changes=[];assert.equal(color('icon-renamed.png'),'secondaryLabel');assert.doesNotMatch(JSON.stringify(row('icon-renamed.png').children),/已重命名/);assert.equal(color('icon-mod'),'secondaryLabel');h.unmount()
+ })
+ await test('folder rename marks only relocated folders/files; ordinary parent modifications and clean refresh remain correct',async()=>{
+  await disk('rename-parent/source/sub/a.txt','a');await disk('rename-parent/source/b.txt','b');await disk('rename-parent/ordinary/x.txt','x')
+  const props={files:['rename-parent/source/sub/a.txt','rename-parent/source/b.txt','rename-parent/ordinary/x.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'rename-parent/ordinary/x.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function nodes(){h.render();return all(expand(h.tree))}
+  function folder(name){return nodes().findLast(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&!n.props.disabled&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  const label=name=>JSON.stringify(folder(name).props.label)
+  const fileLabel=name=>JSON.stringify(row(name).children)
+  folder('rename-parent').props.onChanged(true);folder('source').props.onChanged(true)
+  assert.match(label('rename-parent'),/已修改/);assert.doesNotMatch(label('rename-parent'),/已重命名/)
+  await all(folder('source').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();h.render();await h.tree.props.sheet.content.props.onConfirm('target')
+  assert.match(label('target'),/已重命名/);assert.doesNotMatch(label('target'),/已修改/)
+  folder('target').props.onChanged(true);folder('sub').props.onChanged(true)
+  assert.match(label('sub'),/已重命名/)
+  for(const name of ['a.txt','b.txt']){assert.match(fileLabel(name),/已重命名/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'systemOrange')}
+  assert.match(label('ordinary'),/已修改/);assert.doesNotMatch(label('ordinary'),/已重命名/)
+  assert.match(label('rename-parent'),/已修改/);assert.doesNotMatch(label('rename-parent'),/已重命名/)
+  props.changes=[{filepath:'rename-parent/target/sub/a.txt',status:'*added'},{filepath:'rename-parent/target/b.txt',status:'*modified'},{filepath:'rename-parent/source/sub/a.txt',status:'*deleted',worktreeDeleted:true}]
+  assert.match(label('target'),/已重命名/);assert.match(label('sub'),/已重命名/)
+  for(const name of ['a.txt','b.txt'])assert.match(fileLabel(name),/已重命名/)
+  // Commit/restore refresh contains no target changes: neither folder nor files retain hints.
+  props.changes=[]
+  for(const name of ['target','sub','rename-parent'])assert.doesNotMatch(label(name),/已重命名|已修改/)
+  for(const name of ['a.txt','b.txt']){assert.doesNotMatch(fileLabel(name),/已重命名/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')}
+  h.unmount()
+ })
  await test('parent editor controller lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0
   const props={bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged(){}}
@@ -184,9 +285,16 @@ async function main(){
  await test('back automatically saves dirty text then closes; stage/commit untouched; success refreshes changes once',async()=>{
   await disk('autosave.txt','old');const file=await service.readLocalWorktreeFile('repo','autosave.txt');let closed=0,changed=0
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:p=>{assert.equal(p,'autosave.txt');changed++}}),c=controllers.at(-1);c.content='new draft'
-  await back(h);assert.equal(fs.readFileSync(dir+'/autosave.txt','utf8'),'new draft');assert.equal(closed,1);assert.equal(changed,1);assert.deepEqual((await git.statusMatrix({fs,dir,filepaths:['autosave.txt']}))[0],['autosave.txt',0,2,0]);h.unmount()
+  await back(h);assert.equal(fs.readFileSync(dir+'/autosave.txt','utf8'),'new draft');assert.equal(closed,1);assert.equal(changed,0);await new Promise(r=>setTimeout(r,380));assert.equal(changed,1);assert.deepEqual((await git.statusMatrix({fs,dir,filepaths:['autosave.txt']}))[0],['autosave.txt',0,2,0]);h.unmount()
   const warn=console.warn,warnings=[];console.warn=m=>warnings.push(m);await disk('autosave2.txt','old');const f2=await service.readLocalWorktreeFile('repo','autosave2.txt')
-  const r=mount(Editor,{bookmarkName:'repo',file:f2,onClose:()=>closed++,onReload(){},onChanged:async()=>{throw Error('status failed')}}),c2=controllers.at(-1);c2.content='saved2';await back(r);console.warn=warn;assert.equal(fs.readFileSync(dir+'/autosave2.txt','utf8'),'saved2');assert.equal(closed,2);assert.ok(warnings.some(x=>/status failed/.test(x)));r.unmount()
+  const r=mount(Editor,{bookmarkName:'repo',file:f2,onClose:()=>closed++,onReload(){},onChanged:async()=>{throw Error('status failed')}}),c2=controllers.at(-1);c2.content='saved2';await back(r);r.unmount();await new Promise(r=>setTimeout(r,380));console.warn=warn;assert.equal(fs.readFileSync(dir+'/autosave2.txt','utf8'),'saved2');assert.equal(closed,2);assert.ok(warnings.some(x=>/status failed/.test(x)));r.unmount()
+ })
+ await test('back critical path reads latest native draft and saves before closing, never waits blocked status scan; IME/read failure stays on page',async()=>{
+  await disk('back-latency.txt','old');const file=await service.readLocalWorktreeFile('repo','back-latency.txt'),gate=deferred();let closed=0,scans=0,finished=false
+  const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>{assert.equal(fs.readFileSync(dir+'/back-latency.txt','utf8'),'native latest');closed++},onReload(){},onChanged:async()=>{scans++;await gate.promise;finished=true}}),c=controllers.at(-1)
+  c.content='stale bridge';c.getContent=async()=>{c.content='native latest';return c.content}
+  await back(h);assert.equal(closed,1);assert.equal(scans,0);h.unmount();await new Promise(r=>setTimeout(r,380));assert.equal(scans,1);assert.equal(finished,false);gate.resolve();await tick();assert.equal(finished,true)
+  const bad=mount(Editor,{bookmarkName:'repo',file:await service.readLocalWorktreeFile('repo','back-latency.txt'),onClose:()=>closed++,onReload(){},onChanged:()=>scans++}),bc=controllers.at(-1);bc.content='IME draft';bc.getContent=async()=>{throw Error('中文输入尚未完成')};await back(bad);assert.equal(closed,1);assert.equal(scans,1);assert.match(text(bad),/中文输入尚未完成.*未返回/);assert.equal(fs.readFileSync(dir+'/back-latency.txt','utf8'),'native latest');bad.unmount()
  })
  await test('back stays on page for write failure, external conflict, in-flight save; draft/file preserved; no double operations',async()=>{
   await disk('back-conflict.txt','old');const file=await service.readLocalWorktreeFile('repo','back-conflict.txt');let closed=0,changed=0
@@ -214,7 +322,7 @@ async function main(){
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++}),c=controllers.at(-1);c.content='important draft'
   const write=FileManager.writeAsData
   FileManager.writeAsData=async()=>{throw Error('permission denied')};await back(h);assert.equal(c.content,'important draft');assert.equal(closed,0);assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'old')
-  FileManager.writeAsData=write;await back(h);assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'important draft');assert.equal(closed,1);assert.equal(changed,1);h.unmount()
+  FileManager.writeAsData=write;await back(h);assert.equal(fs.readFileSync(dir+'/io-error.txt','utf8'),'important draft');assert.equal(closed,1);assert.equal(changed,0);h.unmount();await new Promise(r=>setTimeout(r,380));assert.equal(changed,1)
  })
  await test('FilesTab actual tree dispatches current worktree to parent; directories retained, deleted leaf disabled and opening does not trigger mutation refresh',async()=>{
   const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0,opened=null

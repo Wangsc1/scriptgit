@@ -31,7 +31,7 @@ async function main() {
   let statCalls = 0
   global.FileManager = { stat: async () => { statCalls++; return { size: 1, modificationDate: 2 } } }
   const FilesTab = load('pages/FilesTab.tsx', {
-    scripting: ui, '../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
+    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
     '../utils/format': { formatBytes: String, formatDate: String }, '../services/repoStore': { resolveWorkdir: () => '/mock' },
     '../services/gitService': {}, '../constants/colors': {},
   }).FilesTab

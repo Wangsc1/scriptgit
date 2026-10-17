@@ -103,12 +103,16 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     lock.current = true; setBusy(true); setStatus("")
     try {
       // 返回默认保存：无修改直接返回；保存失败/外部冲突留在本页并保留草稿。
+      let saved = false
       if (controller !== null && !file.readOnlyReason) await controller.getContent()
       if (controller !== null && !file.readOnlyReason && dirty()) {
         baseline.current = await saveLocalWorktreeFile(bookmarkName, baseline.current, controller.content)
-        await notifyChanged()
+        saved = true
       }
       if (alive.current) onClose()
+      // 保存成功才关闭；状态扫描等全屏退场后执行，避免阻塞右滑返回。
+      // 此任务有意跨编辑器卸载保留，由稳定父详情页接收刷新结果。
+      if (saved) setTimeout(() => void notifyChanged(), 350)
     } catch (e: any) {
       if (alive.current) setStatus(String(e?.message || e) + "（未返回，草稿未清除；可复制草稿后再刷新）")
     } finally { lock.current = false; if (alive.current) setBusy(false) }

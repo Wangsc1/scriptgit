@@ -12,6 +12,8 @@ interface MutableTreeNode extends FileTreeNode {
 }
 
 interface FileTreeOptions {
+  /** 原生目录操作返回的目录（含空目录）。 */
+  directories?: string[]
   /** 文件路径到元数据的映射；目录节点不填充 */
   metadata?: Map<string, { size: number; modified: number }>
 }
@@ -35,8 +37,9 @@ function sortNodes(nodes: MutableTreeNode[]): FileTreeNode[] {
 /** 把已跟踪文件路径转换为目录优先、同层按名称排序的树 */
 export function buildFileTree(filepaths: string[], options?: FileTreeOptions): FileTreeNode[] {
   const roots = new Map<string, MutableTreeNode>()
+  const directories = new Set(options?.directories || [])
 
-  for (const filepath of filepaths) {
+  for (const filepath of [...(options?.directories || []), ...filepaths]) {
     const parts = String(filepath)
       .split("/")
       .filter(Boolean)
@@ -47,7 +50,7 @@ export function buildFileTree(filepaths: string[], options?: FileTreeOptions): F
     for (let index = 0; index < parts.length; index++) {
       const name = parts[index]
       currentPath = currentPath ? currentPath + "/" + name : name
-      const isFile = index === parts.length - 1
+      const isFile = index === parts.length - 1 && !directories.has(filepath)
       let node = siblings.get(name)
       if (!node) {
         const meta = isFile ? options?.metadata?.get(currentPath) : undefined

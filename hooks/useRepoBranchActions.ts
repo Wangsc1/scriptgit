@@ -1,3 +1,4 @@
+import { useRef, useState } from "scripting"
 import {
   checkoutBranch,
   createBranch,
@@ -85,32 +86,38 @@ export function useRepoBranchActions({
     }
   }
 
-  async function handleRenameBranch() {
-    const from = currentBranch
-    if (!from) {
+  const [renameFrom, setRenameFrom] = useState<string | null>(null)
+  const [renameError, setRenameError] = useState("")
+  const renameBusy = useRef(false)
+
+  function handleRenameBranch() {
+    if (mutating || mergeInProgress || !hasCommits || renameBusy.current) return
+    if (!currentBranch) {
       showToast("当前没有可重命名的分支", "warning")
       return
     }
+    setRenameError("")
+    setRenameFrom(currentBranch)
+  }
+  function cancelRenameBranch() {
+    if (!renameBusy.current) setRenameFrom(null)
+  }
+  async function confirmRenameBranch(input: string) {
+    if (!renameFrom || mutating || mergeInProgress || renameBusy.current) return
+    const from = renameFrom
+    let to: string
+    try { to = validateBranchName(input) }
+    catch (error: any) { setRenameError(`名称无效：${String(error?.message || error)}`); return }
+    if (to === from) { setRenameFrom(null); return }
+    if (currentBranch !== from) { setRenameError("当前分支已变化，请取消后重试"); return }
+    renameBusy.current = true
+    setRenameError("")
     try {
-      const input = await Dialog.prompt({
-        title: "重命名分支",
-        message: `将「${from}」重命名为新名称`,
-        defaultValue: from,
-        cancelLabel: "取消",
-        confirmLabel: "重命名",
-      })
-      if (input == null) return
-      let to = ""
-      try {
-        to = validateBranchName(input)
-      } catch (error: any) {
-        showToast(`名称无效：${String(error?.message || error)}`, "warning")
-        return
-      }
-      if (to === from) return
       await beginOpBusy("正在重命名分支", `${from} → ${to}`)
       const result = await renameBranch(bookmarkName, from, to)
-      await reloadRepo()
+      setRenameFrom(null)
+      try { await reloadRepo() }
+      catch (error: any) { showToast(`分支已重命名，刷新失败：${String(error?.message || error)}`, "warning") }
       if (!result.oldRemote) {
         showToast(`已重命名：${from} → ${to}`, "success")
       } else if (result.remoteError) {
@@ -119,14 +126,12 @@ export function useRepoBranchActions({
           `${from} → ${to}。${result.pushedNewBranch ? "新分支已推送，但删除远端旧分支失败" : "推送新分支失败"}：${result.remoteError}`
         )
       } else {
-        showToast(
-          `已重命名并同步远端：${from} → ${to}`,
-          "success"
-        )
+        showToast(`已重命名并同步远端：${from} → ${to}`, "success")
       }
     } catch (error: any) {
-      showToast(`重命名失败：${String(error?.message || error)}`, "error")
+      setRenameError(`重命名失败：${String(error?.message || error)}`)
     } finally {
+      renameBusy.current = false
       endOpBusy()
     }
   }
@@ -169,6 +174,7 @@ export function useRepoBranchActions({
     handleMergeIntoCurrent,
     handleSwitchBranch,
     handleRenameBranch,
+    renameFrom, renameError, cancelRenameBranch, confirmRenameBranch,
     handleCreateBranch,
   }
 }
