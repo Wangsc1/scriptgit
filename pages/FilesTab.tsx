@@ -51,12 +51,11 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const removed = new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)])
   async function open(path: string) {
     if (state.current.busy || removed.has(path)) return
-    state.current.busy = true; setBusy(true); setError("")
+    setError("")
     try {
       const file = await openLocalWorktreeFile(bookmarkName, path)
       if (state.current.alive) onOpen(file)
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
-    finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
   async function changed(path: string, isDeleted: boolean) {
     if (isDeleted && state.current.alive) {
@@ -97,7 +96,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }
   return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {loading || busy ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} />)}
+    {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} />)}
   </Section>
 }

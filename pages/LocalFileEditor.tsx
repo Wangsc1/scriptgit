@@ -1,4 +1,5 @@
 import { Button, Editor, NavigationStack, Text, VStack, useEffect, useMemo, useRef, useState } from "scripting"
+import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 
 /** 全屏本地工作区编辑：不暂存、不提交、不推送；退出始终核对控制器当前草稿。 */
@@ -63,7 +64,7 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
-      {controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
+      {controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
   </NavigationStack>
 }
