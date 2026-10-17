@@ -102,7 +102,7 @@ with sync_playwright() as p:
     assert scroller.evaluate("e=>e.scrollTop") > 0
     for scheme,expected in [("dark","rgb(36, 36, 36)"),("light","rgb(255, 255, 255)")]:
         page.emulate_media(color_scheme=scheme)
-        page.evaluate("dark=>window.__localCodeEditor.setTheme(dark)", scheme=="dark")
+        page.wait_for_function("expected=>getComputedStyle(document.querySelector('.cm-editor')).backgroundColor===expected", arg=expected)
         for selector in ["html","body",".cm-editor",".cm-content",".cm-gutters"]:
             actual=page.locator(selector).evaluate("e=>getComputedStyle(e).backgroundColor")
             assert actual==expected,(scheme,selector,actual)

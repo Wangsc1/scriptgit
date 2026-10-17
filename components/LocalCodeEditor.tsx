@@ -1,4 +1,4 @@
-import { VStack, Text, ProgressView, WebView, useEffect, useState, useColorScheme } from "scripting"
+import { VStack, Text, ProgressView, WebView, useEffect, useState } from "scripting"
 import type { LocalCodeEditorController } from "../services/localCodeEditor"
 
 /** The parent owns saving and disposal. Tab unmounts only detach listeners. */
@@ -6,7 +6,6 @@ export function LocalCodeEditor({ controller, onBack }: {
   controller: LocalCodeEditorController
   onBack?: () => void | Promise<void>
 }) {
-  const scheme = useColorScheme()
   const [, refresh] = useState(0)
   useEffect(() => {
     let mounted = true
@@ -15,7 +14,8 @@ export function LocalCodeEditor({ controller, onBack }: {
     return () => { mounted = false; unsubscribe() }
   }, [controller])
   useEffect(() => controller.attachBack(onBack), [controller, onBack])
-  useEffect(() => { controller.setDark(scheme === "dark") }, [controller, scheme])
+  // WebKit's media query follows the actual presented WebView appearance.
+  // Do not overwrite it with the process-global useColorScheme() value.
 
   return <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
     background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}>
