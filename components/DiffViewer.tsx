@@ -111,11 +111,11 @@ function DiffSkipLineView({
 }
 
 /** Menlo 11 约 7pt/半角；保守估算避免 HStack 再被系统折成多列 */
-function estimateContentMaxWidth(): number {
+function estimateContentMaxWidth(compact = false): number {
   const screenW = Device.screen?.width ?? 390
   // 行号 56 + 符号 14 + List/边距约 48
-  const contentPts = Math.max(100, screenW - 118)
-  return Math.max(12, Math.floor(contentPts / 7))
+  const contentPts = Math.max(100, screenW - (compact ? 60 : 118))
+  return Math.max(12, Math.floor(contentPts / (compact ? 7.8 : 7)))
 }
 
 /** 行内容：有 segments 时按片段渲染行内高亮 */
@@ -124,13 +124,15 @@ function DiffLineContent({
   segments,
   fg,
   inlineBg,
+  compact = false,
 }: {
   content: string
   segments?: InlineSegment[]
   fg: Color
   inlineBg: ShapeStyle
+  compact?: boolean
 }) {
-  const font = { name: "Menlo", size: 11 } as const
+  const font = { name: "Menlo", size: compact ? 13 : 11 } as const
   const pad = { trailing: 6, top: 2, bottom: 2 }
 
   if (!segments || segments.length === 0) {
@@ -147,7 +149,7 @@ function DiffLineContent({
   }
 
   // Text 不支持嵌套子节点；用软换行 + 每行 HStack 保持「单列文本流」
-  const rows = wrapSegments(segments, estimateContentMaxWidth())
+  const rows = wrapSegments(segments, estimateContentMaxWidth(compact))
   return (
     <VStack
       spacing={0}
@@ -179,12 +181,18 @@ function DiffLineView({
   line,
   colors,
   onExpandSkip,
+  compact = false,
 }: {
   line: DiffLine
   colors: DiffColors
   onExpandSkip?: () => void
+  compact?: boolean
 }) {
   if (line.type === "skip") {
+    if (compact) return <Button buttonStyle="plain" action={onExpandSkip ?? (() => {})}>
+      <Text font="caption" foregroundStyle={colors.lineNoFg}
+        frame={{ maxWidth: Infinity, alignment: "leading" }} padding={{ leading: 18, vertical: 6 }}>⋮</Text>
+    </Button>
     return (
       <DiffSkipLineView
         line={line}
@@ -209,7 +217,11 @@ function DiffLineView({
       background={bg}
       frame={{ maxWidth: Infinity, alignment: "leading" }}
     >
-      {/* 旧行号 gutter */}
+      {/* 编辑器内对照采用截图式单行号；其他差异页保持双行号。 */}
+      {compact ? <Text font="caption" foregroundStyle={colors.lineNoFg}
+        frame={{ width: 34, alignment: "trailing" }} padding={{ trailing: 10, top: 2, bottom: 2 }}>
+        {String(line.type === "del" ? line.oldLineNo ?? "" : line.newLineNo ?? "")}
+      </Text> : <>
       <Text
         font="caption2"
         foregroundStyle={colors.lineNoFg}
@@ -236,11 +248,13 @@ function DiffLineView({
       >
         {sign}
       </Text>
+      </>}
       <DiffLineContent
         content={line.content}
         segments={isAdd || isDel ? line.segments : undefined}
         fg={colors.codeFg}
         inlineBg={inlineBg}
+        compact={compact}
       />
     </HStack>
   )
@@ -250,8 +264,10 @@ function DiffLineView({
 export function DiffViewer({
   diff,
   onOpenImage,
+  compact = false,
 }: {
   diff: FileDiff
+  compact?: boolean
   /** 点击图片时上抛 data URL，由页面全屏展示 */
   onOpenImage?: (dataUrl: string) => void
 }) {
@@ -308,6 +324,7 @@ export function DiffViewer({
           key={idx}
           line={line}
           colors={colors}
+          compact={compact}
           onExpandSkip={
             line.type === "skip" ? () => handleExpand(idx) : undefined
           }

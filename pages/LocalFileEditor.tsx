@@ -1,7 +1,11 @@
-import { Button, Editor, NavigationStack, Text, VStack, HStack, List, Section, useEffect, useMemo, useRef, useState } from "scripting"
-import { COLOR_SECONDARY_LABEL, COLOR_ACCENT } from "../constants/colors"
+import { Button, Editor, NavigationStack, Text, VStack, ScrollView, useEffect, useMemo, useRef, useState } from "scripting"
+import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { getFileVersions, type FileVersions } from "../services/diffService"
+import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
+
+import { DiffViewer } from "../components/DiffViewer"
+import { FileChangeSwitcher } from "../components/FileChangeSwitcher"
+import { editorDiff } from "../utils/editorDiff"
 
 /** 全屏本地工作区编辑：不暂存、不提交、不推送；退出始终核对控制器当前草稿。 */
 export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChanged }: {
@@ -21,11 +25,52 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
   const controller = editor.controller
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
-  // 原文/改动后 查看
+  // “原内容”沿用当前工作区编辑器；“改动项”只读对比 HEAD 和内存草稿。
+  const [viewKind, setViewKind] = useState<"content" | "changes">("content")
   const [versions, setVersions] = useState<FileVersions | null>(null)
-  const [viewKind, setViewKind] = useState<"original" | "current" | null>(null)
+  const versionRef = useRef<FileVersions | null>(null)
+  const [diff, setDiff] = useState<FileDiff | null>(null)
+  const [hasChanges, setHasChanges] = useState(false)
   const [versionsError, setVersionsError] = useState("")
-  useEffect(() => () => { alive.current = false; controller?.dispose() }, [])
+  const [diffRevision, setDiffRevision] = useState(0)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadingVersions = useRef(false)
+  function updateDiff() {
+    const v = versionRef.current
+    if (!alive.current || !v || !controller) return
+    const draft = controller.content
+    setHasChanges(v.added || draft !== v.original)
+    setDiff(editorDiff(v, draft))
+    setDiffRevision(n => n + 1)
+  }
+  async function loadVersions() {
+    if (!controller || file.readOnlyReason || loadingVersions.current) return
+    loadingVersions.current = true
+    setVersionsError("")
+    try {
+      const v = await getFileVersions(bookmarkName, file.path)
+      if (!alive.current) return
+      versionRef.current = v
+      setVersions(v)
+      updateDiff()
+    } catch (e: any) {
+      if (alive.current) setVersionsError("读取改动失败：" + String(e?.message || e))
+    } finally { loadingVersions.current = false }
+  }
+  useEffect(() => {
+    if (controller) controller.onContentChanged = () => {
+      if (!alive.current) return
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(updateDiff, 250)
+    }
+    void loadVersions()
+    return () => {
+      alive.current = false
+      if (timer.current) clearTimeout(timer.current)
+      if (controller) controller.onContentChanged = undefined
+      controller?.dispose()
+    }
+  }, [])
   const dirty = () => controller !== null && controller.content !== baseline.current.text
 
   async function discard(title: string) {
@@ -60,38 +105,20 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
     try { await onChanged(file.path, false) }
     catch (e: any) { console.warn("本地文件保存后状态刷新失败: " + String(e?.message || e)); if (alive.current) setStatus("已保存，但状态刷新失败；请到改动页核对") }
   }
-  async function viewVersion(kind: "original" | "current") {
+  function selectView(kind: "content" | "changes") {
+    if (lock.current) return
+    if (timer.current) clearTimeout(timer.current)
+    updateDiff() // 直接读取控制器，捕捉最后 100ms 内尚未回调的输入。
     setViewKind(kind)
-    setVersionsError("")
-    if (versions) return
-    try {
-      const v = await getFileVersions(bookmarkName, file.path)
-      if (alive.current) setVersions(v)
-    } catch (e: any) {
-      if (alive.current) setVersionsError(String(e?.message || e))
-    }
   }
-  const viewText = viewKind === "original" ? versions?.original : viewKind === "current" ? versions?.current : null
+  const added = diff?.lines.filter(line => line.type === "add").length ?? 0
+  const deleted = diff?.lines.filter(line => line.type === "del").length ?? 0
 
   return <NavigationStack>
-    <VStack spacing={0} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
-      fullScreenCover={{
-        isPresented: viewKind != null,
-        onChanged: () => { if (viewKind != null) setViewKind(null) },
-        content: viewKind ? (
-          <NavigationStack>
-            <List navigationTitle={viewKind === "original" ? "原内容" : "改动后内容"} navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden">
-              <Section>
-                {versionsError ? <Text foregroundStyle="red">{versionsError}</Text> : null}
-                {viewKind === "original" && versions?.added ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>该文件为新增，无原内容。</Text> : null}
-                {viewKind === "current" && versions?.deleted ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>该文件已删除。</Text> : null}
-                {versions?.binary ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>二进制文件，无法显示原文。</Text> : null}
-                {viewText != null ? <Text font="caption" selectable>{viewText}</Text> : (versionsError || versions?.binary || versions?.added || versions?.deleted) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text>}
-              </Section>
-            </List>
-          </NavigationStack>
-        ) : <></>,
-      }}
+    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
+      safeAreaInset={hasChanges && !versions?.binary ? { bottom: { spacing: 0, content:
+        <FileChangeSwitcher selected={viewKind} added={added} deleted={deleted} disabled={busy} onSelect={selectView} />
+      } } : undefined}
       toolbar={{
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
@@ -99,15 +126,17 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
-      {controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
-      <HStack alignment="center" spacing={10} padding={{ horizontal: 12, vertical: 8 }} frame={{ maxWidth: Infinity, alignment: "center" }}>
-        <Button action={() => viewVersion("original")} tint={COLOR_ACCENT} disabled={busy}>
-          <Text font="caption" foregroundStyle={COLOR_ACCENT}>原内容</Text>
-        </Button>
-        <Button action={() => viewVersion("current")} tint={COLOR_ACCENT} disabled={busy}>
-          <Text font="caption" foregroundStyle={COLOR_ACCENT}>改动后</Text>
-        </Button>
-      </HStack>
+      {versionsError ? <VStack spacing={6}>
+        <Text font="caption" foregroundStyle="red">{versionsError}</Text>
+        <Button title="重试读取改动" action={loadVersions} disabled={busy} />
+      </VStack> : null}
+      {viewKind === "changes" && hasChanges && diff ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
+        <VStack spacing={0} padding={{ horizontal: 5, vertical: 10 }}>
+          {added === 0 && deleted === 0 && hasChanges ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>仅换行或文件格式发生变化，无行级增删。</Text> :
+            <DiffViewer key={diffRevision} diff={diff} compact />}
+        </VStack>
+      </ScrollView> : controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> :
+        (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
   </NavigationStack>
 }
