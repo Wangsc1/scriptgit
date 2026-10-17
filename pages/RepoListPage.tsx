@@ -359,10 +359,12 @@ function RepoRow({
 
   return (
     <HStack alignment="center" spacing={10}>
-      <Image
-        systemName="folder.fill"
-        foregroundStyle={COLOR_GREEN}
-      />
+      {source === "本地" ? (
+        <Image
+          systemName="folder.fill"
+          foregroundStyle={COLOR_GREEN}
+        />
+      ) : null}
       <VStack alignment="leading" spacing={2}>
         <Text font="headline" foregroundStyle={COLOR_LABEL}>
           {repo.name}
