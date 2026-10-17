@@ -226,9 +226,9 @@ async function main(){
   const props={files:['icon-normal','icon-mod','icon-add','icon-deleted','icon-unstaged','icon-photo.png','icon-folder/a'],loading:false,bookmarkName:'repo',changes:[{filepath:'icon-mod',status:'*modified'},{filepath:'icon-add',status:'*added'},{filepath:'icon-deleted',status:'*deleted',worktreeDeleted:true},{filepath:'icon-unstaged',status:'unknown',unstaged:true}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
-  const color=name=>all(row(name)).find(n=>n.type==='Image'&&n.props.systemName==='doc').props.foregroundStyle
-  assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');for(const name of ['icon-normal','icon-add','icon-deleted','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
-  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'systemBlue')
+  const color=name=>all(row(name)).find(n=>n.type==='Image'&&['doc','photo'].includes(n.props.systemName)).props.foregroundStyle
+  assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');assert.equal(color('icon-add'),'systemGreen');assert.equal(color('icon-deleted'),'systemRed');for(const name of ['icon-normal','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
+  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'secondaryLabel')
   global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
   for(const status of ['*added','*modified']){props.changes=[...props.changes.filter(c=>c.filepath!=='icon-renamed.png'),{filepath:'icon-renamed.png',status}];assert.equal(color('icon-renamed.png'),'systemOrange');const text=JSON.stringify(row('icon-renamed.png').children);assert.match(text,/已重命名/);assert.doesNotMatch(text,/已修改|新增/);assert.equal(props.changes.at(-1).status,status)}
   props.changes=[];assert.equal(color('icon-renamed.png'),'secondaryLabel');assert.doesNotMatch(JSON.stringify(row('icon-renamed.png').children),/已重命名/);assert.equal(color('icon-mod'),'secondaryLabel');h.unmount()
@@ -259,6 +259,71 @@ async function main(){
   props.changes=[]
   for(const name of ['target','sub','rename-parent'])assert.doesNotMatch(label(name),/已重命名|已修改/)
   for(const name of ['a.txt','b.txt']){assert.doesNotMatch(fileLabel(name),/已重命名/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')}
+  h.unmount()
+ })
+ await test('photo symbols, green added files/folders and copies; HEAD parent boundaries, rename/deletion priority and clean refresh',async()=>{
+  await disk('green-source/sub/picture.PNG','image bytes');await disk('green-source/plain.txt','text');fs.mkdirSync(dir+'/green-source/empty')
+  await disk('green-photo.jpg','photo');await disk('green-empty/.temporary','x');fs.unlinkSync(dir+'/green-empty/.temporary')
+  const images=['png','jpg','jpeg','gif','webp','bmp','ico'].map(ext=>'symbol.'+ext.toUpperCase())
+  const props={files:['green-source/sub/picture.PNG','green-source/plain.txt','green-photo.jpg','existing/base.txt','mixed/base.txt',...images,'unsupported.svg','normal.txt','deleted.jpg'],loading:false,bookmarkName:'repo',changes:[
+   {filepath:'existing/new.jpg',status:'*added'}, {filepath:'new-dir/sub/a.png',status:'added'},
+   {filepath:'mixed/base.txt',status:'*modified'}, {filepath:'mixed/new.txt',status:'*added'},
+   {filepath:'mixed-new/a',status:'*added'}, {filepath:'mixed-new/b',status:'*modified'},
+   {filepath:'deleted.jpg',status:'*deleted',worktreeDeleted:true},
+  ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function nodes(){h.render();return all(expand(h.tree))}
+  function folder(name){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  const icon=n=>all(n).find(n=>n.type==='Image')
+  function badge(n,text,color){const labels=all(n).filter(n=>n.type==='Text'&&n.props.font==='caption2');assert.ok(labels.some(n=>n.children.includes(text)&&n.props.foregroundStyle===color),JSON.stringify(n));assert.equal(icon(n).props.foregroundStyle,color)}
+  for(const name of images){assert.equal(icon(row(name)).props.systemName,'photo');assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')}
+  for(const name of ['normal.txt','green-photo.jpg'])assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')
+  assert.equal(icon(folder('green-source').props.label).props.foregroundStyle,'secondaryLabel')
+  for(const name of ['normal.txt','unsupported.svg'])assert.equal(icon(row(name)).props.systemName,'doc')
+  assert.equal(icon(row('deleted.jpg')).props.systemName,'photo');assert.equal(row('deleted.jpg').props.disabled,true);assert.match(JSON.stringify(row('deleted.jpg')),/已删除/);badge(row('deleted.jpg'),'已删除','systemRed');assert.doesNotMatch(JSON.stringify(row('deleted.jpg')),/不可编辑/)
+  badge(folder('new-dir').props.label,'新增','systemGreen');folder('new-dir').props.onChanged(true);badge(folder('sub').props.label,'新增','systemGreen')
+  for(const name of ['existing','mixed','mixed-new'])badge(folder(name).props.label,'已修改','systemOrange')
+  folder('existing').props.onChanged(true);badge(row('new.jpg'),'新增','systemGreen');assert.equal(icon(row('new.jpg')).props.systemName,'photo')
+  // Immediate file copy must be green before the asynchronous status refresh.
+  global.Dialog.prompt=async()=> 'green-photo copy.jpg';await all(row('green-photo.jpg').props.contextMenu.menuItems).find(n=>n.props.title==='复制文件').props.action()
+  badge(row('green-photo copy.jpg'),'新增','systemGreen');assert.equal(icon(row('green-photo copy.jpg')).props.systemName,'photo')
+  async function directoryAction(name,title,next){await all(folder(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action();h.render();await h.tree.props.sheet.content.props.onConfirm(next)}
+  await directoryAction('green-source','复制文件夹','green-copy');badge(folder('green-copy').props.label,'新增','systemGreen')
+  folder('green-copy').props.onChanged(true);badge(folder('empty').props.label,'新增','systemGreen');badge(row('plain.txt'),'新增','systemGreen')
+  await directoryAction('empty','复制文件夹','empty-copy');badge(folder('empty-copy').props.label,'新增','systemGreen')
+  // A copied file renamed before scan keeps the rename label, never the green added label.
+  global.Dialog.prompt=async()=> 'green-renamed.jpg';await all(row('green-photo copy.jpg').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+  badge(row('green-renamed.jpg'),'已重命名','systemOrange');assert.equal(icon(row('green-renamed.jpg')).props.systemName,'photo')
+  await directoryAction('green-copy','重命名','green-renamed-folder');badge(folder('green-renamed-folder').props.label,'已重命名','systemOrange');folder('green-renamed-folder').props.onChanged(true)
+  props.changes=[{filepath:'green-renamed.jpg',status:'*added'},{filepath:'green-renamed-folder/plain.txt',status:'*added'},{filepath:'green-renamed-folder/sub/picture.PNG',status:'*added'}]
+  badge(row('green-renamed.jpg'),'已重命名','systemOrange');badge(folder('green-renamed-folder').props.label,'已重命名','systemOrange')
+  assert.doesNotMatch(JSON.stringify(folder('empty-copy').props.label),/新增/)
+  props.changes=[]
+  for(const name of ['green-renamed-folder','empty-copy']){assert.doesNotMatch(JSON.stringify(folder(name).props.label),/新增|已修改|已重命名/);assert.equal(icon(folder(name).props.label).props.foregroundStyle,'secondaryLabel')}
+  assert.equal(folder('new-dir'),undefined)
+  assert.doesNotMatch(JSON.stringify(row('green-renamed.jpg')),/新增|已重命名/);assert.equal(icon(row('green-renamed.jpg')).props.foregroundStyle,'secondaryLabel')
+  h.unmount()
+ })
+ await test('fully deleted folders are red; partial deletion, surviving siblings and index-only deletion stay modified',async()=>{
+  const props={files:['gone/a','gone/nested/b','partial/deleted','partial/normal','mixed/deleted','mixed/edited','index-only/file','parent/gone/a','parent/live'],loading:false,bookmarkName:'repo',changes:[
+   ...['gone/a','gone/nested/b','partial/deleted','mixed/deleted','parent/gone/a'].map(filepath=>({filepath,status:'*deleted',worktreeDeleted:true})),
+   {filepath:'mixed/edited',status:'*modified'}, {filepath:'index-only/file',status:'deleted',worktreeDeleted:false},
+  ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
+  function folder(name){return folders().find(n=>JSON.stringify(n.props.label).includes('"'+name+'"'))}
+  function badge(n,label,color){assert.ok(all(n.props.label).some(n=>n.type==='Text'&&n.children.includes(label)&&n.props.foregroundStyle===color));assert.equal(all(n.props.label).find(n=>n.type==='Image').props.foregroundStyle,color)}
+  badge(folder('gone'),'已删除','systemRed');folder('gone').props.onChanged(true);badge(folder('nested'),'已删除','systemRed')
+  for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).props.label),/已删除/)}
+  folder('parent').props.onChanged(true)
+  const nestedGone=folders().filter(n=>JSON.stringify(n.props.label).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
+  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['还原','提交','删除'])
+  // A restored leaf makes its parent modified rather than deleted; fully clean refresh clears both.
+  props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
+  props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
   h.unmount()
  })
  await test('parent editor controller lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
