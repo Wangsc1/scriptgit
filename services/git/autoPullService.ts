@@ -1,6 +1,6 @@
 import { createHttpTransport } from "../gitCore"
 import { getAuth } from "../authStore"
-import { findRepo } from "../repoStore"
+import { findRepo, updateBranchLastPulledAt } from "../repoStore"
 import { getCtx, resolveGitdir, type GitContext } from "./runtime"
 import { parseUpstreamConfig, upstreamMergeBranch } from "../../utils/remote"
 import { checkRemoteCancelled, createGitOnProgress, type RemoteOpOptions } from "../../utils/remoteProgress"
@@ -69,9 +69,17 @@ export async function autoPullInternal(bookmarkName: string, options?: AutoPullO
     if (!same(before, after)) skip("拉取期间分支、HEAD 或 upstream 已变化")
     const theirs = await git.resolveRef({ fs, dir, gitdir, ref: `refs/remotes/${before.remote}/${before.remoteBranch}` })
     if (!fetched.fetchHead || fetched.fetchHead !== theirs) skip("远端跟踪引用未确认，未更新本地分支")
-    if (theirs === before.oid) return { status: "unchanged", reason: "已是最新" }
+    if (theirs === before.oid) {
+      checkRemoteCancelled(options)
+      updateBranchLastPulledAt(bookmarkName, before.branch, Date.now())
+      return { status: "unchanged", reason: "已是最新" }
+    }
     const bases: string[] = await git.findMergeBase({ fs, dir, gitdir, oids: [before.oid, theirs] })
-    if (bases.includes(theirs)) return { status: "unchanged", reason: "本地领先，未改动本地提交" }
+    if (bases.includes(theirs)) {
+      checkRemoteCancelled(options)
+      updateBranchLastPulledAt(bookmarkName, before.branch, Date.now())
+      return { status: "unchanged", reason: "本地领先，未改动本地提交" }
+    }
     if (!bases.includes(before.oid)) skip("本地与远端已分叉，仅允许快进，请手动处理")
     // 图遍历后、写工作区前再次检查，明确不调用手动 merge/rebase/commit 或 force checkout。
     if (!same(before, await inspect(latest))) skip("更新前本地状态已变化")
@@ -80,6 +88,7 @@ export async function autoPullInternal(bookmarkName: string, options?: AutoPullO
     // 进入更新阶段不在工作区和分支 ref 之间响应取消，以免留下人为制造的半完成状态。
     if (await git.currentBranch({ fs, dir, gitdir, fullname: false }) !== before.branch || await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" }) !== before.oid) throw new Error("更新期间外部分支已变化，请手动核对工作区")
     await git.writeRef({ fs, dir, gitdir, ref: `refs/heads/${before.branch}`, value: theirs, force: true })
+    updateBranchLastPulledAt(bookmarkName, before.branch, Date.now())
     return { status: "updated", reason: "已快进更新" }
   } catch (error) {
     if (error instanceof SkipAutoPull) return { status: "skipped", reason: error.message }
