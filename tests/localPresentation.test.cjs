@@ -34,7 +34,14 @@ async function main(){
  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
  tab().props.onOpenLocalFile({...file,previewUrl:'data:image/png;base64,AA==',text:null});h.render();cover=h.tree.props.fullScreenCover
  assert.equal(cover.content.type,'ImageViewer');assert.equal(cover.content.props.compactImage,true);assert.equal(cover.content.props.url,'data:image/png;base64,AA==');assert.ok(!all(cover.content).some(n=>n.type==='LocalFileEditor'))
- cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);h.unmount()
+ const firstImageSession=cover.content.props.sessionId
+ cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
+ for(let i=0;i<3;i++){
+  tab().props.onOpenLocalFile({...file,previewUrl:'data:image/png;base64,AA==',text:null});h.render();cover=h.tree.props.fullScreenCover
+  assert.ok(cover.content.props.sessionId>firstImageSession+i,'same image must get a fresh monotonic session')
+  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
+ }
+ h.unmount()
  const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(<View \/>\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
  for(const name of ['pages/FilesTab.tsx','pages/LocalFileEditor.tsx','services/git/localFileService.ts'])assert.doesNotMatch(fs.readFileSync(root+'/'+name,'utf8'),/Script.exit|Navigation.present/)
  // Capture actual WebView HTML for local/default modes; do not pretend to render native WebKit.
@@ -67,6 +74,17 @@ async function main(){
  assert.equal(gesture({fast:true,multi:true}),0);assert.equal(gesture({fast:true,cancel:true}),0)
  assert.equal(gesture({fast:true,x:100}),0)
  local.close();local.close();assert.equal(closed,1);compact.unmount();assert.equal(local.disposed,true)
+ const repeatProps={url:'data:image/png;base64,AA==',compactImage:true,sessionId:1,onClose:()=>closed++}
+ let repeat=mount(ImageViewer,repeatProps);await tick();let prior=controllers.at(-1);prior.close();const beforeRepeat=closed
+ for(let id=2;id<=4;id++){
+  // Parent changes key with sessionId: React unmounts the prior viewer.
+  repeat.unmount();repeatProps.sessionId=id;repeat=mount(ImageViewer,repeatProps);await tick();const fresh=controllers.at(-1)
+  assert.notEqual(fresh,prior);assert.equal(prior.disposed,true)
+  prior.close();assert.equal(closed,beforeRepeat+id-2,'stale close ignored')
+  fresh.close();fresh.close();assert.equal(closed,beforeRepeat+id-1,'fresh close unlocked, once per session')
+  prior=fresh
+ }
+ repeat.unmount()
  const normal=mount(ImageViewer,{url:'https://example.invalid/image.png',onClose(){}});await tick();const original=controllers.at(-1)
  assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
  assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()

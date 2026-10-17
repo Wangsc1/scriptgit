@@ -160,18 +160,21 @@ export function ImageViewer({
   url,
   onClose,
   compactImage = false,
+  sessionId,
 }: {
   url: string
   onClose: () => void
   /** 本地图片默认缩小，仍使用全屏及原有缩放/关闭；共享调用默认不变。 */
   compactImage?: boolean
+  sessionId?: number
 }) {
   // 控制器随图片地址重建，避免复用已 dispose 的实例
-  const controller = useMemo(() => new WebViewController(), [url, compactImage])
+  const controller = useMemo(() => new WebViewController(), [url, compactImage, sessionId])
   const [webViewReady, setWebViewReady] = useState(false)
 
   useEffect(() => {
     let disposed = false
+    setWebViewReady(false)
 
     async function setup() {
       let closing = false
@@ -196,7 +199,7 @@ export function ImageViewer({
       controller.dispose()
     }
     // url 变化时必须重新加载，否则多张图片只会显示首次打开的那张
-  }, [url, compactImage])
+  }, [url, compactImage, sessionId])
 
   return (
     <ZStack

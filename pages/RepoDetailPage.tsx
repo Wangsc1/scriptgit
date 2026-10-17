@@ -10,7 +10,7 @@
  * - 分支与同步动作：hooks/useRepoBranchActions、hooks/useRepoSyncActions
  */
 
-import { List, Text, Button, Menu, useState } from "scripting"
+import { List, Text, Button, Menu, useState, useRef } from "scripting"
 import { ImageViewer } from "../components/ImageViewer"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -52,7 +52,8 @@ export function RepoDetailPage({
   name: string
 }) {
   const [localFile, setLocalFile] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
-  const openLocalFile = (file: LocalWorktreeFile) => setLocalFile(previous => ({ file, id: (previous?.id || 0) + 1 }))
+  const localSession = useRef(0)
+  const openLocalFile = (file: LocalWorktreeFile) => setLocalFile({ file, id: ++localSession.current })
   const [alertState, setAlertState] = useState<AlertState>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
 
@@ -195,7 +196,7 @@ export function RepoDetailPage({
         // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
-        content: localFile?.file.previewUrl ? <ImageViewer key={localFile.id} url={localFile.file.previewUrl} compactImage onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
+        content: localFile?.file.previewUrl ? <ImageViewer key={localFile.id} sessionId={localFile.id} url={localFile.file.previewUrl} compactImage onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
           onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => { await data.refreshChangesAndSnapshot() }} /> : <Text>加载中…</Text>,
       }}
       navigationTitle={data.displayName}
