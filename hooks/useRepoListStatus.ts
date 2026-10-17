@@ -116,16 +116,21 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     }).catch(() => {})
     // 首屏先交还事件循环，仓库和操作入口不必等文件系统或 Git 扫描。
     await new Promise<void>(resolve => setTimeout(resolve, 0))
+    // 小型并发池（与 MAX_READS 一致），避免逐个串行等待拖慢首屏
     let completed = 0
-    for (const repo of sortReposByGithubUpdated(latest)) {
-      if (!current()) break
-      if (!exists(repo.bookmarkName)) continue
-      setProgress({ running: true, completed, total: latest.length, current: repo.name })
-      await readForView(repo, force, force ? "列表下拉" : "列表出现", epoch)
-      completed++
-      if (current()) setProgress({ running: true, completed, total: latest.length, current: repo.name })
+    const targets = sortReposByGithubUpdated(latest).filter(repo => exists(repo.bookmarkName))
+    let cursor = 0
+    async function worker() {
+      while (current()) {
+        const repo = targets[cursor++]
+        if (!repo) return
+        await readForView(repo, force, force ? "列表下拉" : "列表出现", epoch)
+        completed++
+        if (current()) setProgress({ running: true, completed, total: targets.length, current: repo.name })
+      }
     }
-    if (current()) setProgress({ running: false, completed, total: latest.length, current: "" })
+    await Promise.all(Array.from({ length: Math.min(MAX_READS, targets.length) }, () => worker()))
+    if (current()) setProgress({ running: false, completed, total: targets.length, current: "" })
   }
 
   function refreshAll(force = false): Promise<void> {
