@@ -1,12 +1,10 @@
-import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
+import { Button, Editor, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
 
 import { DiffViewer } from "../components/DiffViewer"
 import { FileChangeSwitcher } from "../components/FileChangeSwitcher"
-import { LocalCodeEditor } from "../components/LocalCodeEditor"
-import { createLocalCodeEditorController } from "../services/localCodeEditor"
 import { editorDiff } from "../utils/editorDiff"
 
 /** 全屏本地工作区编辑：不暂存、不提交、不推送；退出始终核对控制器当前草稿。 */
@@ -21,7 +19,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const editor = useMemo(() => {
     // 二进制/超限文件不创建不使用的原生编辑器；构造失败留在页面报告，不逃逸 render。
     if (file.text === null) return { controller: null, error: "" }
-    try { return { controller: createLocalCodeEditorController({ content: file.text, ext: extension(file.path), readOnly: !!file.readOnlyReason }), error: "" } }
+    try { return { controller: new EditorController({ content: file.text, ext: extension(file.path), readOnly: !!file.readOnlyReason }), error: "" } }
     catch (e: any) { return { controller: null, error: "编辑器初始化失败：" + String(e?.message || e) } }
   }, [])
   const controller = editor.controller
@@ -49,9 +47,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       versionRef.current = v
       // 离开改动项后不再计算，返回原内容从不等待此请求。
       if (!background && selection.value !== 1) return
-      // 后台计数使用桥接草稿，不能触发退出前读取，否则会打断中文候选输入。
-      const draft = background ? controller.content : await controller.getContent()
-      if (!alive.current) return
+      const draft = controller.content
       setDiff(editorDiff(v, draft))
       setDiffRevision(n => n + 1)
     } catch (e: any) {
@@ -73,7 +69,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       }
     }
     selection.subscribe(onSelection)
-    // 给编辑视图首屏留出时间；统计使用真实 HEAD/草稿，不显示猜测数字。
+    // 给原生编辑器首屏留出时间；统计使用真实 HEAD/草稿，不显示猜测数字。
     if (initialHasChanges) statsTimer.current = setTimeout(() => void loadDiff(true), 500)
     if (controller) controller.onContentChanged = () => {
       if (!alive.current) return
@@ -103,7 +99,6 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     lock.current = true; setBusy(true); setStatus("")
     try {
       // 返回默认保存：无修改直接返回；保存失败/外部冲突留在本页并保留草稿。
-      if (controller !== null && !file.readOnlyReason) await controller.getContent()
       if (controller !== null && !file.readOnlyReason && dirty()) {
         baseline.current = await saveLocalWorktreeFile(bookmarkName, baseline.current, controller.content)
         await notifyChanged()
@@ -117,7 +112,6 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     if (lock.current) return
     lock.current = true; setBusy(true); setStatus("")
     try {
-      if (controller !== null) await controller.getContent()
       if (!await discard("刷新并放弃草稿？")) return
       const latest = await readLocalWorktreeFile(bookmarkName, file.path)
       if (alive.current) onReload(latest)
@@ -133,7 +127,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const deleted = diff?.lines.filter(line => line.type === "del").length ?? 0
 
   return <NavigationStack>
-    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
+    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
       toolbar={{
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
@@ -142,13 +136,9 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
-        content={<LocalCodeEditor controller={controller} onBack={back} />}
-        changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-          background={{ light: "white", dark: "#242424" }}
-          simultaneousGesture={DragGesture({ minDistance: 20, coordinateSpace: "local" }).onEnded(details => {
-            if (details.startLocation.x <= 24 && details.translation.width >= 80 && details.translation.width > Math.abs(details.translation.height) * 1.5) void back()
-          })}>
-          <VStack spacing={0} padding={{ horizontal: 5, top: 10, bottom: 110 }}>
+        content={<Editor controller={controller} scriptName="scriptgit" showAccessoryView={false} />}
+        changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
+          <VStack spacing={0} padding={{ horizontal: 5, vertical: 10 }}>
             {versionsError ? <VStack spacing={6}><Text font="caption" foregroundStyle="red">{versionsError}</Text>
               <Button title="重试读取改动" action={() => loadDiff()} disabled={busy || diffBusy} /></VStack> :
               diffBusy || !diff ? <ProgressView /> : <>
@@ -159,7 +149,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
               </>}
           </VStack>
         </ScrollView> : <Text />}
-      /> : controller !== null ? <LocalCodeEditor controller={controller} onBack={back} /> :
+      /> : controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView={false} /> :
         (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
   </NavigationStack>

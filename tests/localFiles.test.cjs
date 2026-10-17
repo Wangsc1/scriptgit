@@ -28,8 +28,6 @@ function loader(overrides={}){
   const m={exports:{}};cache.set(file,m)
   const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx',jsxFragmentFactory:'__fragment'},fileName:file}).outputText
   const req=name=>{if(name==='scripting')return ui;let dest=path.resolve(path.dirname(file),name);dest=['.ts','.tsx'].map(ext=>dest+ext).find(fs.existsSync)||dest
-   if(dest.replace(/\.tsx?$/,'')===project+'/components/LocalCodeEditor')return {LocalCodeEditor:'LocalCodeEditor'}
-   if(dest.replace(/\.tsx?$/,'')===project+'/services/localCodeEditor')return {createLocalCodeEditorController:options=>{const c=new global.EditorController(options);c.getContent=async()=>c.content;return c}}
    if(dest===project+'/services/repoStore.ts')return store
    if(dest===project+'/services/git/runtime.ts')return runtime
    if(overrides[dest])return overrides[dest]
@@ -160,16 +158,16 @@ async function main(){
   assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
- await test('parent editor controller lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
+ await test('documented Editor lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0
   const props={bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged(){}}
   const before=controllers.length,h=mount(Editor,props),controller=controllers.at(-1)
-  h.render();h.render();assert.equal(controllers.length,before+1);assert.equal(controller.disposed,undefined);assert.equal(node(h,'LocalCodeEditor').props.controller,controller)
+  h.render();h.render();assert.equal(controllers.length,before+1);assert.equal(controller.disposed,undefined);assert.equal(node(h,'Editor').props.controller,controller)
   await node(h,'Button','返回').props.action();assert.equal(closed,1);assert.equal(controller.disposed,undefined);h.unmount();assert.equal(controller.disposed,true)
   const reopened=mount(Editor,props);assert.notEqual(controllers.at(-1),controller);reopened.unmount()
   const Native=global.EditorController;global.EditorController=class{constructor(){throw Error('native init rejected')}}
-  const failed=mount(Editor,props);assert.match(text(failed),/编辑器初始化失败.*native init rejected/);assert.equal(all(failed.tree).filter(n=>n.type==='LocalCodeEditor').length,0);await node(failed,'Button','返回').props.action();failed.unmount()
-  const binary=mount(Editor,{...props,file:{...file,text:null,readOnlyReason:'binary'}});assert.equal(all(binary.tree).filter(n=>n.type==='LocalCodeEditor').length,0);assert.doesNotMatch(text(binary),/初始化失败/);binary.unmount();global.EditorController=Native
+  const failed=mount(Editor,props);assert.match(text(failed),/编辑器初始化失败.*native init rejected/);assert.equal(all(failed.tree).filter(n=>n.type==='Editor').length,0);await node(failed,'Button','返回').props.action();failed.unmount()
+  const binary=mount(Editor,{...props,file:{...file,text:null,readOnlyReason:'binary'}});assert.equal(all(binary.tree).filter(n=>n.type==='Editor').length,0);assert.doesNotMatch(text(binary),/初始化失败/);binary.unmount();global.EditorController=Native
  })
  const bar=h=>{h.render();assert.equal(h.tree.type,'NavigationStack');return h.tree.children[0].props.toolbar}
  const back=h=>bar(h).topBarLeading.props.action(),refresh=h=>bar(h).topBarTrailing.props.action()
