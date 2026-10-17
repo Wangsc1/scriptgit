@@ -16,7 +16,7 @@
     "de" : ""
   },
   "entry" : "index.tsx",
-  "version" : "1.4.0",
+  "version" : "1.4.1",
   "localizedNames" : {
     "de" : "",
     "es" : "",
@@ -34,7 +34,7 @@
   "description" : "iPhone Git 管理、GitHub 按用户名批量克隆与远端文件编辑提交",
   "icon" : "point.topleft.down.to.point.bottomright.curvepath",
   "permissions" : null,
-  "iconImage" : "",
+  "iconImage" : "assets/icon.png",
   "author" : {
     "email" : null,
     "homepage" : "https:\/\/github.com\/iamwaa",

@@ -28,6 +28,25 @@ const KIND_ERROR_TITLE: Record<SyncKind, string> = {
   clone: "克隆失败",
 }
 
+// 固定随包资源，不接受外部路径；缺失/解码失败时通知照常发送（无自定义图标）。
+const NOTIFY_ICON_PATH = FileManager.scriptsDirectory + "/scriptgit/assets/notify-icon.png"
+let notifyIcon: any | null | undefined
+
+async function loadNotifyIcon(): Promise<any | null> {
+  if (notifyIcon !== undefined) return notifyIcon
+  try {
+    notifyIcon = (await FileManager.exists(NOTIFY_ICON_PATH)) ? Data.fromFile(NOTIFY_ICON_PATH) : null
+  } catch (_e) {
+    notifyIcon = null
+  }
+  return notifyIcon
+}
+
+async function notificationIconOptions(): Promise<{ iconImageData?: any }> {
+  const iconImageData = await loadNotifyIcon()
+  return iconImageData ? { iconImageData } : {}
+}
+
 function redactSensitive(value?: string): string | undefined {
   if (!value) return value
   return value
@@ -53,6 +72,7 @@ export async function notifySync(
       title: KIND_TITLE[kind],
       subtitle: redactSensitive(repoName),
       body: redactSensitive(detail),
+      ...(await notificationIconOptions()),
       silent: false,
       threadIdentifier: "gitgit-sync",
       interruptionLevel: "active",
@@ -82,6 +102,7 @@ export async function notifyError(
       title: KIND_ERROR_TITLE[kind],
       subtitle: redactSensitive(repoName),
       body: redactSensitive(message),
+      ...(await notificationIconOptions()),
       silent: false,
       threadIdentifier: "gitgit-error",
       interruptionLevel: "active",
