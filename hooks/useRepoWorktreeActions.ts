@@ -99,9 +99,9 @@ export function useRepoWorktreeActions({
     return runStaging("全部取消暂存", () => unstageAll(bookmarkName).then(() => {}))
   }
 
-  function handleRestore(filepath: string) {
+  function handleRestore(filepath: string, filepaths?: string[]) {
     if (stagingBusy || stashBusy || guardMergeBusy()) return
-    setPending({ type: "restore", filepath })
+    setPending({ type: "restore", filepath, filepaths })
   }
 
   async function handleCreateStash() {

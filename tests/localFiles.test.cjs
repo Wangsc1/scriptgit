@@ -148,14 +148,15 @@ async function main(){
   confirm=false;await a[2].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
   confirm=true;await a[2].props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
  })
- await test('folder restore confirms once and restores only changed descendants, leaving sibling changes',async()=>{
-  await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let updates=0
-  const props={files:['folder/b.txt','a.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'folder/b.txt',status:'*modified'},{filepath:'a.txt',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush(){},onRestore(){throw Error('single file handler must not receive directory')},mergeInProgress:false}
+ await test('folder restore routes changed descendants to shared parent confirmation without changing disk',async()=>{
+  await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let request
+  const props={files:['folder/b.txt','a.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'folder/b.txt',status:'*modified'},{filepath:'a.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore:(...args)=>request=args,mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
-  confirm=true;await group.props.trailingSwipeActions.actions[0].props.action()
-  assert.doesNotMatch(text(h),/失败|Error/);assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'nested');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');assert.equal(confirmations.length,before+1);assert.equal(updates,1);h.unmount()
+  await group.props.trailingSwipeActions.actions[0].props.action()
+  assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
+  assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
  await test('documented Editor lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0

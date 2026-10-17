@@ -2,7 +2,7 @@ import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, 
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, restoreFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
 import type { FileChange } from "../types/git"
 
@@ -21,7 +21,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -86,7 +86,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
   onPush: () => void | Promise<void>
-  onRestore: (filepath: string) => void
+  onRestore: (filepath: string, filepaths?: string[]) => void
   mergeInProgress: boolean
 }) {
   const [busy, setBusy] = useState(false)
@@ -164,21 +164,11 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
-  async function restore(path: string) {
-    const targets = changes.filter(change => change.filepath.startsWith(path + "/"))
-    if (!targets.length) { onRestore(path); return }
+  function restore(path: string) {
     if (state.current.busy || mergeInProgress) return
-    state.current.busy = true; setBusy(true); setError("")
-    let started = false
-    try {
-      if (await Dialog.confirm({ title: "还原此文件夹内的改动？", message: `${path}\n将丢弃该目录及子目录内 ${targets.length} 个文件的改动，不影响其他目录。此操作不可撤销。`, confirmLabel: "还原文件夹" }) !== true || !state.current.alive) return
-      started = true
-      for (const change of targets) await restoreFile(bookmarkName, change.filepath)
-    } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
-    finally {
-      try { if (started) await onWorktreeChanged() }
-      finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
-    }
+    const targets = changes.filter(change => change.filepath.startsWith(path + "/"))
+    // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
+    onRestore(path, targets.length ? targets.map(change => change.filepath) : undefined)
   }
   async function manage(path: string, kind: "copy" | "rename") {
     if (state.current.busy || removed.has(path)) return

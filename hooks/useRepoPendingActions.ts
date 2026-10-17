@@ -59,7 +59,7 @@ type UseRepoPendingActionsProps = {
 
 // 各操作失败时的提示标题
 const FAILURE_TITLES: Record<string, string> = {
-  restore: "撤销失败",
+  restore: "还原失败",
   dropStash: "删除 Stash 失败",
   revert: "撤销提交失败",
   amend: "重编失败",
@@ -196,9 +196,12 @@ export function useRepoPendingActions({
     if (!action) return
     try {
       if (action.type === "restore") {
-        await beginOpBusy("正在丢弃改动", action.filepath)
-        await restoreFile(bookmarkName, action.filepath)
-        await reloadRepo()
+        await beginOpBusy("正在还原改动", action.filepath)
+        try {
+          for (const filepath of action.filepaths ?? [action.filepath]) await restoreFile(bookmarkName, filepath)
+        } finally {
+          await reloadRepo()
+        }
         return
       }
       if (action.type === "dropStash") {
