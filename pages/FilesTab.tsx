@@ -6,8 +6,6 @@ import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, re
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE, COLOR_RED } from "../constants/colors"
 import type { FileChange } from "../types/git"
 
-const LOCAL_TEXT_LIMIT = 512 * 1024
-
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
   switch (status) {
     case "added":
@@ -22,19 +20,8 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
   }
 }
 
-/** 文件内容摘要：有改动显示“改动后”，未改动显示“原内容” */
-function summaryFor(change: FileChange | undefined, deleted: boolean, preview: string | undefined): string | null {
-  if (deleted) return null
-  if (preview == null || preview === "") return null
-  const trimmed = preview.replace(/\r/g, "").trim()
-  if (!trimmed) return null
-  const firstLine = trimmed.split("\n")[0] || ""
-  const short = firstLine.length > 60 ? firstLine.slice(0, 60) + "…" : firstLine
-  const prefix = change ? "改动后：" : "原内容："
-  return prefix + short
-}
-
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onStage, onUnstage, worktreeBusy, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number; preview?: string }>; onStage: (filepath: string) => void | Promise<void>; onUnstage: (filepath: string) => void | Promise<void>; worktreeBusy: boolean; mergeInProgress: boolean }) {
+/** 文件内容摘要已移除：列表下方仅显示文件大小与修改日期 */
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onStage, onUnstage, worktreeBusy, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onStage: (filepath: string) => void | Promise<void>; onUnstage: (filepath: string) => void | Promise<void>; worktreeBusy: boolean; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -43,7 +30,6 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     const metaParts: string[] = []
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
     if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
-    const summary = summaryFor(change, deleted, meta?.preview)
     const swipeActions: any[] = []
     if (change && !deleted) {
       swipeActions.push(<Button
@@ -68,21 +54,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
             {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
             {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
           </HStack>
-          {summary || metaParts.length > 0 ? (
-            <HStack alignment="center" spacing={6} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-              {summary ? (
-                <HStack
-                  alignment="center"
-                  padding={{ horizontal: 8, vertical: 3 }}
-                  background={{ light: "rgba(118, 118, 128, 0.14)", dark: "rgba(118, 118, 128, 0.26)" }}
-                  clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-                >
-                  <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL} lineLimit={1}>{summary}</Text>
-                </HStack>
-              ) : null}
-              {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
-            </HStack>
-          ) : null}
+          {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
         </VStack>
       </Button>
     )
@@ -114,7 +86,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
   const changesByPath = useMemo(() => new Map<string, FileChange>(changes.map(c => [c.filepath, c])), [changes])
-  const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number; preview?: string }>>(new Map())
+  const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
   const state = useRef({ alive: true, busy: false })
   useEffect(() => () => { state.current.alive = false }, [])
   useEffect(() => {
@@ -126,26 +98,13 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     async function load() {
       try {
         const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-        const next = new Map<string, { size: number; modified: number; preview?: string }>()
+        const next = new Map<string, { size: number; modified: number }>()
         await Promise.all(visibleFiles.map(async (path) => {
           if (removed.has(path)) return
           try {
             const absolute = root + "/" + path
             const stat = await FileManager.stat(absolute)
-            const entry: { size: number; modified: number; preview?: string } = { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) }
-            // 仅小文本文件读取内容摘要，避免大文件解码占内存
-            if (stat.size > 0 && stat.size <= LOCAL_TEXT_LIMIT) {
-              try {
-                const data = await FileManager.readAsData(absolute)
-                const text = data.toRawString("utf-8")
-                if (text != null && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text)) {
-                  entry.preview = text
-                }
-              } catch (_e) {
-                // 读取摘要失败只影响标签，不影响列表
-              }
-            }
-            next.set(path, entry)
+            next.set(path, { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) })
           } catch (_e) {
             // 文件可能刚刚被删除或不可访问，跳过
           }
