@@ -22,7 +22,8 @@ const FilesTab=load('pages/FilesTab.tsx',{
   importLocalWorktreeFile:async(_,source,name,root)=>{mainOnly('import');assert.equal(root,'/authorized/work');assert.equal(source,'/picker/original.png');return coordinator.mutate('repo',async()=>{mutations++;return name})},
  },
 }).FilesTab
-const props={files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged:async()=>{mainOnly('refresh');refreshes++},onOpen(){},onPush(){},onRestore(){}}
+let parentForm=null
+const props={creationActive:false,onCreateEntry(directory,onCreated){mainOnly('parent-create');parentForm={directory,onCreated};props.creationActive=true},files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged:async()=>{mainOnly('refresh');refreshes++},onOpen(){},onPush(){},onRestore(){}}
 let h
 const render=()=>on('render',()=>h.render())
 const button=title=>all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title===title)
@@ -36,30 +37,29 @@ async function main(){
  for(const title of ['创建文件','创建目录']){
   menu(title);menu('导入图片');assert.deepEqual(trace,[]);assert.equal(h.tree.props.sheet.isPresented,false)
   render();assert.equal(h.tree.props.sheet.isPresented,false,'intent commit must not already present sheet')
-  assert.equal(trace.filter(e=>e.api==='root').length,1);assert.equal(trace[0].phase,'effect')
-  render();assert.equal(h.tree.props.sheet.isPresented,true);assert.equal(h.tree.props.sheet.content.props.title,title)
+  assert.equal(trace.filter(e=>e.api==='parent-create').length,1);assert.equal(trace[0].phase,'effect')
+  render();assert.equal(h.tree.props.sheet.isPresented,false,'creation is never presented on Section');assert.equal(parentForm.directory,title==='创建目录')
   menu('导入文件');assert.equal(trace.some(e=>e.api==='DocumentPicker'),false)
-  if(title==='创建目录')await on('sheet-button',()=>h.tree.props.sheet.content.props.onConfirm('empty-dir'))
-  else on('sheet-button',()=>h.tree.props.sheet.content.props.onCancel())
+  props.creationActive=false;parentForm=null
   render();trace.length=0
  }
- assert.equal(mutations,1);assert.equal(refreshes,1)
+ assert.equal(mutations,0);assert.equal(refreshes,0)
  for(const title of ['导入文件','导入目录','导入图片']){
   menu(title);assert.deepEqual(trace,[]);render();await settle()
   assert.equal(trace.filter(e=>e.api===(title==='导入图片'?'Photos.pick':title==='导入目录'?'DocumentPicker.pickDirectory':'DocumentPicker')).length,1)
   assert.equal(trace.some(e=>e.api==='Timer'),false,'cancellation must not enter mutation');trace.length=0
  }
  selected={sourcePath:'/picker/original.png',name:'original.png',release:async()=>mainOnly('release')}
- menu('导入图片');assert.deepEqual(trace,[]);render();await settle();assert.equal(mutations,2);assert.equal(refreshes,2)
+ menu('导入图片');assert.deepEqual(trace,[]);render();await settle();assert.equal(mutations,1);assert.equal(refreshes,1)
  assert.ok(trace.some(e=>e.api==='Timer'&&e.main&&e.stack.includes('StatusCoordinator.mutate')));assert.equal(trace.some(e=>e.main===false),false)
  trace.length=0;selected={sourcePath:'/picker/Folder',name:'Folder',release:async()=>mainOnly('release')}
- menu('导入目录');assert.deepEqual(trace,[]);render();await settle();assert.equal(mutations,3);assert.equal(refreshes,3)
+ menu('导入目录');assert.deepEqual(trace,[]);render();await settle();assert.equal(mutations,2);assert.equal(refreshes,2)
  assert.ok(trace.some(e=>e.api==='DocumentPicker.pickDirectory'&&e.phase==='effect'));assert.ok(trace.some(e=>e.api==='import-directory'&&e.main))
  trace.length=0;menu('创建文件');props.mergeInProgress=true;render();render();assert.equal(h.tree.props.sheet.isPresented,false);assert.deepEqual(trace,[])
  props.mergeInProgress=false;render();trace.length=0;menu('导入目录');props.bookmarkName='other-repo';render();render()
- assert.equal(mutations,3);assert.equal(trace.some(e=>e.api==='DocumentPicker.pickDirectory'),false);props.bookmarkName='repo';render();trace.length=0
+ assert.equal(mutations,2);assert.equal(trace.some(e=>e.api==='DocumentPicker.pickDirectory'),false);props.bookmarkName='repo';render();trace.length=0
  gate=deferred();menu('导入目录');render();h.unmount();gate.resolve();await tick();await tick()
- assert.equal(mutations,3);assert.equal(h.lateWrites,0);assert.equal(trace.filter(e=>e.api==='release').length,1)
+ assert.equal(mutations,2);assert.equal(h.lateWrites,0);assert.equal(trace.filter(e=>e.api==='release').length,1)
  h=on('render',()=>mount(FilesTab,props,{effectUpdates:true}));trace.length=0;menu('创建目录');h.unmount();assert.deepEqual(trace,[])
  console.log('PASS real coordinator Timer error reproduced on simulated non-main queue; menu only enqueues; post-commit forms/pickers, cancellation/duplicate/merge/unmount guards')
  console.log('LIMIT: effect queue/native menu dismissal and presentation are modeled, not verified on iOS')

@@ -22,7 +22,7 @@ global.EditorController=class{constructor(options){Object.assign(this,options);c
 global.Dialog={confirm:async input=>{confirmations.push(input);return confirm}}
 const ctx={git,fs,dir,gitdir:dir+'/.git'}
 const runtime={runWithBackgroundKeepAlive:fn=>fn(),resolveGitdir:()=>ctx.gitdir,getCtx:async()=>ctx,checkoutWithEmptyDirCleanup:(git,fs,options)=>git.checkout({fs,...options})}
-const store={writeSnapshot(){},resolveWorkdir:()=>root,findRepo:()=>({bookmarkName:'repo',name:'test',repoId:'repo'}),listRepos:()=>[],getGitdirPath:()=>ctx.gitdir}
+const store={async pickDirectory(){const path=await DocumentPicker.pickDirectory();return path?{path,name:path.split('/').pop(),accessBookmarkName:null}:null},writeSnapshot(){},resolveWorkdir:()=>root,findRepo:()=>({bookmarkName:'repo',name:'test',repoId:'repo'}),listRepos:()=>[],getGitdirPath:()=>ctx.gitdir}
 function loader(overrides={}){
  const cache=new Map()
  function read(file){file=path.resolve(file);if(cache.has(file))return cache.get(file).exports
@@ -438,7 +438,9 @@ async function main(){
   global.DocumentPicker={pickDirectory:async()=>{pickCalls++;return selectedDirectory},pickFiles:async opts=>{pickCalls++;assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
   global.PHPickerFilter={images:()=> 'images'};global.Photos={pick:async()=>{photoCalls++;return []}}
   const props={files:['folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:async()=>{updates++},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
-  const h=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
+  const FilesTab=load('pages/FilesTab.tsx').FilesTab,{useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts');let creation
+  function Host(){creation=useLocalEntryCreation({bookmarkName:props.bookmarkName,unavailable:props.mergeInProgress,onChanged:props.onWorktreeChanged,onError(){}});return FilesTab({...props,creationActive:creation.form!==null||creation.busy,onCreateEntry:creation.open})}
+  const h=mount(Host,props,{effectUpdates:true})
   function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
   function action(title){h.render();return all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title===title)}
   async function settleImport(){for(let i=0;i<1000;i++){h.render();if(!action('导入文件').props.disabled)return;await tick()}throw Error('import did not settle')}
@@ -446,7 +448,7 @@ async function main(){
   const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
   assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
   assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo']])
-  function sheet(){h.render();return h.tree.props.sheet.content.props}
+  function sheet(){h.render();return {title:creation.form?.directory?'创建目录':'创建文件',onCancel:creation.cancel,onConfirm:creation.confirm,error:creation.error}}
   nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
   await dispatch('创建文件');assert.equal(sheet().title,'创建文件');sheet().onCancel();assert.equal(updates,0)
   await dispatch('创建文件');await sheet().onConfirm('ui-created.json');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)

@@ -1,3 +1,5 @@
+import { pickDirectory } from "./repoStore"
+
 /** Picker APIs checked against the official llms.txt index, 2026-10-17:
  * /guide/Device%20Capabilities/DocumentPicker.md
  * /guide/Device%20Capabilities/Photos/index.md
@@ -20,12 +22,25 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
   return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }
 
-/** pickDirectory grants access to the selected tree for this script run. */
+/** Same bookmark-first picker used by Add Repository / Clone target selection. */
 export async function pickLocalDirectory(): Promise<PickedLocalFile | null> {
-  const path = await DocumentPicker.pickDirectory()
-  if (path == null) return null
-  const sourcePath = path.replace(/\/+$/, "")
-  return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
+  const picked = await pickDirectory()
+  if (!picked) return null
+  let released = false
+  async function release() {
+    if (released) return
+    if (picked!.accessBookmarkName) FileManager.removeFileBookmark(picked!.accessBookmarkName)
+    released = true
+  }
+  try {
+    const sourcePath = picked.path.replace(/\/+$/, "")
+    // Defend against a provider/runtime returning a file despite the directory API.
+    if (!(await FileManager.isDirectory(sourcePath))) throw new Error("系统目录选择器未返回目录；请选择文件夹，不是文件")
+    return { sourcePath, name: sourcePath.split("/").pop() || "", release }
+  } catch (error) {
+    try { await release() } catch (_) { /* Preserve the selection error. */ }
+    throw error
+  }
 }
 
 const imageTypes: Record<string, string[]> = {

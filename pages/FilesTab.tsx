@@ -4,7 +4,7 @@ import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { importLocalWorktreeDirectory, createLocalWorktreeEntry, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { importLocalWorktreeDirectory, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
 import { pickLocalDirectory, pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
 import type { FileChange } from "../types/git"
@@ -90,13 +90,15 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, renameHin
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress }: {
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
   onPush: () => void | Promise<void>
   onRestore: (filepath: string, filepaths?: string[]) => void
   mergeInProgress: boolean
+  creationActive?: boolean
+  onCreateEntry: (directory: boolean, onCreated: (path: string) => void) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   function toggleExpanded(path: string, value: boolean) {
@@ -280,16 +282,11 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
 
-  const [creation, setCreation] = useState<{ directory: boolean; root: string } | null>(null)
-  const [creationError, setCreationError] = useState("")
   function startCreation(directory: boolean) {
-    if (state.current.busy || loading || mergeInProgress) return
-    try {
-      setCreationError(""); setError("")
-      setCreation({ directory, root: resolveWorkdir(bookmarkName).replace(/\/+$/, "") })
-    } catch (e: any) { setError(String(e?.message || e)) }
+    if (state.current.busy || loading || mergeInProgress || creationActive) return
+    // The stable parent List owns the presentation and operation lifecycle.
+    onCreateEntry(directory, path => showAddition(path, directory))
   }
-  function cancelCreation() { if (!state.current.busy) setCreation(null) }
   function showAddition(path: string, directory: boolean) {
     if (!state.current.alive) return
     if (directory) setDirectories(previous => [...new Set([...previous, path])])
@@ -297,19 +294,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     setDeleted(previous => previous.filter(value => value !== path))
     setRenamedFiles(previous => previous.filter(entry => entry.path !== path))
     setCopied(previous => [...previous.filter(entry => entry.path !== path), { path, before: changes, directory }])
-  }
-  async function confirmCreation(name: string) {
-    if (!creation || state.current.busy || mergeInProgress) return
-    state.current.busy = true; setBusy(true); setCreationError(""); setError("")
-    try {
-      const path = await createLocalWorktreeEntry(bookmarkName, name, creation.directory, creation.root)
-      showAddition(path, creation.directory)
-      if (state.current.alive) setCreation(null)
-      await onWorktreeChanged()
-    } catch (e: any) {
-      if (state.current.alive) { setCreationError(String(e?.message || e)); setError(String(e?.message || e)) }
-      try { await onWorktreeChanged() } catch (_) { /* Preserve the original failure, including partial results. */ }
-    } finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
   async function importSelection(kind: "document" | "import-directory" | "photo") {
     if (state.current.busy || loading || mergeInProgress) return
@@ -339,20 +323,20 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       try { await onWorktreeChanged() } catch (_) { /* Partial imports must be reflected without removing them. */ }
     } finally {
       if (picked) {
-        try { await picked.release() } catch (_) { if (state.current.alive) setError("导入流程已结束，但照片临时副本清理失败；请核对工作区结果") }
+        try { await picked.release() } catch (_) { if (state.current.alive) setError("导入流程已结束，但临时资源或访问书签清理失败；请核对工作区结果") }
       }
       state.current.busy = false; if (state.current.alive) setBusy(false)
     }
   }
 
-  // Native Menu actions are not a safe place to start presentation/async work.
-  // Hand off only an intent; the component effect runs after that render commits.
+  // Keep Menu actions lightweight: record an intent, then hand off after commit.
+  // This boundary alone does not establish the cause of a native crash.
   // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
   type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
   const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
   const additionPending = useRef(false)
   function requestAddition(kind: AdditionKind) {
-    if (!state.current.alive || state.current.busy || additionPending.current || loading || mergeInProgress || creation || directoryForm) return
+    if (!state.current.alive || state.current.busy || additionPending.current || loading || mergeInProgress || creationActive || directoryForm) return
     additionPending.current = true
     setAdditionRequest({ kind, bookmarkName })
   }
@@ -361,19 +345,19 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     additionPending.current = false
     if (!state.current.alive) return
     setAdditionRequest(null)
-    if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creation || directoryForm) return
+    if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
     if (kind === "file" || kind === "directory") startCreation(kind === "directory")
     else void importSelection(kind)
   }, [additionRequest])
-  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creation !== null || directoryForm !== null
+  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
   return <Section sheet={{
-    isPresented: directoryForm !== null || creation !== null,
-    onChanged: (presented: boolean) => { if (!presented) { cancelDirectoryForm(); cancelCreation() } },
-    content: creation ? <NameInputSheet key={creation.directory ? "create-directory" : "create-file"} title={creation.directory ? "创建目录" : "创建文件"} initialName="" message="添加到仓库工作区根目录。不覆盖同名目标；文件初始为空，扩展名不限；空目录仅在当前会话可见，Git 不跟踪。" busy={busy} error={creationError} onCancel={cancelCreation} onConfirm={confirmCreation} /> : directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
+    isPresented: directoryForm !== null,
+    onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
+    content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
   }} header={<HStack frame={{ maxWidth: Infinity }}>
     <Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
     <Menu label={<Image systemName="plus" />} disabled={additionDisabled}>
@@ -390,6 +374,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }
