@@ -39,16 +39,16 @@ interface DiffColors {
  * 颜色取自 GitHub Primer `diffBlob` token
  * @see https://primer.style/product/getting-started/react/theme-reference/
  * light: line #e6ffec / #ffebe9，word #abf2bc / rgba(255,129,130,0.4)
- * dark:  line #2ea04326 / #f8514926，word #2ea04366 / #f8514966
+ * dark: 深色实底 line #203b27 / #422b2b，word #285438 / #683936
  */
 function diffPalette(isDark: boolean, explicit = true): DiffColors {
   return {
-    // dark 行底 alpha 从 GitHub 0.15 提到 0.22（OLED 纯黑更可辨）
-    addBg: (isDark ? "rgba(46, 160, 67, 0.22)" : "#e6ffec") as ShapeStyle,
-    delBg: (isDark ? "rgba(248, 81, 73, 0.22)" : "#ffebe9") as ShapeStyle,
-    addInlineBg: (isDark ? "rgba(46, 160, 67, 0.48)" : "#abf2bc") as ShapeStyle,
+    // 夜间采用更深的红绿实底，避免透明叠加受容器背景影响。
+    addBg: (isDark ? "#203b27" : "#e6ffec") as ShapeStyle,
+    delBg: (isDark ? "#422b2b" : "#ffebe9") as ShapeStyle,
+    addInlineBg: (isDark ? "#285438" : "#abf2bc") as ShapeStyle,
     delInlineBg: (isDark
-      ? "rgba(248, 81, 73, 0.48)"
+      ? "#683936"
       : "rgba(255, 129, 130, 0.4)") as ShapeStyle,
     skipBg: (isDark
       ? "rgba(120, 130, 150, 0.22)"

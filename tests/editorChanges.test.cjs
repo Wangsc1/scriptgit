@@ -78,7 +78,7 @@ async function main(){
  const standard=mount(DiffViewer,{diff:sample});assert.ok(all(expand(standard.tree)).some(n=>n.props.frame?.width===28));compact.unmount();standard.unmount()
  const darkView=mount(DiffViewer,{diff:sample,compact:true,appearance:'dark'})
  const darkNodes=all(expand(darkView.tree))
- for(const bg of ['rgba(46, 160, 67, 0.22)','rgba(248, 81, 73, 0.22)','rgba(46, 160, 67, 0.48)'])assert.ok(darkNodes.some(n=>n.props.background===bg))
+ for(const bg of ['#203b27','#422b2b','#285438'])assert.ok(darkNodes.some(n=>n.props.background===bg))
  assert.ok(darkNodes.some(n=>n.props.foregroundStyle==='#ffffff'))
  assert.equal(darkNodes.some(n=>['#e6ffec','#ffebe9'].includes(n.props.background)),false)
  darkView.unmount()
@@ -87,7 +87,7 @@ async function main(){
  const nativeView=mount(DiffViewer,{diff:sample,compact:true,nativeAppearance:true})
  const nativeNodes=all(expand(nativeView.tree))
  assert.ok(nativeNodes.some(n=>n.props.foregroundStyle?.dark==='#ffffff'&&n.props.foregroundStyle?.light==='#24292f'))
- for(const [light,dark] of [['#e6ffec','rgba(46, 160, 67, 0.22)'],['#ffebe9','rgba(248, 81, 73, 0.22)'],['#abf2bc','rgba(46, 160, 67, 0.48)']]){
+ for(const [light,dark] of [['#e6ffec','#203b27'],['#ffebe9','#422b2b'],['#abf2bc','#285438']]){
   assert.ok(nativeNodes.some(n=>n.props.background?.light===light&&n.props.background?.dark===dark))
  }
  assert.equal(nativeNodes.some(n=>n.props.foregroundStyle==='#24292f'),false)
