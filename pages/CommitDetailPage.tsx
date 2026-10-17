@@ -1,15 +1,22 @@
 import {
   List,
+  Picker,
   Section,
   Text,
   HStack,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "scripting"
 import type { CommitDetail } from "../types/git"
 import { buildFileTree } from "../utils/fileTree"
 import { getCommitDetail } from "../services/gitService"
 import { CommitFileTreeNode } from "../components/CommitFileTree"
+import { CommitChangesSections } from "../components/CommitChangesView"
+import { ImageViewer } from "../components/ImageViewer"
+import { getCommitFileDiff } from "../services/diffService"
+import { CommitChangesLoader } from "../utils/commitChanges"
 import { AvatarView } from "../components/AvatarView"
 import { resolvedGitAuthorAvatarUrl } from "../utils/github"
 import { getCommitAvatarUrls } from "../api/githubApi"
@@ -34,12 +41,17 @@ export function CommitDetailPage({
   const [detail, setDetail] = useState<CommitDetail | null>(null)
   const [githubAvatarUrl, setGithubAvatarUrl] = useState("")
   const [error, setError] = useState<string | null>(null)
+  // 默认保持原有「文件」视图；「更改」仅在切换后才开始读取 diff
+  const [mode, setMode] = useState<"changes" | "files">("files")
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const loaderRef = useRef<CommitChangesLoader | null>(null)
 
   // 必须随 oid 变化重新拉取；导航 content 复用时 [] 会一直显示首次打开的提交
   useEffect(() => {
     const token = { cancelled: false }
     setDetail(null)
     setError(null)
+    setMode("files")
     getCommitDetail(bookmarkName, oid, token)
       .then((next) => {
         if (!token.cancelled) setDetail(next)
@@ -49,8 +61,23 @@ export function CommitDetailPage({
       })
     return () => {
       token.cancelled = true
+      // 离开或切换提交：释放旧加载器，迟到的 diff 结果不再写入
+      loaderRef.current?.dispose()
+      loaderRef.current = null
     }
   }, [bookmarkName, oid])
+
+  const loader = useMemo(() => {
+    loaderRef.current?.dispose()
+    loaderRef.current = null
+    if (!detail) return null
+    const next = new CommitChangesLoader(
+      detail.files.map((file) => file.filepath),
+      (filepath) => getCommitFileDiff(bookmarkName, detail.oid, detail.parentOid, filepath)
+    )
+    loaderRef.current = next
+    return next
+  }, [detail, bookmarkName])
 
   useEffect(() => {
     setGithubAvatarUrl("")
@@ -80,6 +107,15 @@ export function CommitDetailPage({
       navigationTitle={title}
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"
+      fullScreenCover={{
+        isPresented: previewUrl != null,
+        onChanged: (isPresented: boolean) => {
+          if (!isPresented) setPreviewUrl(null)
+        },
+        content: previewUrl ? (
+          <ImageViewer key={previewUrl} url={previewUrl} onClose={() => setPreviewUrl(null)} />
+        ) : <></>,
+      }}
     >
       {error ? (
         <Section>
@@ -124,6 +160,27 @@ export function CommitDetailPage({
               {detail.parentOid ? shortOid(detail.parentOid) : "根提交"}
             </Text>
           </Section>
+          <Section>
+            <Picker
+              title="视图"
+              value={mode}
+              onChanged={(value: string) => setMode(value === "changes" ? "changes" : "files")}
+              pickerStyle="segmented"
+            >
+              <Text tag="changes">更改</Text>
+              <Text tag="files">文件</Text>
+            </Picker>
+          </Section>
+          {mode === "changes" && loader ? (
+            <CommitChangesSections
+              key={detail.oid}
+              loader={loader}
+              bookmarkName={bookmarkName}
+              oid={detail.oid}
+              parentOid={detail.parentOid}
+              onOpenImage={setPreviewUrl}
+            />
+          ) : (
           <Section header={<Text>文件变更（{detail.files.length}）</Text>}>
             {detail.files.length === 0 ? (
               <Text foregroundStyle={COLOR_SECONDARY_LABEL}>没有文件变更</Text>
@@ -141,6 +198,7 @@ export function CommitDetailPage({
               ))
             )}
           </Section>
+          )}
         </>
       )}
     </List>
