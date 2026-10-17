@@ -121,7 +121,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [dragStatus, setDragStatus] = useState("")
-  const [importStatus, setImportStatus] = useState("")
   // Ref-only bounded trace: native drag callbacks never set state or dispatch UI work for diagnostics.
   const dragTrace = useRef({ entries: [] as string[], counts: newDragCounts(), lastCallback: "", lastDecision: "" })
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
@@ -467,7 +466,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     let enteredWrite = false
     let failure = ""
     try {
-      await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError(""); setImportStatus("") } })
+      await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
       const expectedRoot = await localImportStep("工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       if (!state.current.alive) return
       if (kind !== "import-directory") {
@@ -484,7 +483,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           setDeleted(previous => previous.filter(path => !paths.includes(path)))
           setRenamedFiles(previous => previous.filter(entry => !paths.includes(entry.path)))
           setCopied(previous => [...previous.filter(entry => !paths.includes(entry.path)), ...paths.map(path => ({ path, before: changes }))])
-          setImportStatus(localImportBatchSummary(result))
+          const failure = localImportBatchSummary(result)
+          if (failure) setError(failure)
         })
         // Exactly one requested refresh for the whole batch, including partial
         // writes; refresh failure must never trigger a second copy or scan.
@@ -579,7 +579,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     </Menu>
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {importStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{importStatus}</Text> : null}
     {dragStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{dragStatus}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
     {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}

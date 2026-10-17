@@ -36,13 +36,10 @@ async function main(){
  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();let destination=h.tree.props.fullScreenCover[1]
  assert.equal(h.tree.props.fullScreenCover[0].isPresented,false,'image uses its own cover entry, editor entry stays closed');assert.equal(destination.isPresented,true)
- assert.equal(destination.content.type,'LocalImagePreview');assert.deepEqual(destination.content.props.file.previewImage,{nativeThumbnail:true});assert.equal(destination.content.props.bookmarkName,'repo');assert.ok(!all(destination.content).some(n=>n.type==='LocalFileEditor'))
- const firstImageSession=destination.content.props.sessionId,oldReload=destination.content.props.onReload
- destination.content.props.onReload({...file,previewImage:{nativeThumbnail:'refreshed'},text:null});h.render();destination=h.tree.props.fullScreenCover[1]
- assert.equal(destination.isPresented,true);assert.ok(destination.content.props.sessionId>firstImageSession);assert.equal(destination.content.props.file.previewImage.nativeThumbnail,'refreshed')
+ assert.equal(destination.content.type,'LocalImagePreview');assert.deepEqual(destination.content.props.file.previewImage,{nativeThumbnail:true});assert.equal(destination.content.props.onReload,undefined,'no refresh wiring');assert.ok(!all(destination.content).some(n=>n.type==='LocalFileEditor'))
+ const firstImageSession=destination.content.props.sessionId
  assert.equal(skippedReloads,0,'sheet does not push/pop the underlying page; no reload skip needed')
  destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false);assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
- oldReload({...file,previewImage:{nativeThumbnail:'stale'},text:null});h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false,'stale refresh cannot reopen popped image')
  assert.equal(mergeLoads,0);assert.equal(closedOtherPages,0,'image dismiss does not close or refresh unrelated routes')
  for(let i=0;i<3;i++){
   tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();destination=h.tree.props.fullScreenCover[1]
@@ -50,8 +47,8 @@ async function main(){
   destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false)
  }
  nav.isPresented=true;h.render();assert.equal(h.tree.props.navigationDestination.content.type,'RepoDetailDestination');h.tree.props.navigationDestination.onChanged(false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
- tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountReload=h.tree.props.fullScreenCover[1].content.props.onReload
- h.unmount();afterUnmountReload({...file,previewImage:{nativeThumbnail:true},text:null});assert.equal(h.lateWrites,0)
+ tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountClose=h.tree.props.fullScreenCover[1].content.props.onClose
+ h.unmount();afterUnmountClose();assert.equal(h.lateWrites,0)
  const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(<View \/>\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
  for(const name of ['pages/FilesTab.tsx','pages/LocalFileEditor.tsx','services/git/localFileService.ts'])assert.doesNotMatch(fs.readFileSync(root+'/'+name,'utf8'),/Script.exit|Navigation.present/)
  // Capture actual WebView HTML for local/default modes; do not pretend to render native WebKit.

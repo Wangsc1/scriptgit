@@ -489,7 +489,7 @@ async function main(){
   const originalCopy=FileManager.copyFile;FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('UI disk full')}
   fs.writeFileSync(outside+'/ui-partial.bin','original');selected=[outside+'/ui-partial.bin'];const partialRefresh=updates
   try{await dispatch('导入文件')}finally{FileManager.copyFile=originalCopy}
-  assert.match(text(h),/成功0\/跳过0\/失败1[\s\S]*ui-partial.bin：原生复制\/核对失败.*部分导入/);assert.ok(!text(h).includes(outside),'no private source path in batch summary');assert.ok(updates>partialRefresh);assert.equal(fs.readFileSync(dir+'/ui-partial.bin','utf8'),'partial');assert.equal(fs.readFileSync(outside+'/ui-partial.bin','utf8'),'original')
+  assert.match(text(h),/未导入任何文件[\s\S]*ui-partial.bin：原生复制\/核对失败.*部分导入/);assert.doesNotMatch(text(h),/成功\d|批量导入结果/);assert.ok(!text(h).includes(outside),'no private source path in batch summary');assert.ok(updates>partialRefresh);assert.equal(fs.readFileSync(dir+'/ui-partial.bin','utf8'),'partial');assert.equal(fs.readFileSync(outside+'/ui-partial.bin','utf8'),'original')
   selectedDirectory=outside+'/UI Partial Directory';fs.mkdirSync(selectedDirectory);fs.writeFileSync(selectedDirectory+'/file','original');const dirRefresh=updates
   FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('directory disk full')}
   try{await dispatch('导入目录')}finally{FileManager.copyFile=originalCopy}

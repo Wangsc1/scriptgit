@@ -243,9 +243,8 @@ export function RepoDetailPage({
         // modal dismissal motion; no custom drag/edge gesture is installed.
         isPresented: localImage !== null,
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
-        content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} bookmarkName={bookmarkName} file={localImage.file}
-          onClose={() => closeLocalImage(localImage.id)}
-          onReload={file => { if (activeImage.current === localImage.id) openLocalFile(file) }} /> : <Text>加载中…</Text>,
+        content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} file={localImage.file}
+          onClose={() => closeLocalImage(localImage.id)} /> : <Text>加载中…</Text>,
       }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"

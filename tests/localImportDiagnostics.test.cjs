@@ -40,8 +40,8 @@ async function runCase(nextMode,pattern){
  const h=mount(FilesTab,{files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onWorktreeChanged:async()=>{refreshes++;if(mode==='refresh')throw Error(timerText)}},{effectUpdates:true})
  all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title==='导入图片').props.action();h.render()
  for(let i=0;i<100;i++){await tick();h.render();if(!all(h.tree.props.header).find(n=>n.type==='Menu').props.disabled)break}
- const errors=all(h.tree).filter(n=>n.type==='Text'&&(n.props.foregroundStyle==='red'||(mode==='load'||mode==='cleanup')&&n.children.join(' ').includes('成功'))).map(n=>n.children.join(' ')).join('\n')
- assert.match(errors,pattern);if(mode==='load')assert.match(errors,/成功0\/跳过0\/失败1/);if(mode==='cleanup')assert.match(errors,/成功1\/跳过0\/失败0/);if(mode!=='load'&&mode!=='cleanup')assert.ok(errors.includes(timerText),'original error must survive phase wrapping outside privacy-safe photo candidate diagnostics')
+ const errors=all(h.tree).filter(n=>n.type==='Text'&&n.props.foregroundStyle==='red').map(n=>n.children.join(' ')).join('\n')
+ assert.match(errors,pattern);assert.doesNotMatch(errors,/成功\d|批量导入结果/);if(mode!=='load'&&mode!=='cleanup')assert.ok(errors.includes(timerText),'original error must survive phase wrapping outside privacy-safe photo candidate diagnostics')
  assert.ok(initiation.every(([,flag])=>flag===true),'every separate native/writer initiation explicitly calls the documented API')
  if(mode==='photos'||mode==='load')assert.equal(refreshes,0,'pre-write picker errors must not be masked by a needless refresh')
  assert.equal(coordinator.isWriting('repo'),false);h.unmount();return errors
@@ -51,7 +51,7 @@ async function mainTest(){
  const file=await runCase('load',/registeredTypes=.*public.png.*loadFilePath异常/);assert.ok(!file.includes('/owned-temporary/'))
  await runCase('write',/批量文件写入\/协调锁.*StatusCoordinator\.writeWaitTimer.*Timer requires/)
  await runCase('refresh',/导入:批量刷新改动.*Timer requires/)
- await runCase('cleanup',/临时副本清理失败1/)
+ await runCase('cleanup',/临时副本清理失败/)
  assert.ok(dispatchCalls>0)
  // Actual timer sites reject with exact source labels, not swallowed/hung scans.
  mode='';global.setTimeout=()=>{throw Error(timerText)}
