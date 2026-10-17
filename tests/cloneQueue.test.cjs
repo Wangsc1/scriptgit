@@ -175,7 +175,7 @@ async function main(){
     await node(h,'Button','批量克隆所选 1 个仓库').props.action();assert.equal(e.clones.length,0);assert.match(confirmation.title,/1/);assert.match(confirmation.message,/\/cloud\/Scripting\/git/)
     global.Dialog.confirm=async()=>true;await node(h,'Button','批量克隆所选 1 个仓库').props.action()
     assert.equal(e.rows.length,1);assert.equal(registered[0][1],true);assert.match(text(h),/成功 1/);assert.match(text(h),/bob\/b/)
-    await node(h,'Button','更改目录').props.action();assert.match(text(h),/\/external\/git/);h.unmount()
+    await node(h,'Button','更改目录').props.action();assert.ok(e.fm.files.has('/external/git'));assert.ok(!text(h).includes('/external/git'));h.unmount()
   })
   await test('UI single clone uses same default without directory picker and keeps original completion callback behavior',async()=>{
     const e=env(),registered=[];const h=mount(page(e),{onCloned:(...args)=>registered.push(args)});await tick()

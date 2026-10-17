@@ -163,10 +163,9 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>} footer={<Text>每个仓库保存到 git/&lt;repo&gt;。更改目录时请选择父目录，其下自动创建 git。默认不会落回本地文稿。</Text>}>
-      <Text>{rootLabel}</Text>
       {directoryError ? <Text foregroundStyle="red">{directoryError}</Text> : null}
+      <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
-      <Button title="使用默认 iCloud/Scripting/git / 重试" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} />
     </Section>
     <Section header={<Text>单个仓库</Text>}>
       <FormRow label="Git URL" prompt="https://github.com/user/repo.git" value={url} onChanged={setUrl} />
