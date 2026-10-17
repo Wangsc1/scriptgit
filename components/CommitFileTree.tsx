@@ -29,8 +29,10 @@ export function CommitFileTreeNode({
   bookmarkName,
   oid,
   parentOid,
+  commitDetailStyle = false,
 }: {
   node: FileTreeNode
+  commitDetailStyle?: boolean
   statusByPath: Map<string, "added" | "modified" | "deleted">
   bookmarkName: string
   /** 新版本所在提交（diff 的新侧） */
@@ -43,7 +45,7 @@ export function CommitFileTreeNode({
       <DisclosureGroup
         label={
           <HStack alignment="center" spacing={10}>
-            <Image systemName="folder" foregroundStyle={COLOR_ACCENT} />
+            <Image systemName="folder" foregroundStyle={commitDetailStyle ? COLOR_SECONDARY_LABEL : COLOR_ACCENT} />
             <Text foregroundStyle={COLOR_LABEL}>{node.name}</Text>
           </HStack>
         }
@@ -56,6 +58,7 @@ export function CommitFileTreeNode({
             bookmarkName={bookmarkName}
             oid={oid}
             parentOid={parentOid}
+            commitDetailStyle={commitDetailStyle}
           />
         ))}
       </DisclosureGroup>
@@ -82,9 +85,9 @@ export function CommitFileTreeNode({
       }
     >
       <HStack spacing={10}>
-        <Text font="headline" foregroundStyle={color}>
+        {!(commitDetailStyle && status === "modified") ? <Text font="headline" foregroundStyle={color}>
           {label}
-        </Text>
+        </Text> : null}
         <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
         <Text foregroundStyle={COLOR_LABEL} lineLimit={2}>
           {node.name}

@@ -133,6 +133,7 @@ export function CommitDetailPage({
                   key={node.path}
                   node={node}
                   statusByPath={statusByPath}
+                  commitDetailStyle
                   bookmarkName={bookmarkName}
                   oid={detail.oid}
                   parentOid={detail.parentOid}
