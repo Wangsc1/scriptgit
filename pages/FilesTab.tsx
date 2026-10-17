@@ -30,28 +30,25 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     const metaParts: string[] = []
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
     if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
+    // trailing 操作从右侧向内排列：视觉从左到右为 删除 / 提交 / 还原。
     const swipeActions: any[] = []
     if (change && !deleted) {
       swipeActions.push(<Button
+        key="restore"
+        title="还原"
+        tint="systemOrange"
+        action={() => onRestore(node.path)}
+        disabled={busy || mergeInProgress}
+      />)
+      swipeActions.push(<Button
         key="push"
         title="提交"
-        systemImage="arrow.up.circle"
         tint="systemGreen"
         action={() => onPush()}
         disabled={busy || mergeInProgress}
       />)
     }
-    if (change && !deleted) {
-      swipeActions.push(<Button
-        key="restore"
-        title="还原"
-        systemImage="arrow.uturn.backward.circle"
-        tint="systemOrange"
-        action={() => onRestore(node.path)}
-        disabled={busy || mergeInProgress}
-      />)
-    }
-    swipeActions.push(<Button key="delete" title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
+    swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
       <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
