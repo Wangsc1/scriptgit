@@ -420,14 +420,11 @@ export function RepoDetailPage({
         onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
         loading={data.loading}
         mergeInProgress={data.mergeInProgress}
-        onOpenCommitForm={worktree.openCommitForm}
+        onPush={handlePush}
+        onRestore={worktree.handleRestore}
         committing={worktree.committing}
         stagingBusy={worktree.stagingBusy}
         stashBusy={worktree.stashBusy}
-        onStage={worktree.handleStage}
-        onUnstage={worktree.handleUnstage}
-        onStageAll={worktree.handleStageAll}
-        onUnstageAll={worktree.handleUnstageAll}
         onCreateStash={worktree.handleCreateStash}
         onApplyStash={worktree.handleApplyStash}
         onDropStash={worktree.handleDropStash}

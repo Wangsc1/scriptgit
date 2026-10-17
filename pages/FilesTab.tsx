@@ -1,9 +1,9 @@
-import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, Spacer, useRef, useState, useEffect, useMemo } from "scripting"
+import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE, COLOR_RED } from "../constants/colors"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
 import type { FileChange } from "../types/git"
 
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
@@ -20,8 +20,8 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
   }
 }
 
-/** 文件内容摘要已移除：列表下方仅显示文件大小与修改日期 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onStage, onUnstage, worktreeBusy, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onStage: (filepath: string) => void | Promise<void>; onUnstage: (filepath: string) => void | Promise<void>; worktreeBusy: boolean; mergeInProgress: boolean }) {
+/** 文件列表：左滑 提交(push)/还原/删除 */
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -31,14 +31,24 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
     if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
     const swipeActions: any[] = []
+    if (!deleted) {
+      swipeActions.push(<Button
+        key="push"
+        title="提交"
+        systemImage="arrow.up.circle"
+        tint="systemGreen"
+        action={() => onPush()}
+        disabled={busy || mergeInProgress}
+      />)
+    }
     if (change && !deleted) {
       swipeActions.push(<Button
-        key="stage"
-        title={change.unstaged ? "暂存" : "取消暂存"}
-        systemImage={change.unstaged ? "plus.circle" : "minus.circle"}
-        tint={change.unstaged ? "systemBlue" : "systemRed"}
-        action={() => change.unstaged ? onStage(node.path) : onUnstage(node.path)}
-        disabled={worktreeBusy || mergeInProgress}
+        key="restore"
+        title="还原"
+        systemImage="arrow.uturn.backward.circle"
+        tint="systemOrange"
+        action={() => onRestore(node.path)}
+        disabled={busy || mergeInProgress}
       />)
     }
     swipeActions.push(<Button key="delete" title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
@@ -62,21 +72,16 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
   </HStack>}>
-    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
+    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onOpenCommitForm, committing, stagingBusy, onStage, onUnstage, onStageAll, onUnstageAll, mergeInProgress }: {
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress }: {
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
-  onOpenCommitForm: () => void
-  committing: boolean
-  stagingBusy: boolean
-  onStage: (filepath: string) => void | Promise<void>
-  onUnstage: (filepath: string) => void | Promise<void>
-  onStageAll: () => void | Promise<void>
-  onUnstageAll: () => void | Promise<void>
+  onPush: () => void | Promise<void>
+  onRestore: (filepath: string) => void
   mergeInProgress: boolean
 }) {
   const [busy, setBusy] = useState(false)
@@ -162,29 +167,12 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
 
-  const hasUnstaged = changes.some((change) => change.unstaged)
-  const hasStaged = changes.some((change) => change.staged)
-  const worktreeBusy = stagingBusy
-  const bulkDisabled = loading || worktreeBusy || committing || mergeInProgress || (!hasUnstaged && !hasStaged)
-  const canUnstageAll = hasStaged && !hasUnstaged
-  const bulkAction = canUnstageAll ? onUnstageAll : onStageAll
-  const bulkTitle = stagingBusy ? "处理中…" : canUnstageAll ? "取消暂存" : "全部暂存"
-  const bulkSystemImage = stagingBusy ? null : canUnstageAll ? "minus.circle" : "plus.circle"
-  const bulkTint = bulkDisabled ? COLOR_SECONDARY_LABEL : canUnstageAll ? COLOR_RED : COLOR_ACCENT
-
   // 树只随文件列表或元数据变化重建，避免滑动时反复构建
   const tree = useMemo(() => buildFileTree(visibleFiles, { metadata }), [visibleFiles, metadata])
 
-  return <>
-    <Section header={<HStack alignment="center"><Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer /><Button action={bulkAction} disabled={bulkDisabled} tint={bulkTint}><HStack alignment="center" spacing={4}>{bulkSystemImage ? <Image systemName={bulkSystemImage} font="caption" foregroundStyle={bulkTint} /> : null}<Text font="caption" foregroundStyle={bulkTint}>{bulkTitle}</Text></HStack></Button></HStack>}>
-      {error ? <Text foregroundStyle="red">{error}</Text> : null}
-      {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-      {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || worktreeBusy || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
-    </Section>
-    {hasStaged ? (
-      <Section>
-        <Button title={committing ? "提交中…" : "提交改动"} systemImage="checkmark.circle" action={onOpenCommitForm} disabled={committing || worktreeBusy || mergeInProgress} />
-      </Section>
-    ) : null}
-  </>
+  return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
+    {error ? <Text foregroundStyle="red">{error}</Text> : null}
+    {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
+  </Section>
 }

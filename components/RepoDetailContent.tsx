@@ -52,14 +52,11 @@ export function RepoDetailTabContent({
   trackedFiles,
   loading,
   mergeInProgress,
-  onOpenCommitForm,
   committing,
   stagingBusy,
   stashBusy,
-  onStage,
-  onUnstage,
-  onStageAll,
-  onUnstageAll,
+  onPush,
+  onRestore,
   onCreateStash,
   onApplyStash,
   onDropStash,
@@ -88,14 +85,11 @@ export function RepoDetailTabContent({
   trackedFiles: string[]
   loading: boolean
   mergeInProgress: boolean
-  onOpenCommitForm: () => void
   committing: boolean
   stagingBusy: boolean
   stashBusy: boolean
-  onStage: (filepath: string) => void | Promise<void>
-  onUnstage: (filepath: string) => void | Promise<void>
-  onStageAll: () => void | Promise<void>
-  onUnstageAll: () => void | Promise<void>
+  onPush: () => void | Promise<void>
+  onRestore: (filepath: string) => void
   onCreateStash: () => void | Promise<void>
   onApplyStash: (entry: StashEntry) => void | Promise<void>
   onDropStash: (entry: StashEntry) => void
@@ -130,7 +124,7 @@ export function RepoDetailTabContent({
         </Picker>
       </Section>
       {tab === 0 ? (
-        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onOpenCommitForm={onOpenCommitForm} committing={committing} stagingBusy={stagingBusy} onStage={onStage} onUnstage={onUnstage} onStageAll={onStageAll} onUnstageAll={onUnstageAll} mergeInProgress={mergeInProgress} />
+        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}
