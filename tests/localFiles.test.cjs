@@ -13,6 +13,7 @@ global.FileManager={scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,document
  isDirectory:async p=>(await fs.promises.stat(p)).isDirectory(),isFile:async p=>(await fs.promises.stat(p)).isFile(),
  stat:async p=>{const s=await fs.promises.stat(p);return {size:s.size,modificationDate:s.mtimeMs,type:s.isDirectory()?'directory':'file'}},
  readAsData:async p=>new Data(await fs.promises.readFile(p)),writeAsData:async(p,data)=>{writes++;await fs.promises.writeFile(p,data.bytes)},
+ copyFile:async (src,dest)=>fs.promises.copyFile(src,dest,fs.constants.COPYFILE_EXCL),rename:async (src,dest)=>fs.promises.rename(src,dest),
  remove:async p=>{removes++;await fs.promises.unlink(p)},
 }
 global.Device={systemVersion:'26'}
@@ -79,6 +80,62 @@ async function main(){
   await assert.rejects(service.deleteLocalWorktreeFile('repo',file),/写|操作/);gate.resolve();await pendingRead;await saving;assert.ok(coordinator.revision(ctx.gitdir)>start);assert.equal(fs.readFileSync(dir+'/lock.txt','utf8'),'new');assert.equal(scans,0);ctx.git=oldGit
  })
  const Editor=load('pages/LocalFileEditor.tsx').LocalFileEditor
+ await test('image safe data preview, bounded reads, no text Editor payload; native copy/rename keep binary bytes and HEAD/index unchanged',async()=>{
+  const bytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);await disk('photo.png',bytes)
+  const file=await service.openLocalWorktreeFile('repo','photo.png');assert.equal(file.text,null);assert.equal(file.previewUrl,'data:image/png;base64,'+bytes.toString('base64'))
+  assert.equal(await service.copyLocalWorktreeFile('repo',file,'photo 副本.png'),'photo 副本.png');assert.deepEqual(fs.readFileSync(dir+'/photo 副本.png'),bytes);assert.deepEqual(fs.readFileSync(dir+'/photo.png'),bytes)
+  const copy=await service.readLocalWorktreeFile('repo','photo 副本.png');assert.equal(await service.renameLocalWorktreeFile('repo',copy,'renamed.png'),'renamed.png');assert.ok(!fs.existsSync(dir+'/photo 副本.png'));assert.deepEqual(fs.readFileSync(dir+'/renamed.png'),bytes)
+  for(const name of ['../bad','a/b','a\\b','.git','.GIT','','..',' bad','bad.','bad:foo','PHOTO.PNG']) await assert.rejects(service.copyLocalWorktreeFile('repo',file,name),/合法|同名/)
+  await assert.rejects(service.renameLocalWorktreeFile('repo',file,'PHOTO.PNG'),/同名/);await assert.rejects(service.copyLocalWorktreeFile('repo',file,'renamed.png'),/同名/)
+  await disk('photo.png',Buffer.from('outside changed'));await assert.rejects(service.renameLocalWorktreeFile('repo',file,'moved.png'),/修改|变化/);assert.ok(!fs.existsSync(dir+'/moved.png'))
+  await disk('large.png',Buffer.alloc(8*1024*1024+1));await assert.rejects(service.openLocalWorktreeFile('repo','large.png'),/8 MiB/)
+  const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='renamed.png').slice(1),[0,2,0])
+ })
+ await test('copy/rename failures, symlinks, outside changes and real mutation read barrier preserve originals; large binary native copy does not load into JS',async()=>{
+  await disk('native.bin',Buffer.alloc(1024*1024,0xa5));const file=await service.readLocalWorktreeFile('repo','native.bin')
+  const copy=FileManager.copyFile,rename=FileManager.rename,read=FileManager.readAsData
+  FileManager.readAsData=async()=>{throw Error('large binary must not be read into JS')}
+  await service.copyLocalWorktreeFile('repo',file,'native copied.bin');assert.deepEqual(fs.readFileSync(dir+'/native copied.bin'),fs.readFileSync(dir+'/native.bin'));FileManager.readAsData=read
+  FileManager.copyFile=async()=>{throw Error('copy denied')};await assert.rejects(service.copyLocalWorktreeFile('repo',file,'denied.bin'),/copy denied/);assert.ok(fs.existsSync(dir+'/native.bin'));assert.ok(!fs.existsSync(dir+'/denied.bin'));FileManager.copyFile=copy
+  FileManager.rename=async()=>{throw Error('rename denied')};await assert.rejects(service.renameLocalWorktreeFile('repo',file,'denied.bin'),/rename denied/);assert.ok(fs.existsSync(dir+'/native.bin'));FileManager.rename=rename
+  fs.symlinkSync(outside+'/missing',dir+'/dangling.bin');await assert.rejects(service.copyLocalWorktreeFile('repo',file,'dangling.bin'),/同名|存在/);assert.ok(fs.lstatSync(dir+'/dangling.bin').isSymbolicLink())
+  const gate=deferred(),active=coordinator.read(ctx.gitdir,()=>gate.promise);let done=false
+  const pending=service.copyLocalWorktreeFile('repo',file,'barrier.bin').then(()=>done=true);await tick();assert.equal(done,false);assert.ok(!fs.existsSync(dir+'/barrier.bin'))
+  await assert.rejects(service.renameLocalWorktreeFile('repo',file,'blocked.bin'),/写|操作/);gate.resolve();await active;await pending;assert.ok(fs.existsSync(dir+'/barrier.bin'));assert.ok(fs.existsSync(dir+'/native.bin'))
+ })
+ await test('file swipe/context menus: only leaves, cancel preserves row, confirm binary delete, copy/rename prompt/new tree and errors visible',async()=>{
+  await disk('menu.bin',Buffer.from([0,255,1]));let updates=0,opened=null
+  const FilesTab=load('pages/FilesTab.tsx').FilesTab,props={files:['menu.bin','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen:f=>opened=f}
+  const h=mount(FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='HStack'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
+  const action=(name,title)=>all(row(name).props.contextMenu.menuItems).find(n=>n.type==='Button'&&n.props.title===title)
+  const swipe=()=>row('menu.bin').props.trailingSwipeActions.actions[0]
+  assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.trailingSwipeActions,undefined)
+  confirm=false;await swipe().props.action();assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false);assert.equal(updates,0)
+  let next=null;global.Dialog.prompt=async()=>next
+  await action('menu.bin','复制文件').props.action();await action('menu.bin','重命名').props.action();assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(updates,0)
+  next='menu 副本.bin';await action('menu.bin','复制文件').props.action();assert.deepEqual(fs.readFileSync(dir+'/menu 副本.bin'),Buffer.from([0,255,1]));assert.ok(row('menu 副本.bin'));assert.equal(updates,1)
+  next='../bad';await action('menu.bin','重命名').props.action();assert.match(text(h),/合法/);assert.ok(fs.existsSync(dir+'/menu.bin'))
+  next='menu renamed.bin';await action('menu 副本.bin','重命名').props.action();assert.ok(row('menu renamed.bin'));assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.equal(updates,2)
+  // 删除确认期间更改外部内容：拒绝删除，行保留且有可见错误。
+  global.Dialog.confirm=async()=>{await disk('menu.bin','changed');return true};await swipe().props.action();assert.match(text(h),/修改|变化/);assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false)
+  global.Dialog.confirm=async input=>{confirmations.push(input);return confirm};confirm=true;await swipe().props.action();assert.ok(!fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,true);assert.equal(updates,3)
+  // 图片打开仅传预览快照，交由稳定父List路由ImageViewer。
+  await disk('click.png',Buffer.from([137,80,78,71]));props.files.push('click.png');h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.match(opened.previewUrl,/^data:image\/png;base64,/);assert.equal(opened.text,null);h.unmount()
+ })
+ await test('documented Editor lifecycle: single controller across renders, disposal only unmount, initialization failure visible, binary has no controller',async()=>{
+  await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0
+  const props={bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged(){}}
+  const before=controllers.length,h=mount(Editor,props),controller=controllers.at(-1)
+  h.render();h.render();assert.equal(controllers.length,before+1);assert.equal(controller.disposed,undefined);assert.equal(node(h,'Editor').props.controller,controller)
+  await node(h,'Button','关闭').props.action();assert.equal(closed,1);assert.equal(controller.disposed,undefined);h.unmount();assert.equal(controller.disposed,true)
+  const reopened=mount(Editor,props);assert.notEqual(controllers.at(-1),controller);reopened.unmount()
+  const Native=global.EditorController;global.EditorController=class{constructor(){throw Error('native init rejected')}}
+  const failed=mount(Editor,props);assert.match(text(failed),/编辑器初始化失败.*native init rejected/);assert.equal(all(failed.tree).filter(n=>n.type==='Editor').length,0);await node(failed,'Button','关闭').props.action();failed.unmount()
+  const binary=mount(Editor,{...props,file:{...file,text:null,readOnlyReason:'binary'}});assert.equal(all(binary.tree).filter(n=>n.type==='Editor').length,0);assert.doesNotMatch(text(binary),/初始化失败/);binary.unmount();global.EditorController=Native
+ })
  await test('UI save single-flight; errors preserve latest draft; typed-during-save remains dirty; close cancellation/protection and disposal',async()=>{
   await disk('ui.txt','old');const file=await service.readLocalWorktreeFile('repo','ui.txt');let closed=0,changed=0
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++}),controller=controllers.at(-1)
@@ -106,13 +163,12 @@ async function main(){
   await disk('reload.txt','initial');const fresh=await service.readLocalWorktreeFile('repo','reload.txt'),r=mount(Editor,{bookmarkName:'repo',file:fresh,onClose(){},onReload:f=>{assert.equal(f.text,'disk new');reloaded++},onChanged(){}}),c=controllers.at(-1);c.content='draft';await disk('reload.txt','disk new')
   confirm=false;await node(r,'Button','重新加载文件').props.action();assert.equal(reloaded,0);assert.equal(c.content,'draft');confirm=true;await node(r,'Button','重新加载文件').props.action();assert.equal(reloaded,1);r.unmount()
  })
- await test('FilesTab actual tree opens worktree/editor, directory disclosure retained; deleted leaf disabled and refresh callback runs once',async()=>{
-  const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0
-  const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++})
+ await test('FilesTab actual tree dispatches current worktree to parent; directories retained, deleted leaf disabled and opening does not trigger mutation refresh',async()=>{
+  const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0,opened=null
+  const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++,onOpen:file=>opened=file})
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
-  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();const cover=h.tree.props.fullScreenCover;assert.equal(cover.isPresented,true);assert.equal(cover.content.props.file.text,fs.readFileSync(dir+'/a.txt','utf8'))
-  await cover.content.props.onChanged('a.txt',true);h.render();expanded=expand(h.tree);assert.equal(all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt')).props.disabled,true);assert.equal(updates,1);h.unmount()
+  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
  })
  console.log(`\n${count} local data/facade/UI groups passed; real disposable Git repo only, no network/user data.`)
 }

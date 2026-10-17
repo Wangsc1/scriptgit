@@ -5,6 +5,8 @@ export interface LocalWorktreeFile {
   path: string
   text: string | null
   readOnlyReason?: string
+  /** 仅安全读取的本地栅格图片快照；不把任意文件路径交给 WebView。 */
+  previewUrl?: string
   version: { root: string; size: number; modified: number; bytes?: string }
 }
 
@@ -72,4 +74,47 @@ export async function deleteLocalFileInternal(bookmarkName: string, file: LocalW
   const absolute = await checkCurrent(bookmarkName, file)
   // 已严格拒绝目录，绝不向 remove 传入目录或根路径。
   await FileManager.remove(absolute)
+}
+
+/** ImageViewer 用 WebKit 加载已校验快照，不读取 file://，不创建文本 Editor。 */
+export async function readLocalFileForOpenInternal(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
+  const file = await readLocalFileInternal(bookmarkName, path)
+  const mime = ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon" } as Record<string, string>)[path.split(".").pop()?.toLowerCase() || ""]
+  if (!mime) return file
+  if (file.version.size > 8 * 1024 * 1024) throw new Error("图片超过 8 MiB，无法预览；仍可长按复制、重命名或左滑删除")
+  const absolute = await checkCurrent(bookmarkName, file)
+  const data = await FileManager.readAsData(absolute)
+  await checkCurrent(bookmarkName, file)
+  if (data.size !== file.version.size) throw new Error("读取期间图片已变化，请重新打开")
+  return { ...file, text: null, previewUrl: `data:${mime};base64,${data.toBase64String()}` }
+}
+
+function validNewName(name: string): void {
+  if (!name || name !== name.trim() || name === "." || name === ".." || name.toLowerCase() === ".git" || /[\/\\:\x00-\x1f\x7f]/.test(name) || name.endsWith(".") || name.length > 240) throw new Error("请输入合法单文件名（不能含路径、.git、控制字符或结尾空格/点）")
+}
+async function newTarget(bookmarkName: string, file: LocalWorktreeFile, name: string): Promise<{ source: string; target: string; path: string }> {
+  validNewName(name)
+  const source = await checkCurrent(bookmarkName, file)
+  const parent = source.slice(0, source.lastIndexOf("/"))
+  // 一律拒绝大小写/Unicode规范等价重名，包括仅改大小写；不做临时改名以免失败毁原件。
+  const folded = (value: string) => value.normalize("NFC").toLowerCase()
+  const names = await FileManager.readDirectory(parent)
+  if (names.some(entry => folded(entry.split("/").pop() || entry) === folded(name))) throw new Error("同目录已有同名文件（含大小写重名）；不覆盖，仅改大小写不支持")
+  const target = parent + "/" + name
+  if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new Error("目标已存在，未覆盖")
+  // readDirectory/确认期间仍须再次校验源文件及父目录。
+  if (await checkCurrent(bookmarkName, file) !== source) throw new Error("工作区路径已变化")
+  const slash = file.path.lastIndexOf("/")
+  return { source, target, path: (slash < 0 ? "" : file.path.slice(0, slash + 1)) + name }
+}
+export async function copyLocalFileInternal(bookmarkName: string, file: LocalWorktreeFile, name: string): Promise<string> {
+  const { source, target, path } = await newTarget(bookmarkName, file, name)
+  // 原生文件复制保持二进制字节，不把大文件解码或整体加载到 JS 内存。
+  await FileManager.copyFile(source, target)
+  return path
+}
+export async function renameLocalFileInternal(bookmarkName: string, file: LocalWorktreeFile, name: string): Promise<string> {
+  const { source, target, path } = await newTarget(bookmarkName, file, name)
+  await FileManager.rename(source, target)
+  return path
 }

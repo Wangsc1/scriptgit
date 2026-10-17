@@ -10,11 +10,17 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
   const baseline = useRef(file)
   const lock = useRef(false)
   const alive = useRef(true)
-  const controller = useMemo(() => new EditorController({ content: file.text ?? "", ext: extension(file.path), readOnly: !!file.readOnlyReason }), [])
+  const editor = useMemo(() => {
+    // 二进制/超限文件不创建不使用的原生编辑器；构造失败留在页面报告，不逃逸 render。
+    if (file.text === null) return { controller: null, error: "" }
+    try { return { controller: new EditorController({ content: file.text, ext: extension(file.path), readOnly: !!file.readOnlyReason }), error: "" } }
+    catch (e: any) { return { controller: null, error: "编辑器初始化失败：" + String(e?.message || e) } }
+  }, [])
+  const controller = editor.controller
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
-  useEffect(() => () => { alive.current = false; controller.dispose() }, [])
-  const dirty = () => file.text !== null && controller.content !== baseline.current.text
+  useEffect(() => () => { alive.current = false; controller?.dispose() }, [])
+  const dirty = () => controller !== null && controller.content !== baseline.current.text
 
   async function discard(title: string) {
     return !dirty() || await Dialog.confirm({ title, message: "尚未保存的本地草稿将丢失。可取消后复制草稿。", confirmLabel: "放弃草稿" }) === true
@@ -41,6 +47,7 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
         if (alive.current) onClose()
         return
       }
+      if (!controller) throw new Error("编辑器不可用，请关闭后重新打开")
       const text = controller.content
       baseline.current = await saveLocalWorktreeFile(bookmarkName, baseline.current, text)
       if (alive.current) setStatus("已保存到本地工作区，未暂存、未提交。" + (dirty() ? "仍有新的未保存修改。" : ""))
@@ -60,12 +67,13 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
       <Text font="caption">修改仅保存到本地工作区。请到「改动」页手动暂存、提交，再推送。</Text>
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       <HStack>
-        {file.text !== null && !file.readOnlyReason ? <Button title="保存到本地" action={() => operate("save")} disabled={busy} /> : null}
+        {controller !== null && !file.readOnlyReason ? <Button title="保存到本地" action={() => operate("save")} disabled={busy} /> : null}
         <Button title="重新加载文件" action={() => operate("reload")} disabled={busy} />
         <Button title="删除文件" role="destructive" action={() => operate("delete")} disabled={busy} />
       </HStack>
+      {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
-      {file.text !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
+      {controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
     </VStack>
   </NavigationStack>
 }

@@ -22,7 +22,6 @@ import {
   ToolbarItem,
   Button,
   Menu,
-  ProgressView,
   useState,
 } from "scripting"
 import type {
@@ -236,11 +235,8 @@ export function RepoListPage() {
         </Toolbar>
       }
     >
-      {repos.length > 0 ? <Section header={<Text>后台状态刷新</Text>}>
-        <Text>{progress.running ? `正在检查 ${progress.completed}/${progress.total} · ${progress.current || "准备中"}` : `本轮已处理 ${progress.completed}/${progress.total}`}</Text>
+      {repos.length > 0 ? <Section>
         {Object.values(repoRefreshMap).some(item => ["slow", "error", "deferred"].includes(item.phase)) ? <Text foregroundStyle={COLOR_ORANGE}>部分状态尚未确认，已有仓库和功能入口可继续使用；详情见对应仓库行。</Text> : null}
-        <Text font="caption">按 GitHub 最近更新时间从新到旧排列；未知时间排后。</Text>
-        {githubUpdatedProgress.running ? <Text font="caption">GitHub 更新时间刷新 {githubUpdatedProgress.completed}/{githubUpdatedProgress.total}</Text> : null}
         {githubUpdatedProgress.failed > 0 ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>部分 GitHub 更新时间未刷新，保留已有时间缓存。{githubUpdatedProgress.error}</Text> : null}
         <Button title="重试状态刷新" action={() => refreshAll(true)} disabled={progress.running} />
       </Section> : null}
@@ -373,7 +369,7 @@ function RepoRow({
             </HStack>
           ) : null}
         </HStack>
-        {refresh?.message ? <Text font="caption" foregroundStyle={refresh.phase === "error" ? COLOR_RED : COLOR_ORANGE}>{refresh.message}</Text> : null}
+        {refresh?.message && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={refresh.phase === "error" ? COLOR_RED : COLOR_ORANGE}>{refresh.message}</Text> : null}
       </VStack>
       <Spacer />
       {/* 放在 NavigationLink 自带 > 的左侧，整行垂直居中 */}
@@ -391,7 +387,7 @@ function RepoRow({
                 .join(" · ")}
             </Text>
           ) : null}
-          {refresh && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>状态未确认</Text> : refresh ? <ProgressView /> : <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL}>待刷新</Text>}
+          {refresh && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={COLOR_ORANGE}>状态未确认</Text> : null}
         </HStack>
       ) : trailing ? (
         <Text font="caption" foregroundStyle={trailing.color as any}>

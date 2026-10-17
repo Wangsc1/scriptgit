@@ -1,4 +1,5 @@
 import { Button, Picker, Section, Text } from "scripting"
+import type { LocalWorktreeFile } from "../services/gitService"
 import type { CommitEntry, FileChange, StashEntry } from "../types/git"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { ChangesTab } from "../pages/ChangesTab"
@@ -78,6 +79,7 @@ export function RepoDetailTabContent({
   historyLimited,
   githubFullName,
   onWorktreeChanged,
+  onOpenLocalFile,
 }: {
   tab: RepoDetailTab
   onTabChange: (tab: RepoDetailTab) => void | Promise<void>
@@ -113,6 +115,7 @@ export function RepoDetailTabContent({
   historyLoading: boolean
   historyLimited: boolean
   githubFullName: string | null
+  onOpenLocalFile: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
 }) {
   return (
@@ -160,7 +163,7 @@ export function RepoDetailTabContent({
           onDropStash={onDropStash}
         />
       ) : tab === 2 ? (
-        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} />
+        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} />
       ) : (
         <HistoryTab
           log={log}
