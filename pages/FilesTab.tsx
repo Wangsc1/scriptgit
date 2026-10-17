@@ -118,7 +118,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [error, setError] = useState("")
   const [pickerStatus, setPickerStatus] = useState("")
   const [dragStatus, setDragStatus] = useState("")
-  const lastDragStatus = useRef("")
+  const dragTrace = useRef({ entries: [] as string[], pending: false, lastCallback: "", lastDecision: "" })
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -319,12 +319,34 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Repo switches, merge/other operations and unmount invalidate any old capability.
   useEffect(() => { dragSession.current.clear(); return () => dragSession.current.clear() }, [bookmarkName, loading, mergeInProgress, creationActive])
   function dragUnavailable() { return !state.current.alive || state.current.busy || loading || mergeInProgress || creationActive || directoryForm !== null }
+  // Bounded diagnostic trace only: never let rendering/dispatch failure change
+  // the synchronous native callback result or defer provider loading.
   function reportDrag(message: string) {
-    if (lastDragStatus.current === message) return
-    lastDragStatus.current = message
-    void localImportOnMain("拖动阶段提示", () => { if (state.current.alive && lastDragStatus.current === message) setDragStatus(message) }).catch(error => console.error(error))
+    try {
+      const trace = dragTrace.current
+      if (!state.current.alive || trace.entries[trace.entries.length - 1] === message) return
+      trace.entries = [...trace.entries, message].slice(-8)
+      if (trace.pending) return
+      trace.pending = true
+      void localImportOnMain("拖动阶段提示", () => {
+        trace.pending = false
+        if (state.current.alive) setDragStatus(trace.entries.join("\n"))
+      }).catch(() => { trace.pending = false })
+    } catch (_) { /* Diagnostic failure must not affect drag/drop. */ }
+  }
+  function enterDropCallback(name: string): boolean {
+    const trace = dragTrace.current
+    // Suppress the entire repeated callback's routine entry/result pair, not
+    // just adjacent text, so high-frequency dropUpdated cannot cause renders.
+    if (trace.lastCallback === name) return false
+    trace.lastCallback = name
+    reportDrag(`拖动：${name} 入口`)
+    return true
   }
   function dragFile(path: string): ItemProvider {
+    dragTrace.current.entries = []
+    dragTrace.current.lastCallback = ""
+    dragTrace.current.lastDecision = ""
     dragSession.current.clear()
     try {
       if (dragUnavailable() || removed.has(path)) return ItemProvider.fromText("")
@@ -347,33 +369,48 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     // Include the exact text UTI without relying on bridge subtype matching;
     // URL representations are never accepted as workspace paths.
     const types = ["public.utf8-plain-text", "public.plain-text"]
-    const accepts = (info: DropInfo) => {
-      const reason = dragUnavailable() ? "忙碌、合并或表单占用" : deletedDirectories.has(directory) ? "目标目录已删除" :
-        !dragSession.current.eligible(bookmarkName, directory) ? "会话无效、过期、仓库变化或文件已在此目录" :
-        !info.hasItemsConforming(types) ? "文本类型不匹配" : "可接收，松手后移动"
-      reportDrag(`拖动：目录validate → ${reason}`)
+    const accepts = (info: DropInfo, callback: string, record: boolean) => {
+      let reason: string
+      try {
+        reason = dragUnavailable() ? "忙碌、合并或表单占用" : deletedDirectories.has(directory) ? "目标目录已删除" :
+          !dragSession.current.eligible(bookmarkName, directory) ? "会话无效、过期、仓库变化或文件已在此目录" :
+          !info.hasItemsConforming(types) ? "文本类型不匹配" : "可接收，松手后移动"
+      } catch (error: any) {
+        const message = `拖动：${callback}.hasItemsConforming 异常：${String(error?.message || error)}`
+        if (record || dragTrace.current.lastDecision !== message) reportDrag(message)
+        dragTrace.current.lastDecision = message
+        return false
+      }
+      const message = `拖动：${callback} → ${reason}`
+      if (record || dragTrace.current.lastDecision !== message) reportDrag(message)
+      dragTrace.current.lastDecision = message
       return reason === "可接收，松手后移动"
     }
     return {
       types,
-      validateDrop: accepts,
-      dropUpdated: (info: DropInfo) => accepts(info) ? "move" : "forbidden",
-      dropEntered: (info: DropInfo) => { accepts(info) },
+      validateDrop: (info: DropInfo) => accepts(info, "validateDrop", enterDropCallback("validateDrop")),
+      dropUpdated: (info: DropInfo) => accepts(info, "dropUpdated", enterDropCallback("dropUpdated")) ? "move" : "forbidden",
+      dropEntered: (info: DropInfo) => { accepts(info, "dropEntered", enterDropCallback("dropEntered")) },
+      dropExited: (_info: DropInfo) => { enterDropCallback("dropExited") },
       performDrop(info: DropInfo): boolean {
-        if (!accepts(info)) return false
+        const record = enterDropCallback("performDrop")
+        if (!accepts(info, "performDrop", record)) return false
+        let stage = "performDrop.itemProviders"
         try {
           const providers = info.itemProviders(types)
-          reportDrag(`拖动：performDrop已触发，provider数量=${providers.length}`)
+          reportDrag(`拖动：performDrop.itemProviders 返回${providers.length}项`)
           if (providers.length !== 1) { dragSession.current.clear(); return false }
           // Mandatory official lifetime rule: start loading NOW, before returning.
+          stage = "performDrop.loadText"
           const text = providers[0].loadText()
-          reportDrag("拖动：已启动loadText，等待内部凭据校验")
+          reportDrag("拖动：performDrop.loadText 已启动")
           state.current.busy = true
           void finishDrop(text, directory).catch(error => console.error(error))
           return true
         } catch (e: any) {
+          reportDrag(`拖动：${stage} 异常：${String(e?.message || e)}`)
           dragSession.current.clear(); state.current.busy = false
-          void localImportOnMain("拖动UI错误", () => { if (state.current.alive) { setBusy(false); setError(String(e?.message || e)) } }).catch(error => console.error(error))
+          void localImportOnMain("拖动UI错误", () => { if (state.current.alive) { setBusy(false); setError(`[${stage}] ${String(e?.message || e)}`) } }).catch(error => console.error(error))
           return false
         }
       },
