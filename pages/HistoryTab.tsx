@@ -213,14 +213,6 @@ function HistoryRow({
               </Text>
             </HStack>
           </Button>
-          <Button buttonStyle="plain" action={() => onCopy(entry)}>
-            <Image
-              systemName="doc.on.doc"
-              font={11}
-              imageScale="small"
-              foregroundStyle={COLOR_ACCENT}
-            />
-          </Button>
           {/* 常驻 Spacer 撑满行宽，使右侧箭头仍贴行尾 */}
           <Spacer />
         </HStack>
