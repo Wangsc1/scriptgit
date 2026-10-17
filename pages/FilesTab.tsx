@@ -81,10 +81,12 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
     folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
-  return <DisclosureGroup onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} contextMenu={{ menuItems: <>
+  // Target the full-width visible label, not DisclosureGroup's expandable subtree.
+  // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
+  return <DisclosureGroup contextMenu={{ menuItems: <>
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
-  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
+  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
@@ -330,7 +332,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
       const provider = ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
       let types = "未报告"
       try { types = provider.registeredTypes?.join(", ") || "未报告" } catch (_) { /* Diagnostics cannot change a successful drag. */ }
-      reportDrag(`拖动：已开始；源类型=${types}；请在目录行松手（接收public.plain-text）`)
+      reportDrag(`拖动：已开始；源类型=${types}；请在目录行松手（接收public.utf8-plain-text）`)
       return provider
     } catch (e: any) {
       if (state.current.alive) setError(String(e?.message || e))
@@ -341,7 +343,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // The published page gives no minimum app/iOS version; real gesture support
   // (including coexistence with contextMenu) must be checked on the device.
   function dropFolder(directory: string) {
-    const types = ["public.plain-text"]
+    // Device evidence: fromText advertises public.utf8-plain-text + public.url.
+    // Include the exact text UTI without relying on bridge subtype matching;
+    // URL representations are never accepted as workspace paths.
+    const types = ["public.utf8-plain-text", "public.plain-text"]
     const accepts = (info: DropInfo) => {
       const reason = dragUnavailable() ? "忙碌、合并或表单占用" : deletedDirectories.has(directory) ? "目标目录已删除" :
         !dragSession.current.eligible(bookmarkName, directory) ? "会话无效、过期、仓库变化或文件已在此目录" :

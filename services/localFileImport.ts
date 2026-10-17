@@ -28,7 +28,7 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
  * No directory-bookmark overload or silent fallback to an untyped picker.
  */
 export async function pickLocalDirectory(onProgress?: (message: string) => void | Promise<void>): Promise<PickedLocalFile | null> {
-  await onProgress?.("目录选择：入口 pickFiles，types=public.folder；请选目录后点击系统确认按钮")
+  await onProgress?.("目录选择：入口 pickFiles，types=public.folder；进入要导入的文件夹后点击右上角“打开”")
   const paths = await localImportStep("DocumentPicker.pickFiles(public.folder)", () => DocumentPicker.pickFiles({
     types: ["public.folder"], allowsMultipleSelection: false, shouldShowFileExtensions: true,
   }))

@@ -572,7 +572,7 @@ async function main(){
   const gate=deferred();let began=false;const lock=coordinator.mutate(ctx.gitdir,async()=>{began=true;await gate.promise});while(!began)await tick();await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',dir),/其它写操作/);gate.resolve();await lock;fs.unlinkSync(dir+'/drag-link');fs.unlinkSync(dir+'/drag-link-dir')
  })
  await test('actual file onDrag and directory onDrop wiring: authenticated session, synchronous load, move refresh, menu retained, busy/merge/external/cancel guards',async()=>{
-  global.UUID={string:()=>require('node:crypto').randomUUID()};global.ItemProvider={fromText:text=>({loadText:async()=>text})}
+  global.UUID={string:()=>require('node:crypto').randomUUID()};global.ItemProvider={fromText:text=>({registeredTypes:['public.utf8-plain-text','public.url'],loadText:async()=>text})}
   await disk('drag-ui.txt','move bytes');await disk('drag-cancel.txt','cancel bytes');fs.mkdirSync(dir+'/drag-ui-target')
   const props={files:['drag-ui.txt','drag-cancel.txt','drag-ui-target/existing'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onOpen(){},onPush(){},onRestore(){},onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');updates++}}
   let updates=0;const h=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
@@ -580,19 +580,21 @@ async function main(){
   function nodes(){h.render();return all(expand(h.tree))}
   function file(name){return nodes().find(n=>n.type==='Button'&&n.props.onDrag&&JSON.stringify(n.children).includes(name))}
   function folder(){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('drag-ui-target'))}
-  function info(provider){let inScope=true;return {hasItemsConforming:types=>{assert.deepEqual(types,['public.plain-text']);return true},itemProviders:types=>{assert.equal(inScope,true);return [{loadText(){assert.equal(inScope,true,'load must start within performDrop');inScope=false;return provider.loadText()}}]}}}
+  function target(){return folder().props.label}
+  const events=[]
+  function info(provider){let inScope=true;return {hasItemsConforming:types=>{events.push('validate');assert.deepEqual(types,['public.utf8-plain-text','public.plain-text']);assert.equal(types.includes('public.url'),false);return types.some(type=>provider.registeredTypes.includes(type))},itemProviders:types=>{events.push('providers');assert.deepEqual(types,['public.utf8-plain-text','public.plain-text']);assert.equal(inScope,true);return [{loadText(){events.push('load');assert.equal(inScope,true,'load must start within performDrop');inScope=false;return provider.loadText()}}]}}}
   assert.ok(all(file('drag-ui.txt').props.contextMenu.menuItems).some(n=>n.props.title==='重命名'))
-  assert.equal(folder().props.onDrag,undefined);assert.equal(folder().props.onDrop.validateDrop(info(ItemProvider.fromText('external'))),false)
+  assert.equal(folder().props.onDrag,undefined);assert.equal(folder().props.onDrop,undefined);assert.equal(target().type,'HStack');assert.deepEqual(target().props.frame,{maxWidth:Infinity,alignment:'leading'});assert.deepEqual(target().props.contentShape,{kind:'interaction',shape:'rect'});assert.ok(all(folder().props.contextMenu.menuItems).some(n=>n.props.title==='重命名'));assert.equal(target().props.onDrop.validateDrop(info(ItemProvider.fromText('external'))),false)
   const cancelled=file('drag-cancel.txt').props.onDrag.data();await tick();assert.equal(updates,0);assert.equal(fs.existsSync(dir+'/drag-cancel.txt'),true)
-  const provider=file('drag-ui.txt').props.onDrag.data(),drop=folder().props.onDrop;assert.equal(drop.dropUpdated(info(provider)),'move');assert.equal(drop.performDrop(info(provider)),true)
+  const provider=file('drag-ui.txt').props.onDrag.data(),drop=target().props.onDrop;assert.equal(drop.validateDrop(info({registeredTypes:['public.url'],loadText:()=>{throw Error('URL-only representation must not load')}})),false);assert.equal(drop.validateDrop(info(provider)),true);assert.equal(drop.dropUpdated(info(provider)),'move');assert.equal(drop.performDrop(info(provider)),true);assert.deepEqual(events.slice(-3),['validate','providers','load'])
   assert.equal(drop.performDrop(info(provider)),false,'duplicate while busy rejected')
   for(let i=0;i<3000&&updates===0;i++){await new Promise(resolve=>setTimeout(resolve,10));h.render()}h.render();assert.equal(updates,1);assert.equal(fs.existsSync(dir+'/drag-ui.txt'),false);assert.equal(fs.readFileSync(dir+'/drag-ui-target/drag-ui.txt','utf8'),'move bytes')
   assert.ok(props.changes.some(c=>c.filepath==='drag-ui-target/drag-ui.txt'&&c.status==='*added'));folder().props.onChanged(true);assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('已重命名')))
   for(let i=0;i<10;i++){await tick();h.render()}
-  file('drag-cancel.txt').props.onDrag.data();assert.equal(folder().props.onDrop.performDrop(info(ItemProvider.fromText(JSON.stringify({path:'drag-cancel.txt',bookmarkName:'repo'})))),true)
+  file('drag-cancel.txt').props.onDrag.data();assert.equal(target().props.onDrop.performDrop(info(ItemProvider.fromText(JSON.stringify({path:'drag-cancel.txt',bookmarkName:'repo'})))),true)
   for(let i=0;i<20;i++){await tick();h.render()}assert.match(text(h),/外来或过期/);assert.equal(fs.existsSync(dir+'/drag-cancel.txt'),true);assert.equal(updates,1)
-  const stale=file('drag-cancel.txt').props.onDrag.data();props.mergeInProgress=true;assert.equal(folder().props.onDrop,undefined);props.mergeInProgress=false;nodes();assert.equal(folder().props.onDrop.validateDrop(info(stale)),false)
-  file('drag-cancel.txt').props.onDrag.data();props.bookmarkName='other';nodes();assert.equal(folder().props.onDrop.validateDrop(info(cancelled)),false)
+  const stale=file('drag-cancel.txt').props.onDrag.data();props.mergeInProgress=true;assert.equal(target().props.onDrop,undefined);props.mergeInProgress=false;nodes();assert.equal(target().props.onDrop.validateDrop(info(stale)),false)
+  file('drag-cancel.txt').props.onDrag.data();props.bookmarkName='other';nodes();assert.equal(target().props.onDrop.validateDrop(info(cancelled)),false)
   h.unmount();delete global.UUID;delete global.ItemProvider
  })
  console.log(`\n${count} local data/facade/UI groups passed; real disposable Git repo only, no network/user data.`)
