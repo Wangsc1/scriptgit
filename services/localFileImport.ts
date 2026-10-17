@@ -49,32 +49,84 @@ const imageTypes: Record<string, string[]> = {
   "public.tiff": ["tif", "tiff"], "com.microsoft.bmp": ["bmp"], "com.microsoft.ico": ["ico"],
   "public.avif": ["avif"], "public.jpeg-2000": ["jp2"],
 }
+/** System-exported file bytes, not a guarantee of the library asset's format.
+ * Official TF: item_provider/en.md (strict representation + owned temporary copy),
+ * image_io/en.md (readMetadata(path) validates an encoded image without JS Data).
+ */
 export async function pickLocalPhoto(): Promise<PickedLocalFile | null> {
   const filter = await localImportStep("PHPickerFilter.images", () => PHPickerFilter.images())
   const results = await localImportStep("Photos.pick", () => Photos.pick({ filter, limit: 1 }))
   if (!results?.length) return null
-  const provider = await localImportStep("照片itemProvider", () => results[0].itemProvider)
-  const generic = new Set(["public.image", "public.data", "public.content", "public.item", "public.composite-content"])
-  // Prefer the provider's first concrete type. Do not silently request a JPEG
-  // alternative when its original/first representation is an unsupported RAW type.
-  const type = await localImportStep("照片registeredTypes", () => provider.registeredTypes.find(value => !generic.has(value)))
-  const extensions = type ? imageTypes[type] : undefined
-  if (!type || !extensions) throw new Error("照片未提供可识别的原格式文件类型；请使用“导入文件”选择原文件，未转换图片")
-  const sourcePath = await localImportStep("ItemProvider.loadFilePath", () => provider.loadFilePath(type))
-  if (!sourcePath) throw new Error("无法取得照片文件，未导入或转换图片")
-  const exportedName = sourcePath.split("/").pop() || ""
-  const ext = exportedName.split(".").pop()?.toLowerCase() || ""
-  // PHPickerResult has no documented original-filename metadata. Preserve a valid
-  // filename from the concrete exported file; otherwise name it by that concrete UTI.
-  const validName = exportedName && exportedName !== "." && exportedName !== ".." && exportedName === exportedName.trim() &&
-    !/[\\/:\x00-\x1f\x7f]/.test(exportedName) && exportedName.length <= 240 && extensions.includes(ext)
-  const name = validName ? exportedName : `image-${Date.now()}-${Math.random().toString(36).slice(2)}.${extensions[0]}`
-  return {
-    sourcePath, name,
-    async release() {
-      // loadFilePath explicitly returns an owned temporary COPY. Never remove the
-      // original photo or a DocumentPicker path, and never recursively remove directories.
-      if (!(await localImportStep("照片清理.isLink", () => FileManager.isLink(sourcePath))) && await localImportStep("照片清理.isFile", () => FileManager.isFile(sourcePath)) && !(await localImportStep("照片清理.isDirectory", () => FileManager.isDirectory(sourcePath)))) await localImportStep("照片清理.remove", () => FileManager.remove(sourcePath))
-    },
+  let types: string[] = []
+  const failures: string[] = []
+  const diagnostic = () => new Error(`无法取得可命名的系统图片文件；未压缩或转换。registeredTypes=${JSON.stringify(types)}；候选阶段=${failures.join("；")}`)
+  let provider: ItemProvider
+  try {
+    provider = await localImportStep("照片itemProvider", () => results[0].itemProvider)
+    types = await localImportStep("照片registeredTypes", () => [...provider.registeredTypes])
+  } catch (_) { failures.push("itemProvider/registeredTypes读取失败"); throw diagnostic() }
+  const generic = new Set(["public.data", "public.content", "public.item", "public.composite-content"])
+  // Concrete known images first, then the generic image representation. Remaining
+  // private/dynamic identifiers are not assumed to be images: ImageIO must validate.
+  const candidates = [...new Set([
+    ...types.filter(type => !!imageTypes[type] || type === "public.camera-raw-image"),
+    "public.image",
+    ...types.filter(type => !generic.has(type)),
+  ])]
+  async function releaseCopy(path: string): Promise<void> {
+    // Only paths returned by loadFilePath enter here: documented owned copies.
+    if (!(await localImportStep("照片清理.isLink", () => FileManager.isLink(path))) &&
+      await localImportStep("照片清理.isFile", () => FileManager.isFile(path)) &&
+      !(await localImportStep("照片清理.isDirectory", () => FileManager.isDirectory(path)))) {
+      await localImportStep("照片清理.remove", () => FileManager.remove(path))
+    }
   }
+  for (const type of candidates) {
+    let sourcePath: string | null = null
+    let stage = "hasRepresentationConforming"
+    let accepted = false
+    try {
+      if (!(await localImportStep(`照片.${stage}`, () => provider.hasRepresentationConforming(type)))) {
+        failures.push(`${type}:${stage}=false`); continue
+      }
+      stage = "loadFilePath"
+      sourcePath = await localImportStep(`照片.${stage}`, () => provider.loadFilePath(type))
+      if (!sourcePath) { failures.push(`${type}:${stage}=null`); continue }
+      stage = "文件类型检查"
+      if (await localImportStep("照片isLink", () => FileManager.isLink(sourcePath!)) ||
+        !(await localImportStep("照片isFile", () => FileManager.isFile(sourcePath!))) ||
+        await localImportStep("照片isDirectory", () => FileManager.isDirectory(sourcePath!))) {
+        failures.push(`${type}:${stage}失败`); continue
+      }
+      // Container-level validation; no pixel decoding, re-encoding, or whole-file
+      // Data/Uint8Array in JS. Never expose EXIF/GPS or names in diagnostics.
+      stage = "ImageIO.readMetadata"
+      await localImportStep(`照片.${stage}`, () => ImageIO.readMetadata(sourcePath!))
+      stage = "导出文件名/扩展名"
+      const exportedName = sourcePath.split("/").pop() || ""
+      const ext = /\.([a-zA-Z0-9]{1,16})$/.exec(exportedName)?.[1]
+      if (!ext) { failures.push(`${type}:${stage}缺失`); continue }
+      const validName = exportedName !== "." && exportedName !== ".." && exportedName === exportedName.trim() &&
+        !/[\\/:\x00-\x1f\x7f]/.test(exportedName) && exportedName.length <= 240
+      const name = validName ? exportedName : `image-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const ownedPath = sourcePath
+      let released = false
+      accepted = true
+      return { sourcePath: ownedPath, name, async release() {
+        if (released) return
+        await releaseCopy(ownedPath)
+        released = true
+      } }
+    } catch (_) {
+      // Native error strings may contain private paths or asset names. Report
+      // the exact failing API stage and types, not private native error payloads.
+      failures.push(`${type}:${stage}异常`)
+    } finally {
+      if (sourcePath && !accepted) {
+        try { await releaseCopy(sourcePath) }
+        catch (_) { failures.push(`${type}:临时副本清理失败`); throw diagnostic() }
+      }
+    }
+  }
+  throw diagnostic()
 }
