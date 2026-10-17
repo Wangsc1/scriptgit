@@ -171,14 +171,14 @@ export function SettingsPage() {
     try {
       const n = name.trim()
       const e = email.trim()
-      // 允许清空：清空后走默认 scripgit
+      // 允许清空：清空后走默认 scriptgit
       if (!n && !e) {
         await setIdentity({ name: "", email: "" })
-        showAlert("已清除", "将使用默认身份 scripgit / scripgit@local")
+        showAlert("已清除", "将使用默认身份 scriptgit / scriptgit@local")
         return
       }
       if (!n || !e) {
-        showAlert("scripgit", "姓名与邮箱需同时填写，或全部留空使用默认")
+        showAlert("scriptgit", "姓名与邮箱需同时填写，或全部留空使用默认")
         return
       }
       const identity: GitIdentity = { name: n, email: e }
@@ -195,7 +195,7 @@ export function SettingsPage() {
   async function handleSaveToken() {
     const trimmed = token.trim()
     if (!trimmed) {
-      showAlert("scripgit", "请输入 Token")
+      showAlert("scriptgit", "请输入 Token")
       return
     }
     try {
@@ -483,12 +483,12 @@ export function SettingsPage() {
         header={<Text>Git 身份</Text>}
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            不填写则默认使用 scripgit / scripgit@local 提交与拉取合并
+            不填写则默认使用 scriptgit / scriptgit@local 提交与拉取合并
           </Text>
         }
       >
-        <FormRow label="姓名" value={name} prompt="scripgit" onChanged={setName} />
-        <FormRow label="邮箱" value={email} prompt="scripgit@local" onChanged={setEmail} />
+        <FormRow label="姓名" value={name} prompt="scriptgit" onChanged={setName} />
+        <FormRow label="邮箱" value={email} prompt="scriptgit@local" onChanged={setEmail} />
         <Button
           title={savingIdentity ? "保存中…" : "保存身份"}
           action={handleSaveIdentity}

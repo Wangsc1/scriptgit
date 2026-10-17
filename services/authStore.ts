@@ -101,7 +101,7 @@ export async function setIdentity(identity: GitIdentity): Promise<void> {
 
 /**
  * 解析提交/拉取用作者。
- * 优先级：传入 override → 设置页已保存身份 → 默认 scripgit。
+ * 优先级：传入 override → 设置页已保存身份 → 默认 scriptgit。
  * 空字符串视为未填写。
  */
 export async function resolveAuthor(

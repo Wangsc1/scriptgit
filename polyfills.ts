@@ -89,7 +89,7 @@ if (typeof (globalThis as any).TextDecoder === "undefined") {
  */
 export async function loadBufferPolyfill(): Promise<void> {
   const bundlePath =
-    FileManager.scriptsDirectory + "/scripgit/vendor/buffer-bundle.js"
+    FileManager.scriptsDirectory + "/scriptgit/vendor/buffer-bundle.js"
 
   if (!(await FileManager.exists(bundlePath))) {
     throw new Error("buffer-bundle.js 未找到: " + bundlePath)

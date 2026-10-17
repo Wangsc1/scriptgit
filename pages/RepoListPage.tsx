@@ -160,7 +160,7 @@ export function RepoListPage() {
 
   return (
     <List
-      navigationTitle="仓库"
+      navigationTitle="scriptgit"
       navigationBarTitleDisplayMode="large"
       overlay={
         showRemovingOverlay
@@ -183,9 +183,9 @@ export function RepoListPage() {
         onChanged: setShowClone,
         content: (
           <ClonePage
-            onCloned={(repo) => {
+            onCloned={(repo, keepOpen) => {
               appendRepo(repo)
-              setShowClone(false)
+              if (!keepOpen) setShowClone(false)
             }}
           />
         ),

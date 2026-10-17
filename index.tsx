@@ -1,5 +1,5 @@
 /**
- * index.tsx - scripgit 入口
+ * index.tsx - scriptgit 入口
  *
  * TabView：仓库列表 + 设置。
  * present 后 exit 的有限生命周期：关闭页面后释放实例。

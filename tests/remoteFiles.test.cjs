@@ -248,15 +248,16 @@ async function main() {
   })
   await test('metadata identity, release name, import URL, bundle paths and notification launch targets', async () => {
     const meta=JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8'))
-    assert.equal(meta.name,'scripgit'); assert.equal(meta.version,'1.1.0'); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/iamwaa',name:'Waa'})
-    assert.equal(meta.remoteResource.url,'https://github.com/Wangsc1/scripgit')
+    assert.equal(meta.name,'scriptgit'); assert.equal(meta.version,'1.2.0'); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/iamwaa',name:'Waa'})
+    assert.equal(meta.remoteResource.url,'https://github.com/Wangsc1/scriptgit')
     const read=f=>fs.readFileSync(path.join(root,f),'utf8')
-    assert.ok(read('README.md').includes('https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2Fscripgit"]'))
-    assert.ok(read('polyfills.ts').includes('/scripgit/vendor/buffer-bundle.js')); assert.ok(read('services/gitCore.ts').includes('/scripgit/vendor/index.umd.min.js'))
+    assert.ok(read('README.md').includes('https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2Fscriptgit"]'))
+    assert.ok(read('polyfills.ts').includes('/scriptgit/vendor/buffer-bundle.js')); assert.ok(read('services/gitCore.ts').includes('/scriptgit/vendor/index.umd.min.js'))
     assert.ok(!read('services/notifyService.ts').includes('scriptName: "gitgit"'))
     assert.ok(read('pages/RepoListPage.tsx').includes('<GitHubFilesPage />'))
     assert.ok(read('components/RepoDetailDestination.tsx').includes('githubWorkKind === 3'))
   })
   console.log(`\n${count} test groups passed; all GitHub writes mocked; no iOS device validation.`)
 }
-main().catch(e=>{console.error(e);process.exitCode=1})
+module.exports = { load, mount, node, text, all, ui, tick, deferred, http, MockData }
+if (require.main === module) main().catch(e=>{console.error(e);process.exitCode=1})

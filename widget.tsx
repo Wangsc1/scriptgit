@@ -39,7 +39,7 @@ function Header({
         widgetAccentable
       />
       <Text font={15} fontWeight="semibold" foregroundStyle={COLOR_LABEL}>
-        {summary.parameter || "scripgit"}
+        {summary.parameter || "scriptgit"}
       </Text>
       <Spacer />
       {showsUpdatedAt ? (
@@ -216,7 +216,7 @@ function EmptyState({ summary }: { summary: WidgetSummary }) {
         {missing ? "未找到仓库" : "还没有仓库"}
       </Text>
       <Text font={11} foregroundStyle={COLOR_SECONDARY_LABEL} lineLimit={2}>
-        {missing ? "请检查小组件参数中的仓库名" : "在 scripgit 中添加仓库后即可查看状态"}
+        {missing ? "请检查小组件参数中的仓库名" : "在 scriptgit 中添加仓库后即可查看状态"}
       </Text>
     </VStack>
   )
@@ -307,7 +307,7 @@ function AccessoryMetric({ value, label }: { value: number; label: string }) {
 
 function AccessoryWidget({ summary }: { summary: WidgetSummary }) {
   const family = Widget.family
-  const title = summary.parameter || "scripgit"
+  const title = summary.parameter || "scriptgit"
 
   // 单行：与系统组件相同的“改动 / 待推送 / 待拉取”文案
   if (family === "accessoryInline") {

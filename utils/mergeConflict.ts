@@ -146,8 +146,8 @@ export function buildConflictReport(input: {
     "",
     "- 文本冲突文件：删除 `<<<<<<<` / `=======` / `>>>>>>>` 冲突标记，合并代码并保持代码语法正确。",
     "- 删除类冲突（我方删除 · 对方修改 / 对方删除 · 我方修改）：按改动意图决定保留或删除该文件。",
-    "- Git 命令限制：**严禁**执行 `git add`、`git commit`、`git rebase` 或 `git merge --continue`（该目录无 .git，Git 状态由 scripgit 管理）；仅对文件进行编辑/删除操作。",
-    "- 解决完成后，提醒用户在 scripgit 界面点击「标记已解决」及「完成合并提交」。"
+    "- Git 命令限制：**严禁**执行 `git add`、`git commit`、`git rebase` 或 `git merge --continue`（该目录无 .git，Git 状态由 scriptgit 管理）；仅对文件进行编辑/删除操作。",
+    "- 解决完成后，提醒用户在 scriptgit 界面点击「标记已解决」及「完成合并提交」。"
   )
   return lines.join("\n")
 }

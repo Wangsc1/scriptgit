@@ -57,7 +57,7 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
         <Text font="caption">直接提交到所选远端分支，不会同步本地工作区。</Text>
       </>}
       {status ? <Text font="caption" foregroundStyle={status.startsWith("已提交") ? "green" : "red"}>{status}</Text> : null}
-      {file.text !== null ? <Editor controller={controller} scriptName="scripgit" showAccessoryView /> : null}
+      {file.text !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
     </VStack>
   </NavigationStack>
 }

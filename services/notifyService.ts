@@ -56,8 +56,8 @@ export async function notifySync(
       silent: false,
       threadIdentifier: "gitgit-sync",
       interruptionLevel: "active",
-      // 点击通知重新打开 scripgit
-      tapAction: { type: "runScript", scriptName: "scripgit" },
+      // 点击通知重新打开 scriptgit
+      tapAction: { type: "runScript", scriptName: "scriptgit" },
     })
   } catch (e) {
     // 通知失败不应阻断主流程（可能是未授权通知权限）
@@ -85,7 +85,7 @@ export async function notifyError(
       silent: false,
       threadIdentifier: "gitgit-error",
       interruptionLevel: "active",
-      tapAction: { type: "runScript", scriptName: "scripgit" },
+      tapAction: { type: "runScript", scriptName: "scriptgit" },
     })
   } catch (e) {
     console.warn("⚠️ 发送通知失败: " + e)

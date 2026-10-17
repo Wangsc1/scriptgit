@@ -9,6 +9,7 @@
  */
 
 import type { RepoMeta, RepoSnapshot, RepoSource } from "../types/git"
+import { isAppOwnedWorkdir } from "./cloneWorkspace"
 import {
   readRepos,
   writeRepos,
@@ -219,7 +220,7 @@ export async function registerRepoByPath(
   let accessBookmarkName: string | undefined
   if (parentAccessBookmark && pathFromAccessBookmark(parentAccessBookmark)) {
     accessBookmarkName = parentAccessBookmark
-  } else {
+  } else if (!isAppOwnedWorkdir(path)) {
     accessBookmarkName = ensureAccessBookmark(path, repoId) || undefined
   }
 
@@ -473,7 +474,7 @@ export function resolveWorkdir(bookmarkName: string): string {
   }
 
   // 若明文路径可访问但书签缺失，补建书签
-  if (!repo.accessBookmarkName || !pathFromAccessBookmark(repo.accessBookmarkName)) {
+  if (!isAppOwnedWorkdir(dir) && (!repo.accessBookmarkName || !pathFromAccessBookmark(repo.accessBookmarkName))) {
     const repoId = getRepoId(repo)
     const created = ensureAccessBookmark(dir, repoId)
     if (created) {

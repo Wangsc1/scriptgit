@@ -19,7 +19,7 @@ declare const fetch: any
 declare const Data: any
 
 const BUNDLE_PATH =
-  FileManager.scriptsDirectory + "/scripgit/vendor/index.umd.min.js"
+  FileManager.scriptsDirectory + "/scriptgit/vendor/index.umd.min.js"
 
 /** .git 内部文件名（必须精确匹配，禁止 startsWith 误伤工作区 index.ts/config.json） */
 const GIT_INTERNAL_FILES = new Set([

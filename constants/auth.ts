@@ -2,7 +2,7 @@
  * constants/auth.ts - 认证相关常量
  *
  * Keychain key 复用 isomorphic-git 技能的约定值，
- * 用户在技能里配置过的 token 可直接在 scripgit 中复用。
+ * 用户在技能里配置过的 token 可直接在 scriptgit 中复用。
  */
 
 // Keychain 键名（token 等敏感凭据走系统 Keychain）
@@ -14,6 +14,6 @@ export const GITHUB_DEFAULT_USERNAME = "x-access-token"
 
 /** 未配置 user.name / user.email 时的默认提交身份 */
 export const DEFAULT_GIT_IDENTITY = {
-  name: "scripgit",
-  email: "scripgit@local",
+  name: "scriptgit",
+  email: "scriptgit@local",
 } as const

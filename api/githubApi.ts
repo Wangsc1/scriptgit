@@ -139,7 +139,7 @@ async function githubFetch(
     headers,
     body,
     timeout: 20,
-    debugLabel: "scripgit GitHub API",
+    debugLabel: "scriptgit GitHub API",
   })
   if (!res.ok) {
     // 解析 GitHub 返回的错误信息
@@ -425,7 +425,7 @@ export async function checkTokenValidity(): Promise<TokenCheckResult> {
         "X-GitHub-Api-Version": "2022-11-28",
       },
       timeout: 20,
-      debugLabel: "scripgit token check",
+      debugLabel: "scriptgit token check",
     })
     if (res.status === 401 || res.status === 403) {
       let msg = res.status === 401 ? "Token 无效或已过期" : "Token 权限不足或已被撤销"
@@ -648,7 +648,7 @@ export async function getJobLog(
       "X-GitHub-Api-Version": "2022-11-28",
     },
     timeout: 20,
-    debugLabel: "scripgit GitHub Actions log",
+    debugLabel: "scriptgit GitHub Actions log",
   })
   if (!res.ok) {
   if (res.status === 410) throw new Error("日志已过期或已被删除")
@@ -895,4 +895,33 @@ export async function saveRepoTextFile(fullName: string, input: {
     if (e?.status === 409 || e?.status === 422) throw new Error("保存冲突或提交被拒绝：远端文件可能已更新，或分支有保护规则。草稿已保留，请复制草稿后关闭并重新加载比较。" + String(e.message))
     throw e
   }
+}
+
+/** 用户拥有且当前凭据可访问的全部仓库；分页完成才发布列表。 */
+export async function listOwnedRepos(username: string): Promise<GitHubRepo[]> {
+  const login = username.trim()
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(login)) throw new Error("请输入有效 GitHub 用户名")
+  const current = await getCurrentUser()
+  const owned = new Map<string, GitHubRepo>()
+  async function collect(base: string) {
+    for (let page = 1; ; page++) {
+      const data = await ghFetch(`${base}&per_page=100&page=${page}`)
+      if (!Array.isArray(data)) throw new Error("仓库列表响应格式无效")
+      for (const item of data) {
+        if (String(item.owner?.login || String(item.full_name || "").split("/")[0]).toLowerCase() !== login.toLowerCase()) continue
+        const repo = mapRepo(item)
+        owned.set(repo.fullName.toLowerCase(), repo)
+      }
+      if (data.length < 100) break
+    }
+  }
+  if (current.login.toLowerCase() === login.toLowerCase()) {
+    // /users/{user}/repos 只返回公开仓库；本人必须使用认证接口才能含私有仓库。
+    await collect("/user/repos?affiliation=owner&visibility=all&sort=full_name")
+  } else {
+    await collect(`/users/${encodeURIComponent(login)}/repos?type=owner&sort=full_name`)
+    // 补齐本人作为协作者/组织成员可访问、但归目标用户名所有的私有仓库。
+    await collect("/user/repos?affiliation=owner,collaborator,organization_member&visibility=all&sort=full_name")
+  }
+  return Array.from(owned.values()).sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
