@@ -85,10 +85,10 @@ export function CommitFileTreeNode({
       }
     >
       <HStack spacing={10}>
-        {!(commitDetailStyle && status === "modified") ? <Text font="headline" foregroundStyle={color}>
+        {!commitDetailStyle ? <Text font="headline" foregroundStyle={color}>
           {label}
         </Text> : null}
-        <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
+        <Image systemName={commitDetailStyle ? (/\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(node.path) ? "photo" : "doc.text") : "doc"} foregroundStyle={COLOR_SECONDARY_LABEL} />
         <Text foregroundStyle={COLOR_LABEL} lineLimit={2}>
           {node.name}
         </Text>

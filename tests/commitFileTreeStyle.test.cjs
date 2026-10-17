@@ -11,7 +11,7 @@ for(const commitDetailStyle of [true,false]){
  for(const [name,label] of [['a.txt','M'],['b.txt','A'],['c.txt','D']]){
   const row=Tree({...base,commitDetailStyle,node:file(name)})
   const badges=all(row).filter(n=>n.type==='Text'&&n.props.font==='headline')
-  assert.equal(badges.length,commitDetailStyle&&label==='M'?0:1)
+  assert.equal(badges.length,commitDetailStyle?0:1)
   if(badges.length)assert.ok(JSON.stringify(badges[0].children).includes(label))
   assert.equal(row.props.destination.props.filepath,name)
   assert.equal(row.props.destination.props.oid,'new');assert.equal(row.props.destination.props.parentOid,'old')
@@ -19,4 +19,11 @@ for(const commitDetailStyle of [true,false]){
 }
 assert.equal(all(Tree({...base,node:file('a.txt')})).filter(n=>n.type==='Text'&&n.props.font==='headline').length,1)
 assert.match(fs.readFileSync(__dirname+'/../pages/CommitDetailPage.tsx','utf8'),/statusByPath=\{statusByPath\}\s+commitDetailStyle/)
-console.log('PASS commit detail folders gray, modified M hidden recursively; A/D, diff destinations and default comparison style unchanged')
+for(const name of ['a.txt','pic.JPG','nested/a.webp','icon.ico','unsupported.svg']){
+ const row=Tree({...base,commitDetailStyle:true,node:file(name)})
+ const icon=all(row).find(n=>n.type==='Image')
+ assert.equal(icon.props.systemName,/\.(jpg|webp|ico)$/i.test(name)?'photo':'doc.text')
+ assert.equal(icon.props.foregroundStyle,colors.COLOR_SECONDARY_LABEL)
+ assert.equal(all(row).filter(n=>n.type==='Text'&&n.props.font==='headline').length,0)
+}
+console.log('PASS commit detail uses gray photo/doc.text/folder icons and no A/M/D; diff destinations and comparison defaults unchanged')
