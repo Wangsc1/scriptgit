@@ -17,6 +17,7 @@ global.FileManager={temporaryDirectory:tmp,scriptsDirectory:tmp,appGroupDocument
  copyFile:async (src,dest)=>fs.promises.copyFile(src,dest,fs.constants.COPYFILE_EXCL),rename:async (src,dest)=>fs.promises.rename(src,dest),
  remove:async p=>{removes++;await fs.promises.rm(p,{recursive:true})},
 }
+global.UIImage={fromFile:path=>({preparingThumbnail:size=>({nativeThumbnail:true,path,size})})}
 global.Device={systemVersion:'26'}
 global.EditorController=class{constructor(options){Object.assign(this,options);controllers.push(this)}dispose(){this.disposed=true}}
 global.Dialog={confirm:async input=>{confirmations.push(input);return confirm}}
@@ -83,15 +84,15 @@ async function main(){
   await assert.rejects(service.deleteLocalWorktreeFile('repo',file),/写|操作/);gate.resolve();await pendingRead;await saving;assert.ok(coordinator.revision(ctx.gitdir)>start);assert.equal(fs.readFileSync(dir+'/lock.txt','utf8'),'new');assert.equal(scans,0);ctx.git=oldGit
  })
  const Editor=load('pages/LocalFileEditor.tsx').LocalFileEditor
- await test('image safe data preview, bounded reads, no text Editor payload; native copy/rename keep binary bytes and HEAD/index unchanged',async()=>{
+ await test('native path thumbnail preview, no JS image bytes or text Editor payload; native copy/rename keep binary bytes and HEAD/index unchanged',async()=>{
   const bytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);await disk('photo.png',bytes)
-  const file=await service.openLocalWorktreeFile('repo','photo.png');assert.equal(file.text,null);assert.equal(file.previewUrl,'data:image/png;base64,'+bytes.toString('base64'))
+  const file=await service.openLocalWorktreeFile('repo','photo.png');assert.equal(file.text,null);assert.equal(file.previewImage.nativeThumbnail,true);assert.deepEqual(file.previewImage.size,{width:1600,height:1600})
   assert.equal(await service.copyLocalWorktreeFile('repo',file,'photo 副本.png'),'photo 副本.png');assert.deepEqual(fs.readFileSync(dir+'/photo 副本.png'),bytes);assert.deepEqual(fs.readFileSync(dir+'/photo.png'),bytes)
   const copy=await service.readLocalWorktreeFile('repo','photo 副本.png');assert.equal(await service.renameLocalWorktreeFile('repo',copy,'renamed.png'),'renamed.png');assert.ok(!fs.existsSync(dir+'/photo 副本.png'));assert.deepEqual(fs.readFileSync(dir+'/renamed.png'),bytes)
   for(const name of ['../bad','a/b','a\\b','.git','.GIT','','..',' bad','bad.','bad:foo','PHOTO.PNG']) await assert.rejects(service.copyLocalWorktreeFile('repo',file,name),/合法|同名/)
   await assert.rejects(service.renameLocalWorktreeFile('repo',file,'PHOTO.PNG'),/同名/);await assert.rejects(service.copyLocalWorktreeFile('repo',file,'renamed.png'),/同名/)
   await disk('photo.png',Buffer.from('outside changed'));await assert.rejects(service.renameLocalWorktreeFile('repo',file,'moved.png'),/修改|变化/);assert.ok(!fs.existsSync(dir+'/moved.png'))
-  await disk('large.png',Buffer.alloc(8*1024*1024+1));await assert.rejects(service.openLocalWorktreeFile('repo','large.png'),/8 MiB/)
+  await disk('large.png',Buffer.alloc(8*1024*1024+1));assert.ok((await service.openLocalWorktreeFile('repo','large.png')).previewImage)
   const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='renamed.png').slice(1),[0,2,0])
  })
  await test('copy/rename failures, symlinks, outside changes and real mutation read barrier preserve originals; large binary native copy does not load into JS',async()=>{
@@ -125,8 +126,8 @@ async function main(){
   // 删除确认期间更改外部内容：拒绝删除，行保留且有可见错误。
   global.Dialog.confirm=async()=>{await disk('menu.bin','changed');return true};await swipe().props.action();assert.match(text(h),/修改|变化/);assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false)
   global.Dialog.confirm=async input=>{confirmations.push(input);return confirm};confirm=true;await swipe().props.action();assert.ok(!fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,true);assert.equal(updates,3)
-  // 图片打开仅传预览快照，交由稳定父List路由ImageViewer。
-  await disk('click.png',Buffer.from([137,80,78,71]));props.files=[...props.files,'click.png'];h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.match(opened.previewUrl,/^data:image\/png;base64,/);assert.equal(opened.text,null);h.unmount()
+  // 图片打开仅传原生显示缩略图，交由稳定父List路由LocalImagePreview。
+  await disk('click.png',Buffer.from([137,80,78,71]));props.files=[...props.files,'click.png'];h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.ok(opened.previewImage);assert.equal(opened.text,null);h.unmount()
  })
  await test('folder deletion: recursive content, root/traversal/symlink and nested Git protection; index/HEAD unchanged',async()=>{
   const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
@@ -338,6 +339,20 @@ async function main(){
   const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='created.tsx').slice(1),[0,2,0]);assert.deepEqual(matrix.find(r=>r[0]==='original binary.BIN').slice(1),[0,2,0]);assert.equal(matrix.some(r=>r[0].startsWith('empty-created/')),false)
   assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
  })
+ await test('batch facade holds one real coordinator lock, continues failures/skips, native bytes and originals/index/HEAD intact; cleanup warning never recopies',async()=>{
+  const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'}),start=coordinator.revision(ctx.gitdir)
+  const bytes=Buffer.from([0,255,128,0,13,10]),source=outside+'/batch-source';fs.writeFileSync(source,bytes);let acquired=0,released=0
+  const item=(name,missing=false,cleanup=false)=>({name,async acquire(){acquired++;return {sourcePath:missing?outside+'/batch-missing':source,name,async release(){released++;if(cleanup)throw Error('cleanup failed private path')}}}})
+  const read=FileManager.readAsData;FileManager.readAsData=async()=>{throw Error('batch must not read payload into JS')}
+  let result;try{result=await service.importLocalWorktreeFiles('repo',[item('batch-a.bin'),item('BATCH-A.BIN'),item('batch-bad.bin',true),item('batch-c.HEIC',false,true),item('batch-last.bin')],dir,()=>{})}finally{FileManager.readAsData=read}
+  assert.deepEqual(result.entries.map(e=>e.status),['success','skipped','failed','success','success']);assert.equal(result.entries[3].cleanupFailed,true);assert.equal(acquired,5);assert.equal(released,5);assert.equal(coordinator.revision(ctx.gitdir)-start,2)
+  assert.deepEqual(fs.readFileSync(dir+'/batch-c.HEIC'),bytes);assert.deepEqual(fs.readFileSync(dir+'/batch-last.bin'),bytes);assert.deepEqual(fs.readFileSync(source),bytes);assert.ok(!fs.existsSync(dir+'/batch-bad.bin'));assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+  const gate=deferred(),reader=coordinator.read(ctx.gitdir,()=>gate.promise),before=acquired
+  const pending=service.importLocalWorktreeFiles('repo',[item('batch-wait.bin')],dir,()=>{});await tick();assert.equal(acquired,before);await assert.rejects(service.importLocalWorktreeFiles('repo',[],dir,()=>{}),/写|操作/);gate.resolve();await reader;await pending
+  let allowed=true,unvisited=0
+  const stopped=await service.importLocalWorktreeFiles('repo',[{name:'batch-stop.bin',async acquire(){allowed=false;return {sourcePath:source,name:'batch-stop.bin',release:async()=>{released++}}}},{name:'batch-unvisited.bin',async acquire(){unvisited++;throw Error('must not acquire')}}],dir,()=>{if(!allowed)throw Error('state changed')})
+  assert.deepEqual(stopped.entries.map(e=>e.status),['skipped','skipped']);assert.equal(unvisited,0);assert.ok(!fs.existsSync(dir+'/batch-stop.bin'))
+ })
  await test('root addition safety, case/Unicode conflict, exact selected file without probing system ancestors, identity change and partial copy preservation',async()=>{
   const source=outside+'/original binary.BIN'
   for(const name of ['', '.', '..', '../escape','folder/escape','/tmp/escape','a\\b','.git','.GIT',' bad','bad.']){
@@ -436,7 +451,7 @@ async function main(){
  await test('actual root add menu order/group/icon, centered prompt creation, import/cancel/conflict/partial refresh and merge/busy guards',async()=>{
   let updates=0,selected=[],selectedDirectory=null,pickCalls=0,photoCalls=0,createInput=null;const createErrors=[],createPrompts=[]
   global.Dialog.prompt=async options=>{createPrompts.push(options);return createInput}
-  global.DocumentPicker={pickFiles:async opts=>{pickCalls++;if(opts.types){assert.deepEqual(opts,{types:['public.folder'],allowsMultipleSelection:false,shouldShowFileExtensions:true});return selectedDirectory?[selectedDirectory]:[]}assert.deepEqual(opts,{allowsMultipleSelection:false,shouldShowFileExtensions:true});return selected}}
+  global.DocumentPicker={pickFiles:async opts=>{pickCalls++;if(opts.types){assert.deepEqual(opts,{types:['public.folder'],allowsMultipleSelection:false,shouldShowFileExtensions:true});return selectedDirectory?[selectedDirectory]:[]}assert.deepEqual(opts,{allowsMultipleSelection:true,shouldShowFileExtensions:true});return selected}}
   global.PHPickerFilter={images:()=> 'images'};global.Photos={pick:async()=>{photoCalls++;return []}}
   const props={files:['folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:async()=>{updates++},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,{useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts');let creation
@@ -447,8 +462,8 @@ async function main(){
   async function settleImport(){for(let i=0;i<1000;i++){h.render();if(!action('导入文件').props.disabled)return;await tick()}throw Error('import did not settle')}
   async function dispatch(title){action(title).props.action();h.render();await settleImport()}
   const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
-  assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
-  assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo']])
+  assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,3);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
+  assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo'],['拖放测试','hand.draw']])
   nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
   await dispatch('创建文件');assert.equal(createPrompts.at(-1).title,'创建文件');assert.equal(createPrompts.at(-1).defaultValue,'');assert.equal(updates,0)
   createInput='ui-created.json';await dispatch('创建文件');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
@@ -464,7 +479,7 @@ async function main(){
   const before=updates;await dispatch('导入文件');await dispatch('导入目录');await dispatch('导入图片');assert.equal(updates,before);assert.equal(photoCalls,1)
   selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
   const photoBytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);fs.writeFileSync(outside+'/picker-original.PNG',photoBytes)
-  global.Photos.pick=async opts=>{assert.deepEqual(opts,{filter:'images',limit:1});return [{itemProvider:{registeredTypes:['public.png','public.image'],hasRepresentationConforming:type=>type==='public.png',loadFilePath:async type=>{assert.equal(type,'public.png');return outside+'/picker-original.PNG'}}}]}
+  global.Photos.pick=async opts=>{assert.deepEqual(opts,{filter:'images',limit:50});return [{itemProvider:{registeredTypes:['public.png','public.image'],hasRepresentationConforming:type=>type==='public.png',loadFilePath:async type=>{assert.equal(type,'public.png');return outside+'/picker-original.PNG'}}}]}
   global.ImageIO={readMetadata:async path=>{assert.equal(path,outside+'/picker-original.PNG');return {pixelWidth:1}}}
   await dispatch('导入图片');assert.deepEqual(fs.readFileSync(dir+'/picker-original.PNG'),photoBytes);assert.equal(fs.existsSync(outside+'/picker-original.PNG'),false)
   fs.writeFileSync(outside+'/picker-original.PNG',Buffer.from([1,2,3]));const photoRefresh=updates;await dispatch('导入图片');assert.match(text(h),/同名|存在/);assert.deepEqual(fs.readFileSync(dir+'/picker-original.PNG'),photoBytes);assert.equal(fs.existsSync(outside+'/picker-original.PNG'),false,'conflict still releases the owned export');assert.ok(updates>photoRefresh)
@@ -474,7 +489,7 @@ async function main(){
   const originalCopy=FileManager.copyFile;FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('UI disk full')}
   fs.writeFileSync(outside+'/ui-partial.bin','original');selected=[outside+'/ui-partial.bin'];const partialRefresh=updates
   try{await dispatch('导入文件')}finally{FileManager.copyFile=originalCopy}
-  assert.match(text(h),/UI disk full.*部分导入/);assert.ok(updates>partialRefresh);assert.equal(fs.readFileSync(dir+'/ui-partial.bin','utf8'),'partial');assert.equal(fs.readFileSync(outside+'/ui-partial.bin','utf8'),'original')
+  assert.match(text(h),/成功0\/跳过0\/失败1[\s\S]*ui-partial.bin：原生复制\/核对失败.*部分导入/);assert.ok(!text(h).includes(outside),'no private source path in batch summary');assert.ok(updates>partialRefresh);assert.equal(fs.readFileSync(dir+'/ui-partial.bin','utf8'),'partial');assert.equal(fs.readFileSync(outside+'/ui-partial.bin','utf8'),'original')
   selectedDirectory=outside+'/UI Partial Directory';fs.mkdirSync(selectedDirectory);fs.writeFileSync(selectedDirectory+'/file','original');const dirRefresh=updates
   FileManager.copyFile=async(s,d)=>{fs.writeFileSync(d,'partial');throw Error('directory disk full')}
   try{await dispatch('导入目录')}finally{FileManager.copyFile=originalCopy}
@@ -555,7 +570,7 @@ async function main(){
   const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++,onOpen:file=>opened=file})
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
-  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
+  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);assert.equal(h.tree.props.fullScreenCover.content.type,'Text');assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
  })
  await test('drag move uses real native rename, Git D/A only, same name/Unicode/path/link/root/lock protections and failure preserves bytes',async()=>{
   await disk('drag-source.bin',Buffer.from([0,255,6]));await git.add({fs,dir,filepath:'drag-source.bin'});await git.commit({fs,dir,author:{name:'test',email:'test@example.invalid'},message:'drag baseline'})

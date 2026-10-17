@@ -9,6 +9,8 @@ global.UUID={string:()=>require('node:crypto').randomUUID()}
 global.ItemProvider={fromText:token=>({registeredTypes:['public.utf8-plain-text','public.url'],loadText:async()=>token})}
 global.FileManager={stat:async()=>({size:1,modificationDate:1})}
 const FilesTab=load('pages/FilesTab.tsx',{
+ '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
+ './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
  '../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},

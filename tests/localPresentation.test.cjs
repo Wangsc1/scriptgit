@@ -11,6 +11,7 @@ for(const match of source.matchAll(/import\s+\{([^}]+)\}\s+from\s+"([^"]+)"/g)){
 let refreshed=0
 const data={displayName:'test',changes:[],branchInfo:{current:'main'},tab:2,refreshChangesAndSnapshot:async()=>{refreshed++}}
 const hook=(module,name,value)=>mocks[module]={[name]:()=>value}
+hook('../hooks/useLocalEntryCreation','useLocalEntryCreation',{busy:false,open(){}})
 hook('../hooks/useToast','useToast',{})
 hook('../hooks/useRepoDetailData','useRepoDetailData',data)
 hook('../hooks/useOpBusy','useOpBusy',{})
@@ -32,12 +33,12 @@ async function main(){
  data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,true)
  await cover.content.props.onChanged('file.txt',false);assert.equal(refreshed,1)
  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
- tab().props.onOpenLocalFile({...file,previewUrl:'data:image/png;base64,AA==',text:null});h.render();cover=h.tree.props.fullScreenCover
- assert.equal(cover.content.type,'ImageViewer');assert.equal(cover.content.props.compactImage,true);assert.equal(cover.content.props.url,'data:image/png;base64,AA==');assert.ok(!all(cover.content).some(n=>n.type==='LocalFileEditor'))
+ tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();cover=h.tree.props.fullScreenCover
+ assert.equal(cover.content.type,'LocalImagePreview');assert.deepEqual(cover.content.props.file.previewImage,{nativeThumbnail:true});assert.equal(cover.content.props.bookmarkName,'repo');assert.ok(!all(cover.content).some(n=>n.type==='LocalFileEditor'))
  const firstImageSession=cover.content.props.sessionId
  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
  for(let i=0;i<3;i++){
-  tab().props.onOpenLocalFile({...file,previewUrl:'data:image/png;base64,AA==',text:null});h.render();cover=h.tree.props.fullScreenCover
+  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();cover=h.tree.props.fullScreenCover
   assert.ok(cover.content.props.sessionId>firstImageSession+i,'same image must get a fresh monotonic session')
   cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
  }

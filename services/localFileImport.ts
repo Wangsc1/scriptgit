@@ -22,6 +22,27 @@ export async function pickLocalDocument(): Promise<PickedLocalFile | null> {
   return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
 }
 
+/** Lazy sources: selection creates no exported photo copies. A batch acquires
+ * and releases ONE file at a time; unvisited results own no temporary files. */
+export interface LocalImportSource {
+  name: string
+  acquire(): Promise<PickedLocalFile>
+}
+export async function pickLocalDocuments(): Promise<LocalImportSource[]> {
+  const paths = await localImportStep("DocumentPicker.pickFiles(多选)", () => DocumentPicker.pickFiles({ allowsMultipleSelection: true, shouldShowFileExtensions: true }))
+  return (paths || []).map(sourcePath => ({ name: sourcePath.split("/").pop() || "", async acquire() {
+    return { sourcePath, name: sourcePath.split("/").pop() || "", release: async () => {} }
+  } }))
+}
+// Official Photos.pick documents a maximum count, but not limit=0 semantics.
+// Use an explicit positive bound rather than assuming an undocumented unlimited mode.
+export const LOCAL_PHOTO_SELECTION_LIMIT = 50
+export async function pickLocalPhotos(): Promise<LocalImportSource[]> {
+  const filter = await localImportStep("PHPickerFilter.images", () => PHPickerFilter.images())
+  const results = await localImportStep("Photos.pick(多选)", () => Photos.pick({ filter, limit: LOCAL_PHOTO_SELECTION_LIMIT }))
+  return (results || []).map((result, index) => ({ name: `图片${index + 1}`, acquire: () => resolveLocalPhoto(result) }))
+}
+
 /** Explicit UTI filter: Scripting PickFilesOption.types + Apple's UTType.folder
  * https://scriptingapp.github.io/guide/Device%20Capabilities/DocumentPicker.md
  * https://developer.apple.com/documentation/uniformtypeidentifiers/uttype-swift.struct/folder
@@ -57,12 +78,15 @@ export async function pickLocalPhoto(): Promise<PickedLocalFile | null> {
   const filter = await localImportStep("PHPickerFilter.images", () => PHPickerFilter.images())
   const results = await localImportStep("Photos.pick", () => Photos.pick({ filter, limit: 1 }))
   if (!results?.length) return null
+  return resolveLocalPhoto(results[0])
+}
+export async function resolveLocalPhoto(result: PHPickerResult): Promise<PickedLocalFile> {
   let types: string[] = []
   const failures: string[] = []
   const diagnostic = () => new Error(`无法取得可命名的系统图片文件；未压缩或转换。registeredTypes=${JSON.stringify(types)}；候选阶段=${failures.join("；")}`)
   let provider: ItemProvider
   try {
-    provider = await localImportStep("照片itemProvider", () => results[0].itemProvider)
+    provider = await localImportStep("照片itemProvider", () => result.itemProvider)
     types = await localImportStep("照片registeredTypes", () => [...provider.registeredTypes])
   } catch (_) { failures.push("itemProvider/registeredTypes读取失败"); throw diagnostic() }
   const generic = new Set(["public.data", "public.content", "public.item", "public.composite-content"])

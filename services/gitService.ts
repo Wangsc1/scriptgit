@@ -34,7 +34,7 @@ import {
 } from "./git/statusQueryService"
 import { getRepoListStatus } from "./git/repoStatusReadService"
 import { runStatusMutation, runStatusRead } from "./git/statusScanService"
-import { moveLocalFileInternal, importLocalDirectoryInternal, createLocalEntryInternal, importLocalFileInternal, copyLocalDirectoryInternal, renameLocalDirectoryInternal, deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
+import { importLocalFilesInternal, moveLocalFileInternal, importLocalDirectoryInternal, createLocalEntryInternal, importLocalFileInternal, copyLocalDirectoryInternal, renameLocalDirectoryInternal, deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
 export type { LocalWorktreeFile } from "./git/localFileService"
 export { getRepoListStatus }
 export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
@@ -128,6 +128,11 @@ export function importLocalWorktreeDirectory(bookmarkName: string, sourcePath: s
 export function importLocalWorktreeFile(bookmarkName: string, sourcePath: string, name: string, expectedRoot?: string): Promise<string> {
   return runRepoMutation(bookmarkName, () => importLocalFileInternal(bookmarkName, sourcePath, name, expectedRoot), false)
 }
+
+export function importLocalWorktreeFiles(bookmarkName: string, sources: import("./localFileImport").LocalImportSource[], expectedRoot: string, canWrite: () => void) {
+  return runRepoMutation(bookmarkName, () => importLocalFilesInternal(bookmarkName, sources, expectedRoot, canWrite), false)
+}
+export type { LocalImportBatchResult } from "./git/localFileService"
 
 /** Same write barrier as rename; captures the drag's authorized root identity. */
 export function moveLocalWorktreeFile(bookmarkName: string, path: string, directory: string, expectedRoot: string): Promise<string> {

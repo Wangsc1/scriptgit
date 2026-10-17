@@ -11,15 +11,20 @@ let selected=null,gate=null,mutations=0,refreshes=0
 async function pick(kind){mainOnly(kind);assert.equal(queue.getStore().phase,'effect');if(gate)await gate.promise;return selected}
 const scripting=new Proxy({},{get:(_,key)=>key==='useEffect'?(fn,deps)=>ui.useEffect(()=>on('effect',fn),deps):ui[key]})
 const FilesTab=load('pages/FilesTab.tsx',{
+ '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
+ './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting,'../services/localImportExecution':load('services/localImportExecution.ts'),'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),
  '../utils/format':{formatBytes:String,formatDate:String},
  '../services/repoStore':{resolveWorkdir(){mainOnly('root');return '/authorized/work'}},
- '../services/localFileImport':{pickLocalDirectory:()=>pick('DocumentPicker.pickDirectory'),pickLocalDocument:()=>pick('DocumentPicker'),pickLocalPhoto:()=>pick('Photos.pick')},
+ '../services/localFileImport':{pickLocalDirectory:()=>pick('DocumentPicker.pickDirectory'),pickLocalDocuments:async()=>{const file=await pick('DocumentPicker');return file?[{name:file.name,acquire:async()=>file}]:[]},pickLocalPhotos:async()=>{const file=await pick('Photos.pick');return file?[{name:file.name,acquire:async()=>file}]:[]}},
  '../services/gitService':{
   createLocalWorktreeEntry:async(_,name)=>{mainOnly('create');return coordinator.mutate('repo',async()=>{mutations++;return name})},
   importLocalWorktreeDirectory:async(_,source,root)=>{mainOnly('import-directory');assert.equal(root,'/authorized/work');assert.equal(source,'/picker/Folder');return coordinator.mutate('repo',async()=>{mutations++;return {path:'Folder',files:['Folder/a.bin'],directories:['Folder','Folder/empty']}})},
-  importLocalWorktreeFile:async(_,source,name,root)=>{mainOnly('import');assert.equal(root,'/authorized/work');assert.equal(source,'/picker/original.png');return coordinator.mutate('repo',async()=>{mutations++;return name})},
+  importLocalWorktreeFiles:async(_,sources,root,canWrite)=>{
+   mainOnly('import');assert.equal(root,'/authorized/work')
+   return coordinator.mutate('repo',async()=>{const entries=[];for(const source of sources){const file=await source.acquire();try{canWrite();assert.equal(file.sourcePath,'/picker/original.png');mutations++;entries.push({name:file.name,path:file.name,status:'success'})}finally{await file.release()}}return {entries,writeAttempted:true}})
+  },
  },
 }).FilesTab
 let parentForm=null
@@ -59,7 +64,7 @@ async function main(){
  props.mergeInProgress=false;render();trace.length=0;menu('导入目录');props.bookmarkName='other-repo';render();render()
  assert.equal(mutations,2);assert.equal(trace.some(e=>e.api==='DocumentPicker.pickDirectory'),false);props.bookmarkName='repo';render();trace.length=0
  gate=deferred();menu('导入目录');render();await tick();h.unmount();gate.resolve();await tick();await tick()
- assert.equal(mutations,2);assert.equal(h.lateWrites,0);assert.equal(trace.filter(e=>e.api==='release').length,1)
+ assert.equal(mutations,2);assert.equal(h.lateWrites,0);assert.equal(trace.filter(e=>e.api==='release').length,1,'selected directory retains its existing release lifecycle')
  h=on('render',()=>mount(FilesTab,props,{effectUpdates:true}));trace.length=0;menu('创建目录');h.unmount();assert.deepEqual(trace,[])
  console.log('PASS real coordinator Timer error reproduced on simulated non-main queue; menu only enqueues; post-commit forms/pickers, cancellation/duplicate/merge/unmount guards')
  console.log('LIMIT: effect queue/native menu dismissal and presentation are modeled, not verified on iOS')

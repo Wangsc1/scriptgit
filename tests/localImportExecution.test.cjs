@@ -36,6 +36,8 @@ async function testUI(){
  global.UUID={string:()=>require('node:crypto').randomUUID()}
  global.ItemProvider={fromText:value=>({value,registeredTypes:['public.utf8-plain-text','public.url'],loadText:async()=>value})}
  const FilesTab=load('pages/FilesTab.tsx',{
+ '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
+ './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
   scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
   '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
   '../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:value=>'bytes:'+value,formatDate:String},

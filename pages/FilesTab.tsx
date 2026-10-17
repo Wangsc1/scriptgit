@@ -1,14 +1,16 @@
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
+import { DragDropTestPage } from "./DragDropTestPage"
 import { LocalFileDragSession } from "../utils/localFileDrag"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFile, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFiles, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
 import { localImportStep, localImportOnMain } from "../services/localImportExecution"
-import { pickLocalDirectory, pickLocalDocument, pickLocalPhoto, type PickedLocalFile } from "../services/localFileImport"
+import { pickLocalDirectory, pickLocalDocuments, pickLocalPhotos, type PickedLocalFile } from "../services/localFileImport"
+import { localImportBatchSummary } from "../services/localImportBatchSummary"
 import type { FileChange } from "../types/git"
 
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
@@ -116,8 +118,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [pickerStatus, setPickerStatus] = useState("")
   const [dragStatus, setDragStatus] = useState("")
+  const [importStatus, setImportStatus] = useState("")
   const dragTrace = useRef({ entries: [] as string[], pending: false, lastCallback: "", lastDecision: "" })
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
@@ -462,10 +464,32 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     let enteredWrite = false
     let failure = ""
     try {
-      await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
+      await localImportOnMain("UI开始", () => { if (state.current.alive) { setBusy(true); setError(""); setImportStatus("") } })
       const expectedRoot = await localImportStep("工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
       if (!state.current.alive) return
-      picked = await (kind === "photo" ? pickLocalPhoto() : kind === "import-directory" ? pickLocalDirectory(message => localImportOnMain("目录选择阶段提示", () => { if (state.current.alive) setPickerStatus(message) })) : pickLocalDocument())
+      if (kind !== "import-directory") {
+        const sources = await (kind === "photo" ? pickLocalPhotos() : pickLocalDocuments())
+        if (!sources.length || !state.current.alive) return
+        const result = await localImportStep("批量文件写入/协调锁", () => {
+          checkQueuedWrite()
+          return importLocalWorktreeFiles(bookmarkName, sources, expectedRoot, checkQueuedWrite)
+        })
+        await localImportOnMain("UI批量结果", () => {
+          if (!state.current.alive || state.current.context.bookmarkName !== bookmarkName) return
+          const paths = result.entries.filter(entry => entry.status === "success" && entry.path).map(entry => entry.path!)
+          setAdded(previous => [...new Set([...previous, ...paths])])
+          setDeleted(previous => previous.filter(path => !paths.includes(path)))
+          setRenamedFiles(previous => previous.filter(entry => !paths.includes(entry.path)))
+          setCopied(previous => [...previous.filter(entry => !paths.includes(entry.path)), ...paths.map(path => ({ path, before: changes }))])
+          setImportStatus(localImportBatchSummary(result))
+        })
+        // Exactly one requested refresh for the whole batch, including partial
+        // writes; refresh failure must never trigger a second copy or scan.
+        enteredWrite = false
+        if (result.writeAttempted) await localImportStep("批量刷新改动", () => onWorktreeChanged())
+        return
+      }
+      picked = await pickLocalDirectory()
       if (!picked || !state.current.alive) return
       if (kind === "import-directory") {
         const result = await localImportStep("目录写入/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return importLocalWorktreeDirectory(bookmarkName, picked!.sourcePath, expectedRoot) })
@@ -478,9 +502,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
             ...result.files.map(path => ({ path, before: changes })),
           ])
         })
-      } else {
-        const path = await localImportStep("文件写入/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return importLocalWorktreeFile(bookmarkName, picked!.sourcePath, picked!.name, expectedRoot) })
-        await localImportOnMain("UI文件结果", () => showAddition(path, false))
       }
       await localImportStep("刷新改动", () => onWorktreeChanged())
     } catch (e: any) {
@@ -506,7 +527,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Keep Menu actions lightweight: record an intent, then hand off after commit.
   // This boundary alone does not establish the cause of a native crash.
   // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
-  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
+  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo" | "drag-test"
+  const [dragTestPresented, setDragTestPresented] = useState(false)
   const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
   const additionPending = useRef(false)
   function requestAddition(kind: AdditionKind) {
@@ -521,14 +543,28 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     setAdditionRequest(null)
     if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
-    if (kind === "file" || kind === "directory") startCreation(kind === "directory")
+    if (kind === "drag-test") {
+      // Only enqueue from Menu; present after commit via the actual asynchronous
+      // main-context bridge. The test page receives no repository material.
+      additionPending.current = true
+      void localImportOnMain("打开拖放测试", () => {
+        additionPending.current = false
+        const current = state.current.context
+        if (state.current.alive && !state.current.busy && current.bookmarkName === bookmarkName && !current.loading && !current.mergeInProgress && !current.creationActive) setDragTestPresented(true)
+      }).catch(error => { additionPending.current = false; console.error(error) })
+    }
+    else if (kind === "file" || kind === "directory") startCreation(kind === "directory")
     else void importSelection(kind).catch(error => console.error(error))
   }, [additionRequest])
-  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null
+  const additionDisabled = busy || loading || mergeInProgress || additionRequest !== null || creationActive || directoryForm !== null || dragTestPresented
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
-  return <Section sheet={{
+  return <Section fullScreenCover={{
+    isPresented: dragTestPresented,
+    onChanged: (presented: boolean) => { if (!presented && state.current.alive) setDragTestPresented(false) },
+    content: dragTestPresented ? <DragDropTestPage onClose={() => { if (state.current.alive) setDragTestPresented(false) }} /> : <Text />,
+  }} sheet={{
     isPresented: directoryForm !== null,
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
@@ -544,10 +580,13 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         <Button title="导入目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("import-directory")} />
         <Button title="导入图片" systemImage="photo" disabled={additionDisabled} action={() => requestAddition("photo")} />
       </Section>
+      <Section header={<Text>仅诊断，不改仓库</Text>}>
+        <Button title="拖放测试" systemImage="hand.draw" disabled={additionDisabled} action={() => requestAddition("drag-test")} />
+      </Section>
     </Menu>
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {pickerStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{pickerStatus}</Text> : null}
+    {importStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{importStatus}</Text> : null}
     {dragStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{dragStatus}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
     {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}

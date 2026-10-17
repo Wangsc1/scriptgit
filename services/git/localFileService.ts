@@ -1,12 +1,15 @@
 import { resolveWorkdir } from "../repoStore"
+import { localImportStep } from "../localImportExecution"
+import type { LocalImportSource, PickedLocalFile } from "../localFileImport"
 
 export const LOCAL_TEXT_LIMIT = 512 * 1024
 export interface LocalWorktreeFile {
   path: string
   text: string | null
   readOnlyReason?: string
-  /** 仅安全读取的本地栅格图片快照；不把任意文件路径交给 WebView。 */
-  previewUrl?: string
+  /** Native in-memory display thumbnail; no Data/base64 or file:// WebView. */
+  previewImage?: UIImage
+  image?: boolean
   version: { root: string; size: number; modified: number; bytes?: string }
 }
 
@@ -39,10 +42,16 @@ async function safeFile(bookmarkName: string, path: string, directory = false): 
   return { root, absolute }
 }
 
+const imageExtensions = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "heic", "heif", "tif", "tiff", "avif", "jp2"])
+function isImagePath(path: string): boolean { return imageExtensions.has(path.split(".").pop()?.toLowerCase() || "") }
+
 export async function readLocalFileInternal(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
   const { root, absolute } = await safeFile(bookmarkName, path)
   const stat = await FileManager.stat(absolute)
   const version: LocalWorktreeFile["version"] = { root, size: stat.size, modified: stat.modificationDate }
+  // Classify before the TEXT limit and before any JS whole-file read, including
+  // tiny images. All original safety/path/version checks remain authoritative.
+  if (isImagePath(path)) return { path, text: null, version, image: true, readOnlyReason: "图片只读，可返回文件列表删除" }
   if (stat.size > LOCAL_TEXT_LIMIT) return { path, text: null, version, readOnlyReason: "超过 512 KiB，只读，可删除" }
   const data = await FileManager.readAsData(absolute)
   const checked = await safeFile(bookmarkName, path)
@@ -84,17 +93,23 @@ export async function deleteLocalFileInternal(bookmarkName: string, file: LocalW
   await FileManager.remove(absolute)
 }
 
-/** ImageViewer 用 WebKit 加载已校验快照，不读取 file://，不创建文本 Editor。 */
+/** Official TF ui_image/en.md: UIImage.fromFile(path), preparingThumbnail(size).
+ * Native file decoding + bounded DISPLAY bitmap only; never encode/write source.
+ * HEIC/HEIF decoding is delegated to iOS; null/unsupported decoder is explicit.
+ */
 export async function readLocalFileForOpenInternal(bookmarkName: string, path: string): Promise<LocalWorktreeFile> {
   const file = await readLocalFileInternal(bookmarkName, path)
-  const mime = ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon" } as Record<string, string>)[path.split(".").pop()?.toLowerCase() || ""]
-  if (!mime) return file
-  if (file.version.size > 8 * 1024 * 1024) throw new Error("图片超过 8 MiB，无法预览；仍可长按复制、重命名或左滑删除")
+  if (!file.image) return file
   const absolute = await checkCurrent(bookmarkName, file)
-  const data = await FileManager.readAsData(absolute)
+  const previewImage = await localImportStep("图片原生预览", () => {
+    const source = UIImage.fromFile(absolute)
+    if (!source) throw new Error("图片预览失败：系统无法解码此图片；文件未修改，可返回列表删除")
+    const thumbnail = source.preparingThumbnail({ width: 1600, height: 1600 })
+    if (!thumbnail) throw new Error("图片预览失败：系统无法生成显示缩略图；文件未修改，可返回列表删除")
+    return thumbnail
+  })
   await checkCurrent(bookmarkName, file)
-  if (data.size !== file.version.size) throw new Error("读取期间图片已变化，请重新打开")
-  return { ...file, text: null, previewUrl: `data:${mime};base64,${data.toBase64String()}` }
+  return { ...file, previewImage }
 }
 
 function validNewName(name: string): void {
@@ -246,6 +261,8 @@ export function renameLocalDirectoryInternal(bookmarkName: string, path: string,
   return changeDirectory(bookmarkName, path, name, false)
 }
 
+export class LocalImportConflictError extends Error {}
+
 /** Root-only additions. The UI never infers a destination from expanded folders. */
 async function additionRoot(bookmarkName: string, expectedRoot?: string, creationDate?: number) {
   const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
@@ -262,9 +279,9 @@ async function additionTarget(bookmarkName: string, name: string, expectedRoot?:
     await additionRoot(bookmarkName, identity.root, identity.creationDate)
     const fold = (value: string) => value.normalize("NFC").toLowerCase()
     const names = await FileManager.readDirectory(identity.root)
-    if (names.some(entry => fold(entry.split("/").pop() || entry) === fold(name))) throw new Error("根目录已有同名目标（含大小写重名），未覆盖")
+    if (names.some(entry => fold(entry.split("/").pop() || entry) === fold(name))) throw new LocalImportConflictError("根目录已有同名目标（含大小写重名），未覆盖")
     const target = identity.root + "/" + name
-    if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new Error("目标已存在，未覆盖")
+    if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new LocalImportConflictError("目标已存在，未覆盖")
     await additionRoot(bookmarkName, identity.root, identity.creationDate)
     return target
   }
@@ -301,7 +318,7 @@ export async function createLocalEntryInternal(bookmarkName: string, name: strin
 }
 
 /** sourcePath must be the exact picker-authorized file (or its exported temporary representation). */
-export async function importLocalFileInternal(bookmarkName: string, sourcePath: string, name: string, expectedRoot?: string): Promise<string> {
+export async function importLocalFileInternal(bookmarkName: string, sourcePath: string, name: string, expectedRoot?: string, beforeWrite?: () => void, expectedCreationDate?: number): Promise<string> {
   if (!sourcePath.startsWith("/") || sourcePath.includes("\\") || /[\x00-\x1f\x7f]/.test(sourcePath) || sourcePath.split("/").some(p => p === "." || p === ".." || p.toLowerCase() === ".git")) throw new Error("导入来源路径不安全")
   const destination = await additionTarget(bookmarkName, name, expectedRoot)
   async function sourceStat() {
@@ -315,7 +332,13 @@ export async function importLocalFileInternal(bookmarkName: string, sourcePath: 
   const latest = await sourceStat()
   if (before.size !== latest.size || before.modificationDate !== latest.modificationDate || before.creationDate !== latest.creationDate) throw new Error("导入来源已变化，未复制")
   try {
-    await FileManager.copyFile(sourcePath, target)
+    if (expectedCreationDate !== undefined) await additionRoot(bookmarkName, expectedRoot, expectedCreationDate)
+    const copy = () => {
+      beforeWrite?.() // Re-check AFTER preflight AND delayed native dispatch.
+      return FileManager.copyFile(sourcePath, target)
+    }
+    if (beforeWrite) await localImportStep("批量.原生文件复制", copy)
+    else await copy()
     const after = await sourceStat()
     await additionRoot(bookmarkName, destination.root, destination.creationDate)
     const saved = await safeFile(bookmarkName, name)
@@ -325,6 +348,61 @@ export async function importLocalFileInternal(bookmarkName: string, sourcePath: 
   } catch (error: any) {
     throw new Error(String(error?.message || error) + "；目标可能已部分导入，源文件保留，未自动删除任何源文件或目标，请刷新核对")
   }
+}
+
+export interface LocalImportBatchEntry {
+  name: string
+  status: "success" | "skipped" | "failed"
+  path?: string
+  reason?: string
+  cleanupFailed?: boolean
+}
+export interface LocalImportBatchResult { entries: LocalImportBatchEntry[]; writeAttempted: boolean }
+/** Called under ONE facade write barrier. Serial acquisition/copy/release keeps
+ * photo memory and temporary copies bounded; never rollback successful targets. */
+export async function importLocalFilesInternal(bookmarkName: string, sources: LocalImportSource[], expectedRoot: string, canWrite: () => void): Promise<LocalImportBatchResult> {
+  const entries: LocalImportBatchEntry[] = []
+  let writeAttempted = false
+  let identity: { root: string; creationDate: number } | undefined
+  let stopped = false
+  for (const source of sources) {
+    const entry: LocalImportBatchEntry = { name: source.name.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 240), status: "failed" }
+    entries.push(entry)
+    if (stopped) { entry.status = "skipped"; entry.reason = "页面、合并状态或工作区身份已变化，未继续"; continue }
+    let picked: PickedLocalFile | null = null
+    let stage = "导出文件表示"
+    try {
+      try {
+        canWrite()
+        identity = await additionRoot(bookmarkName, expectedRoot, identity?.creationDate)
+        canWrite()
+      } catch (_) { stopped = true; entry.status = "skipped"; entry.reason = "页面、合并状态或工作区身份已变化，未继续"; continue }
+      picked = await localImportStep("批量.导出文件表示", () => source.acquire())
+      entry.name = picked.name.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 240)
+      stage = "写入前状态检查"
+      try { canWrite(); await additionRoot(bookmarkName, expectedRoot, identity.creationDate); canWrite() }
+      catch (_) { stopped = true; entry.status = "skipped"; entry.reason = "页面、合并状态或工作区身份已变化，未写入"; continue }
+      stage = "原生复制/核对"
+      writeAttempted = true
+      entry.path = await localImportStep("批量.原生复制", () => importLocalFileInternal(bookmarkName, picked!.sourcePath, picked!.name, expectedRoot, canWrite, identity!.creationDate))
+      entry.status = "success"
+    } catch (error: any) {
+      // Never expose a native error containing private source paths/metadata.
+      const message = String(error?.message || error)
+      if (stage === "导出文件表示" && message.includes(":临时副本清理失败")) entry.cleanupFailed = true
+      if (error instanceof LocalImportConflictError || /根目录已有同名目标|目标已存在|\bEEXIST\b/.test(message)) {
+        entry.status = "skipped"; entry.reason = "同名目标已存在（含大小写/同批重名），未覆盖"
+      } else {
+        entry.reason = stage === "导出文件表示" && message.includes("registeredTypes=") && message.includes("无法取得可命名") ? message.slice(message.indexOf("无法取得可命名")) : `${stage}失败；成功项保留，目标可能部分导入，未回滚`
+      }
+    } finally {
+      if (picked) {
+        try { await localImportStep("批量.释放临时副本", () => picked!.release()) }
+        catch (_) { entry.cleanupFailed = true } // Never repeat the copy on cleanup failure.
+      }
+    }
+  }
+  return { entries, writeAttempted }
 }
 
 /** Selected-directory scope only. No probing/enumeration above sourceRoot. */

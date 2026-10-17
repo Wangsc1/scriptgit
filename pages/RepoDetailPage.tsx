@@ -11,7 +11,7 @@
  */
 
 import { List, Text, Button, Menu, useState, useRef } from "scripting"
-import { ImageViewer } from "../components/ImageViewer"
+import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
@@ -214,7 +214,7 @@ export function RepoDetailPage({
         // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
-        content: localFile?.file.previewUrl ? <ImageViewer key={localFile.id} sessionId={localFile.id} url={localFile.file.previewUrl} compactImage onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
+        content: localFile?.file.previewImage ? <LocalImagePreview key={localFile.id} sessionId={localFile.id} bookmarkName={bookmarkName} file={localFile.file} onReload={openLocalFile} onClose={() => setLocalFile(null)} /> : localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
           onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
             try { await data.refreshChangesAndSnapshot() }
             catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }

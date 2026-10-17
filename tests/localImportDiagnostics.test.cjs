@@ -21,23 +21,27 @@ global.Photos={pick:async()=>{
  }}}]
 }}
 global.ImageIO={readMetadata:async()=>{initiation.push(['ImageIO.readMetadata',main]);return {pixelWidth:1}}}
-global.FileManager={stat:async()=>({size:3,modificationDate:1}),isLink:async()=>false,isFile:async()=>true,isDirectory:async()=>false,remove:async()=>{if(mode==='cleanup')throw Error(timerText)}}
+const created=new Set()
+global.FileManager={stat:async()=>({size:3,creationDate:1,modificationDate:1}),isLink:async()=>false,isFile:async()=>true,isDirectory:async p=>p==='/work',readDirectory:async()=>[],exists:async p=>p==='/work'||created.has(p),copyFile:async(s,d)=>{initiation.push(['copyFile',main]);created.add(d)},remove:async()=>{if(mode==='cleanup')throw Error(timerText)}}
+const batchInternal=load('services/git/localFileService.ts',{'../repoStore':{resolveWorkdir:()=>'/work'},'../localImportExecution':execution})
 const picker=load('services/localFileImport.ts',{'./localImportExecution':execution})
 const FilesTab=load('pages/FilesTab.tsx',{
+ '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
+ './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':performance,'../utils/format':{formatBytes:String,formatDate:String},
  '../services/localImportExecution':execution,'../services/localFileImport':picker,'../services/repoStore':{resolveWorkdir:()=>'/work'},
- '../services/gitService':{importLocalWorktreeFile:async(_,source,name)=>{
-  initiation.push(['writer',main]);return coordinator.mutate('repo',async()=>name)
+ '../services/gitService':{importLocalWorktreeFiles:async(_,sources,root,canWrite)=>{
+  initiation.push(['writer',main]);return coordinator.mutate('repo',()=>batchInternal.importLocalFilesInternal('repo',sources,root,canWrite))
  }},
 }).FilesTab
 async function runCase(nextMode,pattern){
- mode=nextMode;refreshes=0;initiation.length=0
+ mode=nextMode;refreshes=0;initiation.length=0;created.clear()
  const h=mount(FilesTab,{files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onWorktreeChanged:async()=>{refreshes++;if(mode==='refresh')throw Error(timerText)}},{effectUpdates:true})
  all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title==='导入图片').props.action();h.render()
  for(let i=0;i<100;i++){await tick();h.render();if(!all(h.tree.props.header).find(n=>n.type==='Menu').props.disabled)break}
- const errors=all(h.tree).filter(n=>n.type==='Text'&&n.props.foregroundStyle==='red').map(n=>n.children.join(' ')).join('\n')
- assert.match(errors,pattern);if(mode!=='load')assert.ok(errors.includes(timerText),'original error must survive phase wrapping outside privacy-safe photo candidate diagnostics')
+ const errors=all(h.tree).filter(n=>n.type==='Text'&&(n.props.foregroundStyle==='red'||(mode==='load'||mode==='cleanup')&&n.children.join(' ').includes('成功'))).map(n=>n.children.join(' ')).join('\n')
+ assert.match(errors,pattern);if(mode==='load')assert.match(errors,/成功0\/跳过0\/失败1/);if(mode==='cleanup')assert.match(errors,/成功1\/跳过0\/失败0/);if(mode!=='load'&&mode!=='cleanup')assert.ok(errors.includes(timerText),'original error must survive phase wrapping outside privacy-safe photo candidate diagnostics')
  assert.ok(initiation.every(([,flag])=>flag===true),'every separate native/writer initiation explicitly calls the documented API')
  if(mode==='photos'||mode==='load')assert.equal(refreshes,0,'pre-write picker errors must not be masked by a needless refresh')
  assert.equal(coordinator.isWriting('repo'),false);h.unmount();return errors
@@ -45,9 +49,9 @@ async function runCase(nextMode,pattern){
 async function mainTest(){
  const photos=await runCase('photos',/导入:Photos\.pick.*Timer requires/);assert.match(photos,/callMain=true/)
  const file=await runCase('load',/registeredTypes=.*public.png.*loadFilePath异常/);assert.ok(!file.includes('/owned-temporary/'))
- await runCase('write',/文件写入\/协调锁.*StatusCoordinator\.writeWaitTimer.*Timer requires/)
- await runCase('refresh',/导入:刷新改动.*Timer requires/)
- await runCase('cleanup',/照片清理\.remove.*Timer requires/)
+ await runCase('write',/批量文件写入\/协调锁.*StatusCoordinator\.writeWaitTimer.*Timer requires/)
+ await runCase('refresh',/导入:批量刷新改动.*Timer requires/)
+ await runCase('cleanup',/临时副本清理失败1/)
  assert.ok(dispatchCalls>0)
  // Actual timer sites reject with exact source labels, not swallowed/hung scans.
  mode='';global.setTimeout=()=>{throw Error(timerText)}

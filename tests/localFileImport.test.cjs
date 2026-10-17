@@ -8,7 +8,7 @@ global.Photos={pick:async options=>{calls.push(['photos',options]);return photos
 global.PHPickerFilter={images:()=> 'IMAGE_FILTER'}
 global.FileManager={isLink:async()=>false,isFile:async()=>true,appGroupDocumentsDirectory:'/app',isDirectory:async p=>p.startsWith('/selected/Whole Folder'),removeFileBookmark:name=>bookmarks.push(name),remove:async p=>removed.push(p)}
 const execution=load('services/localImportExecution.ts')
-const {pickLocalDirectory,pickLocalDocument,pickLocalPhoto}=load('services/localFileImport.ts',{'./localImportExecution':execution})
+const {pickLocalDirectory,pickLocalDocument,pickLocalPhoto,pickLocalDocuments,pickLocalPhotos}=load('services/localFileImport.ts',{'./localImportExecution':execution})
 global.ImageIO={readMetadata:async path=>{calls.push(['metadata',path]);if(path.endsWith('.mov')||path.endsWith('.plist'))throw Error('not image');return {pixelWidth:100}}}
 function photo(types,path){return {itemProvider:{registeredTypes:types,hasRepresentationConforming:type=>types.includes(type),loadFilePath:async type=>{calls.push(['representation',type]);return path},loadUIImage:()=>{throw Error('must not transcode')},loadData:()=>{throw Error('must not load entire photo into JS')}}}}
 async function main(){
@@ -52,6 +52,11 @@ async function main(){
  photos=[photo(['public.jpeg'],'/export/safe.JPG')];selected=await pickLocalPhoto()
  let attempts=0;FileManager.remove=async p=>{attempts++;if(attempts===1)throw Error('temporary failure');removed.push(p)}
  try{await assert.rejects(selected.release(),/temporary failure/);await selected.release();assert.equal(attempts,2)}finally{FileManager.remove=remove}
+ // Production bulk adapters: parameters and laziness are asserted separately
+ // from retained single-item helper compatibility tests above.
+ documents=['/selected/multi-a.bin','/selected/multi-b.bin'];const bulkDocs=await pickLocalDocuments();assert.equal(bulkDocs.length,2);assert.deepEqual(calls.at(-1),['files',{allowsMultipleSelection:true,shouldShowFileExtensions:true}]);assert.equal((await bulkDocs[1].acquire()).name,'multi-b.bin')
+ photos=[photo(['public.heic'],'/export/bulk.HEIC'),photo(['public.jpeg'],'/export/bulk.jpg')];const reps=calls.filter(c=>c[0]==='representation').length;const bulkPhotos=await pickLocalPhotos();assert.equal(bulkPhotos.length,2);assert.deepEqual(calls.at(-1),['photos',{filter:'IMAGE_FILTER',limit:50}]);assert.equal(calls.filter(c=>c[0]==='representation').length,reps);const acquired=await bulkPhotos[0].acquire();assert.equal(acquired.name,'bulk.HEIC');await acquired.release()
+ documents=[];photos=[];assert.deepEqual(await pickLocalDocuments(),[]);assert.deepEqual(await pickLocalPhotos(),[])
  photos=[];assert.equal(await pickLocalPhoto(),null)
  console.log('PASS system-exported HEIC/JPEG/RAW/dynamic/generic image files, metadata-first list, strict capability check, candidate fallback/native failure, unknown suffix rejection, cancellation, no UIImage/Data/transcoding and owned failed/success copy cleanup')
 }
