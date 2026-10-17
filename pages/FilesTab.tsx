@@ -24,24 +24,21 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
     const change = changesByPath.get(node.path)
     const badge = deleted ? { text: "已删除", color: "systemRed" } : change ? statusBadge(change.status, change.unstaged) : null
     return (
-      <HStack
-        alignment="center"
-        contextMenu={{ menuItems: <>
-          <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
-          <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
-        </> }}
-        trailingSwipeActions={{ allowsFullSwipe: false, actions: [
-          <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />,
-        ] }}>
-        <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-          <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
-            <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
-            <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={2}>{node.name}</Text>
+      <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
+        <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
+        <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
+      </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: [
+        <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />,
+      ] }}>
+        <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
+          <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
+          <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={2}>{node.name}</Text>
+          <HStack spacing={6} frame={{ minWidth: 0 }}>
             {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
             {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
           </HStack>
-        </Button>
-      </HStack>
+        </HStack>
+      </Button>
     )
   }
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
