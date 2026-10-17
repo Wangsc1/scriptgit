@@ -1,10 +1,12 @@
-import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
+import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, Spacer, useRef, useState, useEffect, useMemo } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE, COLOR_RED } from "../constants/colors"
 import type { FileChange } from "../types/git"
+
+const LOCAL_TEXT_LIMIT = 512 * 1024
 
 function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
   switch (status) {
@@ -20,46 +22,90 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
   }
 }
 
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange> }) {
+/** 文件内容摘要：有改动显示“改动后”，未改动显示“原内容” */
+function summaryFor(change: FileChange | undefined, deleted: boolean, preview: string | undefined): string | null {
+  if (deleted) return null
+  if (preview == null || preview === "") return null
+  const trimmed = preview.replace(/\r/g, "").trim()
+  if (!trimmed) return null
+  const firstLine = trimmed.split("\n")[0] || ""
+  const short = firstLine.length > 60 ? firstLine.slice(0, 60) + "…" : firstLine
+  const prefix = change ? "改动后：" : "原内容："
+  return prefix + short
+}
+
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onStage, onUnstage, worktreeBusy, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number; preview?: string }>; onStage: (filepath: string) => void | Promise<void>; onUnstage: (filepath: string) => void | Promise<void>; worktreeBusy: boolean; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
     const badge = deleted ? { text: "已删除", color: "systemRed" } : change ? statusBadge(change.status, change.unstaged) : null
+    const meta = metadata.get(node.path)
     const metaParts: string[] = []
-    if (node.size != null) metaParts.push(formatBytes(node.size))
-    if (node.modified != null) metaParts.push(formatDate(node.modified))
+    if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
+    if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
+    const summary = summaryFor(change, deleted, meta?.preview)
+    const swipeActions: any[] = []
+    if (change && !deleted) {
+      swipeActions.push(<Button
+        key="stage"
+        title={change.unstaged ? "暂存" : "取消暂存"}
+        systemImage={change.unstaged ? "plus.circle" : "minus.circle"}
+        tint={change.unstaged ? "systemBlue" : "systemRed"}
+        action={() => change.unstaged ? onStage(node.path) : onUnstage(node.path)}
+        disabled={worktreeBusy || mergeInProgress}
+      />)
+    }
+    swipeActions.push(<Button key="delete" title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
       <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
-      </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: [
-        <Button title="删除" systemImage="trash" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />,
-      ] }}>
-        <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-          <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
-          <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0, alignment: "leading" }}>
-            <HStack alignment="center" spacing={8} frame={{ maxWidth: Infinity, alignment: "leading" }}>
-              <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
-              {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
-              {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
+      </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
+        <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
+          <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
+            <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
+            <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
+            {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
+            {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
+          </HStack>
+          {summary || metaParts.length > 0 ? (
+            <HStack alignment="center" spacing={6} frame={{ maxWidth: Infinity, alignment: "leading" }}>
+              {summary ? (
+                <HStack
+                  alignment="center"
+                  padding={{ horizontal: 8, vertical: 3 }}
+                  background={{ light: "rgba(118, 118, 128, 0.14)", dark: "rgba(118, 118, 128, 0.26)" }}
+                  clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+                >
+                  <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL} lineLimit={1}>{summary}</Text>
+                </HStack>
+              ) : null}
+              {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
             </HStack>
-            {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
-          </VStack>
-        </HStack>
+          ) : null}
+        </VStack>
       </Button>
     )
   }
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
   </HStack>}>
-    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} />)}
+    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen }: {
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onOpenCommitForm, committing, stagingBusy, onStage, onUnstage, onStageAll, onUnstageAll, mergeInProgress }: {
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
+  onOpenCommitForm: () => void
+  committing: boolean
+  stagingBusy: boolean
+  onStage: (filepath: string) => void | Promise<void>
+  onUnstage: (filepath: string) => void | Promise<void>
+  onStageAll: () => void | Promise<void>
+  onUnstageAll: () => void | Promise<void>
+  mergeInProgress: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -68,7 +114,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
   const changesByPath = useMemo(() => new Map<string, FileChange>(changes.map(c => [c.filepath, c])), [changes])
-  const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
+  const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number; preview?: string }>>(new Map())
   const state = useRef({ alive: true, busy: false })
   useEffect(() => () => { state.current.alive = false }, [])
   useEffect(() => {
@@ -80,12 +126,26 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     async function load() {
       try {
         const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-        const next = new Map<string, { size: number; modified: number }>()
+        const next = new Map<string, { size: number; modified: number; preview?: string }>()
         await Promise.all(visibleFiles.map(async (path) => {
           if (removed.has(path)) return
           try {
-            const stat = await FileManager.stat(root + "/" + path)
-            next.set(path, { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) })
+            const absolute = root + "/" + path
+            const stat = await FileManager.stat(absolute)
+            const entry: { size: number; modified: number; preview?: string } = { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) }
+            // 仅小文本文件读取内容摘要，避免大文件解码占内存
+            if (stat.size > 0 && stat.size <= LOCAL_TEXT_LIMIT) {
+              try {
+                const data = await FileManager.readAsData(absolute)
+                const text = data.toRawString("utf-8")
+                if (text != null && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text)) {
+                  entry.preview = text
+                }
+              } catch (_e) {
+                // 读取摘要失败只影响标签，不影响列表
+              }
+            }
+            next.set(path, entry)
           } catch (_e) {
             // 文件可能刚刚被删除或不可访问，跳过
           }
@@ -117,7 +177,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     if (state.current.busy || removed.has(path)) return
     state.current.busy = true; setBusy(true); setError("")
     try {
-      // 先安全读取版本基线；确认期间外部变化由删除 facade 再检查。
       const file = await readLocalWorktreeFile(bookmarkName, path)
       if (!state.current.alive) return
       if (await Dialog.confirm({ title: "删除此本地文件？", message: `${path}\n只删除当前工作区这个文件，不删除目录，也不会暂存、提交或推送。`, confirmLabel: "删除文件" }) !== true || !state.current.alive) return
@@ -143,9 +202,27 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
-  return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
-    {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} changesByPath={changesByPath} />)}
-  </Section>
+
+  const hasUnstaged = changes.some((change) => change.unstaged)
+  const hasStaged = changes.some((change) => change.staged)
+  const worktreeBusy = stagingBusy
+  const bulkDisabled = loading || worktreeBusy || committing || mergeInProgress || (!hasUnstaged && !hasStaged)
+  const canUnstageAll = hasStaged && !hasUnstaged
+  const bulkAction = canUnstageAll ? onUnstageAll : onStageAll
+  const bulkTitle = stagingBusy ? "处理中…" : canUnstageAll ? "取消暂存" : "全部暂存"
+  const bulkSystemImage = stagingBusy ? null : canUnstageAll ? "minus.circle" : "plus.circle"
+  const bulkTint = bulkDisabled ? COLOR_SECONDARY_LABEL : canUnstageAll ? COLOR_RED : COLOR_ACCENT
+
+  return <>
+    <Section header={<HStack alignment="center"><Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer /><Button action={bulkAction} disabled={bulkDisabled} tint={bulkTint}><HStack alignment="center" spacing={4}>{bulkSystemImage ? <Image systemName={bulkSystemImage} font="caption" foregroundStyle={bulkTint} /> : null}<Text font="caption" foregroundStyle={bulkTint}>{bulkTitle}</Text></HStack></Button></HStack>}>
+      {error ? <Text foregroundStyle="red">{error}</Text> : null}
+      {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
+      {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || worktreeBusy || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onStage={onStage} onUnstage={onUnstage} worktreeBusy={worktreeBusy} mergeInProgress={mergeInProgress} />)}
+    </Section>
+    {hasStaged ? (
+      <Section>
+        <Button title={committing ? "提交中…" : "提交改动"} systemImage="checkmark.circle" action={onOpenCommitForm} disabled={committing || worktreeBusy || mergeInProgress} />
+      </Section>
+    ) : null}
+  </>
 }

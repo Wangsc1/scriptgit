@@ -428,7 +428,6 @@ export function RepoDetailPage({
         onUnstage={worktree.handleUnstage}
         onStageAll={worktree.handleStageAll}
         onUnstageAll={worktree.handleUnstageAll}
-        onRestore={worktree.handleRestore}
         onCreateStash={worktree.handleCreateStash}
         onApplyStash={worktree.handleApplyStash}
         onDropStash={worktree.handleDropStash}

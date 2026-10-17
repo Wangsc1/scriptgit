@@ -2,12 +2,11 @@ import { Button, Picker, Section, Text } from "scripting"
 import type { LocalWorktreeFile } from "../services/gitService"
 import type { CommitEntry, FileChange, StashEntry } from "../types/git"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
-import { ChangesTab } from "../pages/ChangesTab"
 import { FilesTab } from "../pages/FilesTab"
 import { HistoryTab } from "../pages/HistoryTab"
 import { StashTab } from "../pages/StashTab"
 
-export type RepoDetailTab = 0 | 1 | 2 | 3
+export type RepoDetailTab = 0 | 1 | 2
 
 export function MergeConflictSection({
   conflictCount,
@@ -61,7 +60,6 @@ export function RepoDetailTabContent({
   onUnstage,
   onStageAll,
   onUnstageAll,
-  onRestore,
   onCreateStash,
   onApplyStash,
   onDropStash,
@@ -98,7 +96,6 @@ export function RepoDetailTabContent({
   onUnstage: (filepath: string) => void | Promise<void>
   onStageAll: () => void | Promise<void>
   onUnstageAll: () => void | Promise<void>
-  onRestore: (filepath: string) => void
   onCreateStash: () => void | Promise<void>
   onApplyStash: (entry: StashEntry) => void | Promise<void>
   onDropStash: (entry: StashEntry) => void
@@ -127,27 +124,13 @@ export function RepoDetailTabContent({
           onChanged={(value: number) => onTabChange(value as RepoDetailTab)}
           pickerStyle="segmented"
         >
-          <Text tag={0}>改动</Text>
+          <Text tag={0}>文件</Text>
           <Text tag={1}>Stash</Text>
-          <Text tag={2}>文件</Text>
-          <Text tag={3}>历史</Text>
+          <Text tag={2}>历史</Text>
         </Picker>
       </Section>
       {tab === 0 ? (
-        <ChangesTab
-          bookmarkName={bookmarkName}
-          changes={changes}
-          loading={loading}
-          mergeInProgress={mergeInProgress}
-          onOpenCommitForm={onOpenCommitForm}
-          committing={committing}
-          stagingBusy={stagingBusy}
-          onStage={onStage}
-          onUnstage={onUnstage}
-          onStageAll={onStageAll}
-          onUnstageAll={onUnstageAll}
-          onRestore={onRestore}
-        />
+        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onOpenCommitForm={onOpenCommitForm} committing={committing} stagingBusy={stagingBusy} onStage={onStage} onUnstage={onUnstage} onStageAll={onStageAll} onUnstageAll={onUnstageAll} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}
@@ -162,8 +145,6 @@ export function RepoDetailTabContent({
           onApplyStash={onApplyStash}
           onDropStash={onDropStash}
         />
-      ) : tab === 2 ? (
-        <FilesTab files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} />
       ) : (
         <HistoryTab
           log={log}

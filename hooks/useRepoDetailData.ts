@@ -37,8 +37,8 @@ import { isRepoStatusFresh } from "../utils/statusFreshness"
 
 const HISTORY_PAGE_SIZE = 50
 
-/** 0 改动 / 1 Stash / 2 文件 / 3 历史 */
-export type RepoDetailTabIndex = 0 | 1 | 2 | 3
+/** 0 文件 / 1 Stash / 2 历史 */
+export type RepoDetailTabIndex = 0 | 1 | 2
 
 type UseRepoDetailDataProps = {
   bookmarkName: string
@@ -69,6 +69,7 @@ export function useRepoDetailData({
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyLimited, setHistoryLimited] = useState(false)
   const [trackedFiles, setTrackedFiles] = useState<string[]>([])
+  const [filesLoaded, setFilesLoaded] = useState(false)
   const [branchInfo, setBranchInfo] = useState<BranchInfo>({
     branches: [],
     current: null,
@@ -147,7 +148,7 @@ export function useRepoDetailData({
   }
 
   async function refreshHistoryIfLoaded() {
-    if (historyLoaded || tab === 3) await loadLog()
+    if (historyLoaded || tab === 2) await loadLog()
   }
 
   async function loadBranches() {
@@ -254,9 +255,9 @@ export function useRepoDetailData({
       ])
       setHasCommits(headExists)
       // 若当前已在懒加载 Tab，补数据
+      if (tab === 0) await loadTrackedFiles()
       if (tab === 1) await loadStashes()
-      if (tab === 2) await loadTrackedFiles()
-      if (tab === 3) await loadLog()
+      if (tab === 2) await loadLog()
       await getRepoListStatus(bookmarkName, currentChanges.length, { source: `${source}摘要` })
       return true
     } catch (e: any) {
@@ -270,6 +271,17 @@ export function useRepoDetailData({
   async function handleTabChange(next: number) {
     const target = next as RepoDetailTabIndex
     setTab(target)
+    if (target === 0 && !filesLoaded) {
+      setLoading(true)
+      try {
+        await loadTrackedFiles()
+      } catch (e: any) {
+        showToast("加载失败：" + String(e?.message || e), "error")
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     if (target === 1 && !stashesLoaded) {
       setLoading(true)
       try {
@@ -281,18 +293,7 @@ export function useRepoDetailData({
       }
       return
     }
-    if (target === 2 && !filesLoaded) {
-      setLoading(true)
-      try {
-        await loadTrackedFiles()
-      } catch (e: any) {
-        showToast("加载失败：" + String(e?.message || e), "error")
-      } finally {
-        setLoading(false)
-      }
-      return
-    }
-    if (target === 3 && !historyLoaded && !historyLoading) {
+    if (target === 2 && !historyLoaded && !historyLoading) {
       setHistoryLoading(true)
       try {
         await loadLog()
