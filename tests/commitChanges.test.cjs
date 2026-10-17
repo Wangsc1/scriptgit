@@ -86,7 +86,7 @@ async function main(){try{
   const releaseAll=()=>{for(const g of stats.gates.values())g.resolve()};releaseAll();await until(()=>loader.snapshot().doneCount===20,'first page');assert.ok(stats.peak<=3)
   const more=()=>all(c.render()).find(n=>n.type==='Button'&&String(n.props.title).startsWith('加载更多'));more().props.action();await until(()=>loader.snapshot().doneCount===40,'second page');assert.match(more().props.title,/5 个/);more().props.action();await until(()=>loader.snapshot().doneCount===45,'third page');assert.equal(more(),undefined)
   const files=stats.reads.map(r=>r.file);for(let n=0;n<45;n++){const f='big/f'+String(n).padStart(2,'0')+'.txt';assert.equal(files.filter(x=>x===f).length,2,f)}
-  assert.equal(loader.snapshot().added,45);assert.match(text(c.render()),/\+45 ?-0/);c.unmount();h.unmount()
+  assert.equal(loader.snapshot().added,45);assert.equal(loader.snapshot().deleted,0);assert.doesNotMatch(text(c.render()),/本次更改|当前显示|已加载/);c.unmount();h.unmount()
  })
  await test('large patch renders bounded lines with link to full diff while counts stay true',async()=>{
   reset();const h=await open(c5);picker(h).props.onChanged('changes');h.render();const node=section(h),c=mount(node.type,node.props);await until(()=>node.props.loader.snapshot().doneCount===1,'huge');c.render()
@@ -94,7 +94,7 @@ async function main(){try{
  })
  await test('failure is visible, retry rereads only failed file; persistent failure remains visible',async()=>{
   reset();stats.failOnce.add('c.txt');const h=await open(c2);picker(h).props.onChanged('changes');h.render();const node=section(h),loader=node.props.loader,c=mount(node.type,node.props)
-  await until(()=>loader.snapshot().doneCount===3&&loader.snapshot().failedCount===1,'one failure');assert.match(text(c.render()),/加载失败：transient read failure: c\.txt/);assert.match(text(c.tree),/共4个文件.*1个读取失败|共 ?4 ?个文件.*1 ?个读取失败/)
+  await until(()=>loader.snapshot().doneCount===3&&loader.snapshot().failedCount===1,'one failure');assert.match(text(c.render()),/加载失败：transient read failure: c\.txt/);assert.match(all(c.tree).filter(n=>n.type==='Button').map(n=>n.props.title).join('|'),/重试失败的文件（1）/);assert.doesNotMatch(text(c.tree),/本次更改|当前显示|已加载/)
   const before=stats.reads.length;all(c.tree).find(n=>n.type==='Button'&&n.props.title==='重试').props.action();await until(()=>loader.snapshot().doneCount===4,'retry');assert.equal(loader.snapshot().failedCount,0);assert.ok(stats.reads.slice(before).every(r=>r.file==='c.txt'),'retry must not reread successful files');assert.ok(!/加载失败/.test(text(c.render())))
   stats.failAlways.add('a.txt');const fresh=new changes.CommitChangesLoader(['a.txt'],f=>diffService.getCommitFileDiff('repo',c2,c1,f));fresh.start();await until(()=>fresh.snapshot().failedCount===1,'persistent');fresh.retry();await until(()=>fresh.snapshot().failedCount===1&&fresh.entries[0].state==='error','still failing');assert.match(fresh.entries[0].error,/unreadable/);fresh.dispose();c.unmount();h.unmount()
  })
