@@ -112,7 +112,7 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
     startX = touch.clientX
     startY = touch.clientY
   }, { passive: true })
-  ${compactImage ? `// 仅未缩放、单指、明显竖向下拉时由受控 bridge 关闭；缩放/平移/多指不会误关。
+  ${compactImage ? `// 本地图片：未缩放时支持左边缘右滑返回，保留原有下拉关闭；多指/放大平移不关闭。
   document.addEventListener("touchmove", function (event) {
     if (event.touches.length > 1) { multiTouch = true; return }
     if (multiTouch || pullClosed) return
@@ -120,11 +120,14 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
     var dx = touch.clientX - startX
     var dy = touch.clientY - startY
     var scale = window.visualViewport ? window.visualViewport.scale : 1
-    if (scale <= 1.01 && dy > 120 && Math.abs(dx) < dy * 0.5) {
+    var edgeBack = startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5
+    var pullDown = dy > 120 && Math.abs(dx) < dy * 0.5
+    if (scale <= 1.01 && (edgeBack || pullDown)) {
       pullClosed = true
       window.webkit.messageHandlers.closeViewer.postMessage(null)
     }
-  }, { passive: true })` : ""}
+  }, { passive: true })
+  document.addEventListener("touchcancel", function () { multiTouch = true }, { passive: true })` : ""}
 
   document.addEventListener("touchend", function (event) {
     if (event.touches.length > 0) {
@@ -161,7 +164,10 @@ export function ImageViewer({
     let disposed = false
 
     async function setup() {
+      let closing = false
       await controller.addScriptMessageHandler("closeViewer", () => {
+        if (disposed || closing) return
+        closing = true
         onClose()
       })
       if (!disposed) {
