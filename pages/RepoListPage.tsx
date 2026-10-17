@@ -23,6 +23,7 @@ import {
   Button,
   Menu,
   useState,
+  useMemo,
 } from "scripting"
 import type {
   RepoListStatus,
@@ -163,16 +164,15 @@ export function RepoListPage() {
 
   const showRemovingOverlay = removingName != null
   // 仅影响展示顺序，持久化的仓库数组仍保持添加顺序
-  const sortedRepos = sortReposByGithubUpdated(repos)
+  const sortedRepos = useMemo(() => sortReposByGithubUpdated(repos), [repos])
   // GitHub 仓库行显示公开/私有标识（本地无 GitHub 远端的仓库不显示）
-  const visibilities = useRepoVisibilities(
-    sortedRepos.map((repo) => ({
-      key: repo.bookmarkName,
-      fullName: githubRepoFromRemoteUrl(
-        statusMap[repo.bookmarkName]?.originUrl ?? repo.remoteUrl
-      ),
-    }))
-  )
+  const visibilityTargets = useMemo(() => sortedRepos.map((repo) => ({
+    key: repo.bookmarkName,
+    fullName: githubRepoFromRemoteUrl(
+      statusMap[repo.bookmarkName]?.originUrl ?? repo.remoteUrl
+    ),
+  })), [sortedRepos, statusMap])
+  const visibilities = useRepoVisibilities(visibilityTargets)
 
   return (
     <List
