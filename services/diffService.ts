@@ -411,6 +411,60 @@ export async function getFileDiff(
   return buildModified(filepath, oldBytes!, workBytes!)
 }
 
+/** 文件版本原文（原内容 = HEAD，当前内容 = 工作区） */
+export interface FileVersions {
+  filepath: string
+  /** HEAD 版本原文；新增文件为 null */
+  original: string | null
+  /** 工作区当前原文；已删除文件为 null */
+  current: string | null
+  /** 新增文件（HEAD 中不存在） */
+  added: boolean
+  /** 删除文件（工作区中不存在） */
+  deleted: boolean
+  /** 二进制或非文本文件，无法提供原文 */
+  binary: boolean
+}
+
+/** 读取单个文件的 HEAD 原文与工作区当前原文（用于编辑器下方“原内容/改动后”查看） */
+export async function getFileVersions(
+  bookmarkName: string,
+  filepath: string
+): Promise<FileVersions> {
+  const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
+
+  let workBytes: Uint8Array | null = null
+  const workPath = dir + "/" + filepath
+  if (await FileManager.exists(workPath)) {
+    const isFile = await FileManager.isFile(workPath)
+    if (isFile) {
+      workBytes = await FileManager.readAsBytes(workPath)
+    }
+  }
+
+  let oldBytes: Uint8Array | null = null
+  try {
+    const headOid = await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" })
+    const blob = await git.readBlob({ fs, dir, gitdir, oid: headOid, filepath })
+    oldBytes = new Uint8Array(blob.blob)
+  } catch (e: any) {
+    const code = e?.code
+    if (code !== "NotFoundError" && code !== "ENOENT" && code !== "ENOTDIR") {
+      throw e
+    }
+  }
+
+  const binary = (oldBytes != null && isBinary(oldBytes)) || (workBytes != null && isBinary(workBytes))
+  return {
+    filepath,
+    added: !oldBytes && !!workBytes,
+    deleted: !!oldBytes && !workBytes,
+    binary,
+    original: oldBytes && !isBinary(oldBytes) ? decodeUtf8(oldBytes) : null,
+    current: workBytes && !isBinary(workBytes) ? decodeUtf8(workBytes) : null,
+  }
+}
+
 function textLines(text: string): string[] {
   // 去掉文件末尾换行产生的虚假空行，避免 Diff 多计一行
   const lines = text.split("\n").map((line) => line.replace(/\r$/, ""))

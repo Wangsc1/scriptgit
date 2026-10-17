@@ -1,6 +1,7 @@
-import { Button, Editor, NavigationStack, Text, VStack, useEffect, useMemo, useRef, useState } from "scripting"
-import { COLOR_SECONDARY_LABEL } from "../constants/colors"
+import { Button, Editor, NavigationStack, Text, VStack, HStack, List, Section, useEffect, useMemo, useRef, useState } from "scripting"
+import { COLOR_SECONDARY_LABEL, COLOR_ACCENT } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { getFileVersions, type FileVersions } from "../services/diffService"
 
 /** 全屏本地工作区编辑：不暂存、不提交、不推送；退出始终核对控制器当前草稿。 */
 export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChanged }: {
@@ -20,6 +21,10 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
   const controller = editor.controller
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
+  // 原文/改动后 查看
+  const [versions, setVersions] = useState<FileVersions | null>(null)
+  const [viewKind, setViewKind] = useState<"original" | "current" | null>(null)
+  const [versionsError, setVersionsError] = useState("")
   useEffect(() => () => { alive.current = false; controller?.dispose() }, [])
   const dirty = () => controller !== null && controller.content !== baseline.current.text
 
@@ -55,8 +60,38 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
     try { await onChanged(file.path, false) }
     catch (e: any) { console.warn("本地文件保存后状态刷新失败: " + String(e?.message || e)); if (alive.current) setStatus("已保存，但状态刷新失败；请到改动页核对") }
   }
+  async function viewVersion(kind: "original" | "current") {
+    setViewKind(kind)
+    setVersionsError("")
+    if (versions) return
+    try {
+      const v = await getFileVersions(bookmarkName, file.path)
+      if (alive.current) setVersions(v)
+    } catch (e: any) {
+      if (alive.current) setVersionsError(String(e?.message || e))
+    }
+  }
+  const viewText = viewKind === "original" ? versions?.original : viewKind === "current" ? versions?.current : null
+
   return <NavigationStack>
     <VStack spacing={0} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
+      fullScreenCover={{
+        isPresented: viewKind != null,
+        onChanged: () => { if (viewKind != null) setViewKind(null) },
+        content: viewKind ? (
+          <NavigationStack>
+            <List navigationTitle={viewKind === "original" ? "原内容" : "改动后内容"} navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden">
+              <Section>
+                {versionsError ? <Text foregroundStyle="red">{versionsError}</Text> : null}
+                {viewKind === "original" && versions?.added ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>该文件为新增，无原内容。</Text> : null}
+                {viewKind === "current" && versions?.deleted ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>该文件已删除。</Text> : null}
+                {versions?.binary ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>二进制文件，无法显示原文。</Text> : null}
+                {viewText != null ? <Text font="caption" selectable>{viewText}</Text> : (versionsError || versions?.binary || versions?.added || versions?.deleted) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text>}
+              </Section>
+            </List>
+          </NavigationStack>
+        ) : <></>,
+      }}
       toolbar={{
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
@@ -65,6 +100,14 @@ export function LocalFileEditor({ bookmarkName, file, onClose, onReload, onChang
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
       {controller !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
+      <HStack alignment="center" spacing={10} padding={{ horizontal: 12, vertical: 8 }} frame={{ maxWidth: Infinity, alignment: "center" }}>
+        <Button action={() => viewVersion("original")} tint={COLOR_ACCENT} disabled={busy}>
+          <Text font="caption" foregroundStyle={COLOR_ACCENT}>原内容</Text>
+        </Button>
+        <Button action={() => viewVersion("current")} tint={COLOR_ACCENT} disabled={busy}>
+          <Text font="caption" foregroundStyle={COLOR_ACCENT}>改动后</Text>
+        </Button>
+      </HStack>
     </VStack>
   </NavigationStack>
 }
