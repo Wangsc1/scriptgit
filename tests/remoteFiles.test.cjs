@@ -53,6 +53,16 @@ global.__fragment = 'Fragment'
 global.__jsx = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(x => x !== null && x !== false && x !== undefined) })
 let active
 const ui = new Proxy({}, { get(_, name) {
+  if (name === 'useObservable') return (initial) => {
+    const h = active, i = h.cursor++
+    if (!(i in h.slots)) {
+      const listeners = new Set()
+      let value = typeof initial === 'function' ? initial() : initial
+      h.slots[i] = { get value() { return value }, set value(next) { const old=value;value=next;if(next!==old)listeners.forEach(fn=>fn(next,old)) },
+        setValue(next) { this.value=next }, subscribe(fn) { listeners.add(fn) }, unsubscribe(fn) { listeners.delete(fn) } }
+    }
+    return h.slots[i]
+  }
   if (name === 'useState') return (initial) => {
     const h = active, i = h.cursor++
     if (!(i in h.slots)) h.slots[i] = typeof initial === 'function' ? initial() : initial
