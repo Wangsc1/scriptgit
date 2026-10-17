@@ -1,6 +1,6 @@
 # scriptgit
 
-在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.0**。
+在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.1**。
 
 ## 导入
 
@@ -21,16 +21,19 @@ https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2
 
 ## 使用
 
-1. 在「设置」配置 GitHub Token，并验证账号；本地 Git 提交可另外设置姓名和邮箱。
+1. 公开用户搜索、按用户名加载公开仓库与克隆公开仓库**不需要 Token**；私有仓库和远端写入需在「设置」配置并验证 GitHub Token。本地 Git 提交可另外设置姓名和邮箱。
 2. 本地 Git：从仓库页右上角「+」添加本地目录或克隆。单个和批量克隆默认保存到 **iCloud Drive/Scripting/git/<repo>**，自动创建 `git` 文件夹；也可点「更改目录」选择父目录并授权，其下自动创建 `git`。
 3. 远端编辑：在仓库首页点「GitHub 远端文件浏览与编辑」，加载自己的仓库列表，或填写 `owner/repo` 后打开。已有 GitHub 远端的本地仓库也可从详情页「GitHub → 远端文件编辑」进入。
 4. 选择分支，点目录逐级浏览，打开文件后在全屏编辑器中修改，填写提交消息，点「提交保存」。关闭前如有未保存修改会要求确认；取消可继续编辑。
 
 ### 按用户名批量克隆
 
-在「克隆仓库」页输入 GitHub 用户名，点「加载全部仓库」。完整分页加载成功后，列表默认全选；可「取消全选」或逐项切换。点「批量克隆所选 N 个仓库」，核对用户名、数量和目标目录后确认。
+在「克隆仓库」页输入部分 GitHub 用户名（至少 2 个字母、数字或 `-`），停顿约 350ms 后自动搜索公开用户，显示头像与 login 候选；可加载更多候选。点候选将填写完整 login，再点「加载全部仓库」；也可直接填写完整用户名加载。更改或清空输入会立即使旧仓库列表和选择失效，防止用旧用户名执行批量克隆。
 
-- 本人仓库使用认证接口，包含 Token 已授权的私有仓库；其他用户的公开仓库与当前账号有权访问、归该用户拥有的私有仓库合并去重。没有权限的私有仓库不会出现。加载途中失败不会把半份列表作为“全部”使用。
+用户候选来自 GitHub 用户搜索，**不是关联账号列表**；GitHub 最多提供前 1000 个匹配结果，结果过多或不完整时请细化关键词。完整分页加载仓库成功后，列表默认全选；可「取消全选」或逐项切换。点「批量克隆所选 N 个仓库」，核对用户名、范围、数量和目标目录后确认。
+
+- **未配置 Token**：匿名分页加载该用户拥有的公开仓库，页面注明“仅公开仓库”，可直接匿名克隆；不请求当前账号或私有仓库接口。公开 fork 的详情读取也支持匿名。
+- **已配置 Token**：用户搜索与仓库读取沿用认证；本人列表包含已授权私有仓库，其他用户公开仓库与当前账号有权访问、归该用户拥有的私有仓库合并去重。Token 无效、权限不足或后续分页失败会明确报错，**不会静默降级为公开列表**，也不会把半份仓库列表作为“全部”使用。
 - 逐个显示 `当前项/总数` 和下载进度，逐项报告成功、失败、跳过或取消；单项失败后继续下一项。取消是协作式的，可能需要等待当前网络请求结束；已完成项目保留，未执行项目标为取消。
 - 已存在的同名文件、文件夹（即使为空）、符号链接，以及忽略大小写后的同名项目都会跳过，不覆盖、不合并。重跑不会重复注册同一路径，也不会自动改名。
 - 克隆先写入本次专用临时目录，完成后才移动到目标并注册；失败/取消只清理本次拥有的临时目录和 Git 缓存，绝不删除既有目标。若下载后注册失败，保留下载文件与缓存并显示提示，避免误删数据。
@@ -51,7 +54,9 @@ iCloud 未启用、未授权，或因离线/权限等原因导致目录不可用
 
 ## Token 权限与安全
 
-优先使用 **Fine-grained personal access token**，只授权需要操作的仓库：
+只做公开用户搜索、公开仓库加载与克隆时可以不配置 Token。匿名请求的 GitHub API 限额较低，搜索另有限流；触发限制会显示提示，请稍后重试，或配置 Token 提高限额。已配置但失效的 Token 应先更新或由用户主动清除，不会自动忽略。
+
+需要私有仓库或远端写入时，优先使用 **Fine-grained personal access token**，只授权需要操作的仓库：
 
 - 仓库读取、克隆和文件浏览：Repository permissions → **Contents: Read-only**。批量只能发现当前 Token 有权读取的仓库，私有仓库需要逐个或按所需范围授权。
 - 文件保存：**Contents: Read and write**；仓库 Metadata 读取通常自动授予。
@@ -70,8 +75,10 @@ Token 通过 App 的系统 Keychain 存取。权限不足、Token 过期、网�
 npm install --prefix /tmp/scriptgit-test-tools typescript
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/remoteFiles.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/cloneQueue.test.cjs
+NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/anonymousClone.test.cjs
+NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/userSearch.test.cjs
 ```
 
-测试使用 mock GitHub HTTP、Scripting UI、Data、编辑器、内存文件系统与克隆引擎，不会向 GitHub 写入，也不会在服务器克隆用户仓库。覆盖全部分页（本人私有/他人公开与可访问私有）、iCloud 默认与不可用、外部目录权限及书签、批量成功/部分失败/跳过/取消/同名安全与重跑，以及文件编辑的 SHA 冲突、草稿保留、退出确认回归；同时进行 TypeScript/TSX 语法检查。
+测试使用 mock GitHub HTTP、Scripting UI、Data、编辑器、内存文件系统与克隆引擎，不会向 GitHub 写入，也不会在服务器克隆用户仓库。覆盖全部分页（本人私有/他人公开与可访问私有）、iCloud 默认与不可用、外部目录权限及书签、批量成功/部分失败/跳过/取消/同名安全与重跑，以及文件编辑的 SHA 冲突、草稿保留、退出确认回归；同时验证无 Token 分页、页面到真实克隆服务/HTTP 认证路径（底层网络与引擎 mock）、Token 失败不降级、私有读取/写入门禁，以及用户候选搜索分页、防抖、旧响应丢弃、选择和用户名更改失效；进行 TypeScript/TSX 语法检查。
 
 **本地环境不能验证 iOS 真机 UI、原生编辑器焦点/键盘、全屏弹层手势、真实 iCloud 同步/目录授权和 GitHub 实际克隆/写入权限。** 导入后应在测试仓库实际检查这些交互，再编辑重要文件。

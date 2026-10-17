@@ -114,21 +114,21 @@ function mapComment(data: any): GitHubComment {
   }
 }
 
-/** 带认证的 fetch 封装，自动注入 token 并处理错误 */
+/** 默认要求认证；仅明确标记的公开 GET 可匿名，已有 Token 失败绝不降级。 */
 async function githubFetch(
   url: string,
-  options?: { method?: string; body?: unknown }
+  options?: { method?: string; body?: unknown; requireToken?: boolean }
 ): Promise<any> {
   const token = getToken()
-  if (!token) {
+  const method = options?.method || "GET"
+  if (!token && (options?.requireToken !== false || method !== "GET")) {
     throw new Error("未配置 GitHub Token")
   }
-  const method = options?.method || "GET"
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   }
+  if (token) headers.Authorization = `Bearer ${token}`
   let body: string | undefined
   if (options?.body !== undefined) {
     headers["Content-Type"] = "application/json"
@@ -157,7 +157,12 @@ async function githubFetch(
     } catch (_e) {
       // 响应不是 JSON 时保留 HTTP 状态信息
     }
-    const error = new Error(`GitHub API 请求失败（HTTP ${res.status}）：${msg}`) as Error & { status: number }
+    let hint = ""
+    if (res.status === 401) hint = token ? "Token 无效或已过期，请在设置更新；未降级为匿名访问。" : "匿名访问被拒绝，请检查仓库是否公开。"
+    else if (res.status === 429 || (res.status === 403 && /rate.?limit/i.test(msg))) hint = token ? "GitHub API 限流，请稍后重试；未降级为匿名访问。" : "匿名 GitHub API 限流，请稍后重试或配置 Token 提高限额。"
+    else if (res.status === 403) hint = token ? "请检查 Token 权限、组织策略或 API 限流；未降级为匿名访问。" : "匿名访问受限或触发限流，请稍后重试或配置 Token。"
+    else if (res.status === 404) hint = "用户名/仓库不存在或当前凭据无权访问。"
+    const error = new Error(`GitHub API 请求失败（HTTP ${res.status}）：${msg}${hint ? "；" + hint : ""}`) as Error & { status: number }
     error.status = res.status
     throw error
   }
@@ -168,7 +173,7 @@ async function githubFetch(
 
 async function ghFetch(
   path: string,
-  options?: { method?: string; body?: unknown }
+  options?: { method?: string; body?: unknown; requireToken?: boolean }
 ): Promise<any> {
   return await githubFetch(API_BASE + path, options)
 }
@@ -362,7 +367,7 @@ export async function listMyRepos(
 
 /** 获取仓库详情；fork 仓库包含 parent/source 信息 */
 export async function getRepo(fullName: string): Promise<GitHubRepo> {
-  return mapRepo(await ghFetch(`/repos/${encodeRepo(fullName)}`))
+  return mapRepo(await ghFetch(`/repos/${encodeRepo(fullName)}`, { requireToken: false }))
 }
 
 /**
@@ -901,11 +906,13 @@ export async function saveRepoTextFile(fullName: string, input: {
 export async function listOwnedRepos(username: string): Promise<GitHubRepo[]> {
   const login = username.trim()
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(login)) throw new Error("请输入有效 GitHub 用户名")
-  const current = await getCurrentUser()
+  const authenticated = !!getToken()
+  // 不配置 Token 才走公开列表；配置了但无效必须报错，不能隐藏私有仓库。
+  const current = authenticated ? await getCurrentUser() : null
   const owned = new Map<string, GitHubRepo>()
   async function collect(base: string) {
     for (let page = 1; ; page++) {
-      const data = await ghFetch(`${base}&per_page=100&page=${page}`)
+      const data = await ghFetch(`${base}&per_page=100&page=${page}`, { requireToken: authenticated })
       if (!Array.isArray(data)) throw new Error("仓库列表响应格式无效")
       for (const item of data) {
         if (String(item.owner?.login || String(item.full_name || "").split("/")[0]).toLowerCase() !== login.toLowerCase()) continue
@@ -915,7 +922,9 @@ export async function listOwnedRepos(username: string): Promise<GitHubRepo[]> {
       if (data.length < 100) break
     }
   }
-  if (current.login.toLowerCase() === login.toLowerCase()) {
+  if (!current) {
+    await collect(`/users/${encodeURIComponent(login)}/repos?type=owner&sort=full_name`)
+  } else if (current.login.toLowerCase() === login.toLowerCase()) {
     // /users/{user}/repos 只返回公开仓库；本人必须使用认证接口才能含私有仓库。
     await collect("/user/repos?affiliation=owner&visibility=all&sort=full_name")
   } else {
@@ -924,4 +933,31 @@ export async function listOwnedRepos(username: string): Promise<GitHubRepo[]> {
     await collect("/user/repos?affiliation=owner,collaborator,organization_member&visibility=all&sort=full_name")
   }
   return Array.from(owned.values()).sort((a, b) => a.fullName.localeCompare(b.fullName))
+}
+
+export interface GitHubUserCandidate { login: string; avatarUrl: string }
+export interface GitHubUserSearchPage {
+  items: GitHubUserCandidate[]
+  total: number
+  hasMore: boolean
+  limited: boolean
+  incomplete: boolean
+}
+
+/** 公开用户候选搜索，不是关联账号查询；GitHub 搜索最多可访问前 1000 条。 */
+export async function searchGitHubUsers(query: string, page = 1): Promise<GitHubUserSearchPage> {
+  const value = query.trim()
+  if (!/^[A-Za-z0-9-]{2,39}$/.test(value)) throw new Error("输入至少 2 个用户名字符（字母、数字、-，最多 39 个）")
+  if (!Number.isInteger(page) || page < 1 || page > 50) throw new Error("GitHub 用户搜索最多访问前 1000 个结果")
+  const q = encodeURIComponent(`${value} in:login type:user`)
+  const data = await ghFetch(`/search/users?q=${q}&per_page=20&page=${page}`, { requireToken: false })
+  if (!Array.isArray(data.items)) throw new Error("GitHub 用户搜索响应格式无效")
+  const total = Math.max(0, Number(data.total_count || 0))
+  return {
+    items: data.items.map((item: any) => ({ login: String(item.login || ""), avatarUrl: String(item.avatar_url || "") })).filter((item: GitHubUserCandidate) => item.login),
+    total,
+    hasMore: page * 20 < Math.min(total, 1000),
+    limited: total > 1000,
+    incomplete: !!data.incomplete_results,
+  }
 }

@@ -42,12 +42,12 @@ function env(overrides={}) {
   let seq=0
   const storeDependency={...store,createRepoId:()=>`r${++seq}`}
   const clones=[]
-  const git={RemoteCancelToken,isRemoteOperationCancelled,clone:async(url,dir,id,_ref,_depth,options)=>{
+  const git={RemoteCancelToken,isRemoteOperationCancelled,clone:overrides.cloneImplementation || (async(url,dir,id,_ref,_depth,options)=>{
     clones.push({url,dir,id,options});await fm.createDirectory('/group/git-repos/'+id,true)
     fm.files.set(dir+'/README.md','downloaded')
     await options.onProgress?.({label:'下载对象 50%',percent:50})
     await overrides.clone?.(url,dir,id,options,fm)
-  }}
+  })}
   const api={getRepo:async fullName=>({fullName,fork:false})}
   const queue=load('services/cloneQueue.ts',{'../api/githubApi':{...api,...overrides.api},'./gitService':git,'./repoStore':{...storeDependency,...overrides.store},'./cloneWorkspace':workspace})
   return {fm,rows,workspace,store,queue,git,clones}
@@ -159,7 +159,7 @@ async function main(){
   function page(e,api={},queue=e.queue){
     const useToast=load('hooks/useToast.ts',{scripting:ui}).useToast
     return load('pages/ClonePage.tsx',{
-      scripting:ui,'../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:message=>global.__jsx('Text',{},message)},'../hooks/useToast':{useToast},
+      scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':load('hooks/useGitHubUserSearch.ts',{scripting:ui,'../api/githubApi':{searchGitHubUsers:async()=>({items:[],total:0,hasMore:false,limited:false,incomplete:false})}}),'../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:message=>global.__jsx('Text',{},message)},'../hooks/useToast':{useToast},
       '../services/repoStore':{pickDirectory:async()=>({path:'/external',accessBookmarkName:null})},'../services/gitService':{RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':queue,
       '../services/authStore':{hasToken:()=>true},'../services/notifyService':{notifySync:async()=>{},notifyError:async()=>{}},
       '../api/githubApi':{listMyRepos:async()=>[],listOwnedRepos:async()=>[repo('bob','a'),repo('bob','b')],...api},'../utils/format':{repoNameFromUrl:url=>url.split('/').pop().replace(/\.git$/,'')},'../utils/remoteProgress':{yieldForUi:async()=>{}},
@@ -205,4 +205,5 @@ async function main(){
   })
   console.log(`\n${groups} clone test groups passed; filesystem, network and clone engine are in-memory mocks.`)
 }
-main().catch(e=>{console.error(e);process.exitCode=1})
+module.exports = { env, fakeFM, rawRepo, repo, req }
+if (require.main === module) main().catch(e=>{console.error(e);process.exitCode=1})
