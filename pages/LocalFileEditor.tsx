@@ -1,4 +1,4 @@
-import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useColorScheme, useEffect, useMemo, useRef, useState } from "scripting"
+import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
@@ -17,7 +17,6 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
 }) {
   const baseline = useRef(file)
   const lock = useRef(false)
-  const scheme = useColorScheme()
   const alive = useRef(true)
   const editor = useMemo(() => {
     // 二进制/超限文件不创建不使用的原生编辑器；构造失败留在页面报告，不逃逸 render。
@@ -158,7 +157,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
                 <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL}>−{deleted} +{added}</Text>
                 {added === 0 && deleted === 0 && controller.content !== versionRef.current?.original ?
                   <Text foregroundStyle={COLOR_SECONDARY_LABEL}>仅换行或文件格式发生变化，无行级增删。</Text> :
-                  <DiffViewer key={diffRevision} diff={diff} compact appearance={scheme} />}
+                  <DiffViewer key={diffRevision} diff={diff} compact nativeAppearance />}
               </>}
           </VStack>
         </ScrollView> : <Text />}

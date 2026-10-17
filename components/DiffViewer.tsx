@@ -41,9 +41,7 @@ interface DiffColors {
  * light: line #e6ffec / #ffebe9，word #abf2bc / rgba(255,129,130,0.4)
  * dark:  line #2ea04326 / #f8514926，word #2ea04366 / #f8514966
  */
-function useDiffColors(appearance?: "light" | "dark"): DiffColors {
-  const scheme = useColorScheme()
-  const isDark = (appearance ?? scheme) === "dark"
+function diffPalette(isDark: boolean, explicit = true): DiffColors {
   return {
     // dark 行底 alpha 从 GitHub 0.15 提到 0.22（OLED 纯黑更可辨）
     addBg: (isDark ? "rgba(46, 160, 67, 0.22)" : "#e6ffec") as ShapeStyle,
@@ -60,10 +58,25 @@ function useDiffColors(appearance?: "light" | "dark"): DiffColors {
     addFg: (isDark ? "#3fb950" : "#1a7f37") as Color,
     delFg: (isDark ? "#f85149" : "#cf222e") as Color,
     gutter: (isDark ? "rgba(120,120,120,0.25)" : "rgba(180,180,180,0.25)") as ShapeStyle,
-    lineNoFg: (appearance ? (isDark ? "#8b949e" : "#656d76") : "secondaryLabel") as Color,
+    lineNoFg: (explicit ? (isDark ? "#8b949e" : "#656d76") : "secondaryLabel") as Color,
     // 正文用默认色（与 GitHub 一致，不整行染绿/红）
-    codeFg: (appearance ? (isDark ? "#e6edf3" : "#24292f") : "label") as Color,
+    codeFg: (explicit ? (isDark ? "#ffffff" : "#24292f") : "label") as Color,
   }
+}
+
+
+/** Local full-screen pages resolve dynamic colors in the native view environment,
+ * not the process-global system appearance returned by useColorScheme(). */
+function useDiffColors(appearance?: "light" | "dark", nativeAppearance = false): DiffColors {
+  const scheme = useColorScheme()
+  if (!nativeAppearance) return diffPalette((appearance ?? scheme) === "dark", !!appearance)
+  const light = diffPalette(false), dark = diffPalette(true)
+  const dynamic: Record<string, unknown> = {}
+  for (const key of Object.keys(light) as (keyof DiffColors)[]) {
+    dynamic[key] = { light: light[key], dark: dark[key] }
+  }
+  // Scripting accepts dynamic color/style objects on foreground/background props.
+  return dynamic as unknown as DiffColors
 }
 
 /** 折叠区：仅有 hiddenLines 时显示，点击展开 */
@@ -266,14 +279,16 @@ export function DiffViewer({
   onOpenImage,
   compact = false,
   appearance,
+  nativeAppearance = false,
 }: {
   diff: FileDiff
   compact?: boolean
   appearance?: "light" | "dark"
+  nativeAppearance?: boolean
   /** 点击图片时上抛 data URL，由页面全屏展示 */
   onOpenImage?: (dataUrl: string) => void
 }) {
-  const colors = useDiffColors(appearance)
+  const colors = useDiffColors(appearance, nativeAppearance)
   // 用 lines state 实现展开：点击 skip 时将其 hiddenLines 插入并移除 skip
   const [lines, setLines] = useState(diff.lines)
 

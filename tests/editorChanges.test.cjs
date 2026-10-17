@@ -28,7 +28,7 @@ async function main(){
  assert.equal(h.tree.props.preferredColorScheme,undefined);assert.deepEqual(h.tree.props.background,{light:'white',dark:'#242424'})
  assert.deepEqual(h.tree.children[0].props.background,{light:'white',dark:'#242424'});assert.equal(h.tree.children[0].props.ignoresSafeArea.edges,'bottom')
  assert.deepEqual(h.tree.children[0].props.toolbarBackground,{style:{light:'white',dark:'#242424'},bars:['navigationBar']})
- bar.props.selection.value=1;await pause();const diff=find(h,'DiffViewer');assert.equal(diff.props.compact,true);assert.equal(diff.props.appearance,'light');assert.ok(diff.props.diff.lines.some(l=>l.type==='del'));assert.ok(diff.props.diff.lines.some(l=>l.type==='add'&&l.segments.some(s=>s.type==='changed')))
+ bar.props.selection.value=1;await pause();const diff=find(h,'DiffViewer');assert.equal(diff.props.compact,true);assert.equal(diff.props.appearance,undefined);assert.equal(diff.props.nativeAppearance,true);assert.ok(diff.props.diff.lines.some(l=>l.type==='del'));assert.ok(diff.props.diff.lines.some(l=>l.type==='add'&&l.segments.some(s=>s.type==='changed')))
  assert.equal(writes.length,0);assert.equal(c.disposed,undefined)
  bar.props.selection.value=0;assert.equal(find(h,'LocalCodeEditor').props.controller,c);assert.equal(controllers.length,1)
  c.content='{\n"value": 333\n}\n';c.onContentChanged();const before=diffCalls;await pause();assert.equal(diffCalls,before)
@@ -79,9 +79,19 @@ async function main(){
  const darkView=mount(DiffViewer,{diff:sample,compact:true,appearance:'dark'})
  const darkNodes=all(expand(darkView.tree))
  for(const bg of ['rgba(46, 160, 67, 0.22)','rgba(248, 81, 73, 0.22)','rgba(46, 160, 67, 0.48)'])assert.ok(darkNodes.some(n=>n.props.background===bg))
- assert.ok(darkNodes.some(n=>n.props.foregroundStyle==='#e6edf3'))
+ assert.ok(darkNodes.some(n=>n.props.foregroundStyle==='#ffffff'))
  assert.equal(darkNodes.some(n=>['#e6ffec','#ffebe9'].includes(n.props.background)),false)
  darkView.unmount()
+ // Global hook says light, while the actual native page may be dark.
+ // Dynamic styles must carry BOTH palettes to the native rendering environment.
+ const nativeView=mount(DiffViewer,{diff:sample,compact:true,nativeAppearance:true})
+ const nativeNodes=all(expand(nativeView.tree))
+ assert.ok(nativeNodes.some(n=>n.props.foregroundStyle?.dark==='#ffffff'&&n.props.foregroundStyle?.light==='#24292f'))
+ for(const [light,dark] of [['#e6ffec','rgba(46, 160, 67, 0.22)'],['#ffebe9','rgba(248, 81, 73, 0.22)'],['#abf2bc','rgba(46, 160, 67, 0.48)']]){
+  assert.ok(nativeNodes.some(n=>n.props.background?.light===light&&n.props.background?.dark===dark))
+ }
+ assert.equal(nativeNodes.some(n=>n.props.foregroundStyle==='#24292f'),false)
+ nativeView.unmount()
  const labels=[]
  const tabUi=new Proxy(ui,{get:(target,key)=>key==='useColorScheme'?()=> 'light':key==='ImageRenderer'?{toUIImage:async node=>{labels.push(node);return {withTintColor:(color,mode)=>({label:node.children.join(''),color,mode})}}}:target[key]})
  const {FileChangeSwitcher}=load('components/FileChangeSwitcher.tsx',{scripting:tabUi,'../constants/colors':{COLOR_ORANGE:'systemOrange'}})
