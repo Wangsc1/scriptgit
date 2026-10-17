@@ -842,6 +842,48 @@ export interface GitHubContentEntry {
   type: string
   sha: string
   size: number
+  lastModified?: string
+}
+
+/** 批量补充每个文件的最后提交日期；目录/子模块跳过，失败不阻断列表。 */
+async function enrichLastModified(fullName: string, branch: string, entries: GitHubContentEntry[]) {
+  const files = entries.filter((e) => e.type === "file")
+  if (files.length === 0) return
+  const [owner, name] = fullName.split("/")
+  if (!owner || !name) return
+  const batchSize = 50
+  for (let i = 0; i < files.length; i += batchSize) {
+    const batch = files.slice(i, i + batchSize)
+    const fields = batch
+      .map((entry, idx) => `  f${idx}: history(path: ${JSON.stringify(entry.path)}, first: 1) { nodes { committedDate } }`)
+      .join("\n")
+    const query = `query($owner: String!, $name: String!, $qualifiedRef: String!) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedRef: $qualifiedRef) {
+      target {
+        ... on Commit {
+${fields}
+        }
+      }
+    }
+  }
+}`
+    try {
+      const data = await githubFetch(GRAPHQL_URL, {
+        method: "POST",
+        body: { query, variables: { owner, name, qualifiedRef: `refs/heads/${branch}` } },
+      })
+      const target = data?.data?.repository?.ref?.target
+      batch.forEach((entry, idx) => {
+        const nodes = target?.[`f${idx}`]?.nodes
+        if (Array.isArray(nodes) && nodes.length > 0 && nodes[0]?.committedDate) {
+          entry.lastModified = String(nodes[0].committedDate)
+        }
+      })
+    } catch (_e) {
+      // 任一批次失败仅放弃该批次日期，不阻断整体列表
+    }
+  }
 }
 
 function contentPath(path: string): string {
@@ -869,8 +911,10 @@ async function readContents(fullName: string, branch: string, path: string): Pro
 export async function listRepoContents(fullName: string, branch: string, path = ""): Promise<GitHubContentEntry[]> {
   const data = await readContents(fullName, branch, path)
   if (!Array.isArray(data)) throw new Error("该路径不是目录")
-  return data.map((item: any) => ({ name: String(item.name), path: String(item.path), type: String(item.type), sha: String(item.sha), size: Number(item.size || 0) }))
+  const entries: GitHubContentEntry[] = data.map((item: any) => ({ name: String(item.name), path: String(item.path), type: String(item.type), sha: String(item.sha), size: Number(item.size || 0) }))
     .sort((a, b) => (a.type === "dir" ? 0 : 1) - (b.type === "dir" ? 0 : 1) || a.name.localeCompare(b.name))
+  await enrichLastModified(fullName, branch, entries)
+  return entries
 }
 
 export async function loadRepoTextFile(fullName: string, branch: string, path: string): Promise<import("../services/githubFileSession").RemoteTextFile> {

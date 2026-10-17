@@ -1,8 +1,10 @@
 /** 远端文件浏览，无需克隆；分支与路径固定后才打开编辑会话。 */
-import { Button, List, Picker, Section, Text, TextField, useEffect, useRef, useState } from "scripting"
+import { Button, List, Picker, Section, Text, TextField, HStack, VStack, Image, useEffect, useRef, useState } from "scripting"
 import { getRepo, listMyRepos, listRepoBranches, listRepoContents, loadRepoTextFile, type GitHubContentEntry } from "../api/githubApi"
 import type { GitHubRepo } from "../types/git"
 import type { RemoteTextFile } from "../services/githubFileSession"
+import { formatBytes, formatISODate } from "../utils/format"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { GitHubFileEditor } from "./GitHubFileEditor"
 
 export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: string }) {
@@ -105,7 +107,23 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
       {path ? <Button title="上一级目录" action={() => loadDirectory(path.split("/").slice(0, -1).join("/"))} disabled={busy} /> : null}
       <Button title="刷新目录 / 重试" action={() => loadDirectory(path)} disabled={busy} />
       {!busy && !error && !entries.length ? <Text>空目录</Text> : null}
-      {entries.map((entry) => <Button key={entry.path} title={`${entry.type === "dir" ? "📁" : "📄"} ${entry.name}`} action={() => entry.type === "dir" ? loadDirectory(entry.path) : openFile(entry)} disabled={busy} />)}
+      {entries.map((entry) => {
+        const isDir = entry.type === "dir"
+        const metaParts: string[] = []
+        if (!isDir && entry.size > 0) metaParts.push(formatBytes(entry.size))
+        if (!isDir && entry.lastModified) metaParts.push(formatISODate(entry.lastModified))
+        return (
+          <Button key={entry.path} action={() => isDir ? loadDirectory(entry.path) : openFile(entry)} disabled={busy}>
+            <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
+              <Text font="body">{isDir ? "📁" : "📄"}</Text>
+              <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0 }}>
+                <Text font="body" foregroundStyle={COLOR_LABEL} lineLimit={1}>{entry.name}</Text>
+                {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join(", ")}</Text> : null}
+              </VStack>
+            </HStack>
+          </Button>
+        )
+      })}
       {entries.length >= 1000 ? <Text>GitHub Contents API 每个目录最多返回 1000 项，列表可能不完整。</Text> : null}
     </Section> : null}
   </List>

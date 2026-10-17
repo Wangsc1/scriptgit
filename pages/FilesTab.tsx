@@ -1,28 +1,16 @@
-import { Button, DisclosureGroup, Section, Text, HStack, Image, useRef, useState, useEffect } from "scripting"
+import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, FileManager } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
-import type { FileChange } from "../types/git"
+import { formatBytes, formatDate } from "../utils/format"
+import { resolveWorkdir } from "../services/repoStore"
 import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT, COLOR_ORANGE } from "../constants/colors"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ACCENT } from "../constants/colors"
 
-function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: string; color: string } | null {
-  switch (status) {
-    case "added":
-    case "*added": return { text: "新增", color: "systemPurple" }
-    case "modified":
-    case "*modified": return { text: "已修改", color: COLOR_ORANGE }
-    case "deleted":
-    case "*deleted": return { text: "已删除", color: "systemRed" }
-    default:
-      if (unstaged) return { text: "已修改", color: COLOR_ORANGE }
-      return null
-  }
-}
-
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange> }) {
+function FileTreeNodeView({ node, open, removed, busy, remove, manage }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string) => void; manage: (path: string, kind: "copy" | "rename") => void }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
-    const change = changesByPath.get(node.path)
-    const badge = deleted ? { text: "已删除", color: "systemRed" } : change ? statusBadge(change.status, change.unstaged) : null
+    const metaParts: string[] = []
+    if (node.size != null) metaParts.push(formatBytes(node.size))
+    if (node.modified != null) metaParts.push(formatDate(node.modified))
     return (
       <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
@@ -32,11 +20,10 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
       ] }}>
         <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity }}>
           <Image systemName="doc" foregroundStyle={COLOR_SECONDARY_LABEL} />
-          <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={2}>{node.name}</Text>
-          <HStack spacing={6} frame={{ minWidth: 0 }}>
-            {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
-            {deleted ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>（不可编辑）</Text> : null}
-          </HStack>
+          <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0 }}>
+            <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
+            {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
+          </VStack>
         </HStack>
       </Button>
     )
@@ -44,7 +31,7 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
   return <DisclosureGroup label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
   </HStack>}>
-    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} />)}
+    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} />)}
   </DisclosureGroup>
 }
 
@@ -58,14 +45,37 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [added, setAdded] = useState<string[]>([])
   const visibleFiles = [...new Set([...files, ...changes.map(c => c.filepath), ...added])]
   const [deleted, setDeleted] = useState<string[]>([])
+  const removed = new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)])
+  const [metadata, setMetadata] = useState<Map<string, { size: number; modified: number }>>(new Map())
   const state = useRef({ alive: true, busy: false })
   useEffect(() => () => { state.current.alive = false }, [])
   useEffect(() => {
     // 外部恢复或撤销删除后，新的改动结果应解除本页的即时删除标记。
     setDeleted(previous => previous.filter(path => changes.some(c => c.filepath === path && c.worktreeDeleted)))
   }, [changes])
-  const removed = new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)])
-  const changesByPath = new Map<string, FileChange>(changes.map(c => [c.filepath, c]))
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const root = resolveWorkdir(bookmarkName)
+        const next = new Map<string, { size: number; modified: number }>()
+        for (const path of visibleFiles) {
+          if (removed.has(path)) continue
+          try {
+            const stat = await FileManager.stat(root + "/" + path)
+            next.set(path, { size: stat.size, modified: stat.modificationDate })
+          } catch (_e) {
+            // 文件可能刚刚被删除或不可访问，跳过
+          }
+        }
+        if (!cancelled && state.current.alive) setMetadata(next)
+      } catch (_e) {
+        // 工作区不可访问时静默，列表仍可显示文件名
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [bookmarkName, visibleFiles.join("\n"), Array.from(removed).join("\n")])
   async function open(path: string) {
     if (state.current.busy || removed.has(path)) return
     setError("")
@@ -114,6 +124,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} changesByPath={changesByPath} />)}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : buildFileTree(visibleFiles, { metadata }).map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading} remove={remove} manage={manage} />)}
   </Section>
 }

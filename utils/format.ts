@@ -51,6 +51,35 @@ export function repoNameFromUrl(url: string): string {
   return name || "repo"
 }
 
+/** 字节 → 人类可读大小 */
+export function formatBytes(bytes?: number): string {
+  if (bytes == null || bytes < 0) return ""
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+/** 时间戳 → 短日期（列表用）：今天/昨天/月/日/年 */
+export function formatDate(ms?: number): string {
+  if (ms == null) return ""
+  const date = new Date(ms)
+  const now = new Date()
+  const isToday = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()
+  if (isToday) return "今天"
+  const isYesterday = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate() - 1
+  if (isYesterday) return "昨天"
+  if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
+}
+
+/** ISO 8601 时间 → 美式短日期 M/D/YY（远端文件列表用） */
+export function formatISODate(iso?: string): string {
+  if (!iso) return ""
+  const date = new Date(iso)
+  if (isNaN(date.getTime())) return ""
+  return `${date.getMonth() + 1}/${date.getDate()}/${String(date.getFullYear()).slice(-2)}`
+}
+
 /** 根据已暂存文件生成 GitHub 风格的提交标题 */
 export function suggestCommitTitle(changes: FileChange[]): string {
   const staged = changes.filter((change) => change.staged)
