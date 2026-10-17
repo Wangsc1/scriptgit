@@ -7,7 +7,7 @@ import { BusyOverlay } from "../components/BusyOverlay"
 import { toastContent } from "../components/Toast"
 import { useToast } from "../hooks/useToast"
 import type { GitHubRepo, RepoMeta } from "../types/git"
-import { pickDirectory } from "../services/repoStore"
+import { listRepos, pickDirectory } from "../services/repoStore"
 import { RemoteCancelToken } from "../services/gitService"
 import { cloneRoot, prepareCloneRoot, type CloneDestination } from "../services/cloneWorkspace"
 import { runCloneQueue, type CloneRequest, type CloneResult } from "../services/cloneQueue"
@@ -16,6 +16,7 @@ import { notifySync, notifyError } from "../services/notifyService"
 import { listMyRepos, listOwnedRepos } from "../api/githubApi"
 import { repoNameFromUrl } from "../utils/format"
 import { yieldForUi } from "../utils/remoteProgress"
+import { registeredGithubRepos } from "../utils/clonedGithubRepos"
 
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
@@ -35,6 +36,7 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
   const [publicOnly, setPublicOnly] = useState(!hasToken())
   const [ownedRepos, setOwnedRepos] = useState<GitHubRepo[]>([])
   const [selected, setSelected] = useState<string[]>([])
+  const [clonedRepos, setClonedRepos] = useState<Set<string>>(new Set())
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [results, setResults] = useState<CloneResult[]>([])
   const [listError, setListError] = useState("")
@@ -105,7 +107,10 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
     try {
       const repos = await listOwnedRepos(target)
       if (!alive.current || id !== listRequest.current) return
-      setOwnedRepos(repos); setSelected(repos.map(repo => repo.fullName)); setLoadedUser(target); setPublicOnly(onlyPublic)
+      // 用户主动加载完成后只读一次注册表；首屏/render 不为标记读 Storage 或工作区。
+      const cloned = registeredGithubRepos(listRepos())
+      setClonedRepos(cloned)
+      setOwnedRepos(repos); setSelected(repos.filter(repo => !cloned.has(repo.fullName.toLowerCase())).map(repo => repo.fullName)); setLoadedUser(target); setPublicOnly(onlyPublic)
     } catch (e: any) {
       if (alive.current && id === listRequest.current) setListError("加载失败，未开始克隆：" + String(e?.message || e))
     } finally { if (alive.current && id === listRequest.current) setLoadingRepos(false) }
@@ -133,7 +138,10 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
           await yieldForUi()
         },
         onResult: result => { if (alive.current) setResults(current => [...current, result]) },
-        onRegistered: repo => { if (batch) onCloned(repo, true) },
+        onRegistered: repo => {
+          if (alive.current) setClonedRepos(current => new Set([...current, ...registeredGithubRepos([repo])]))
+          if (batch) onCloned(repo, true)
+        },
       })
       if (!alive.current) return
       if (!batch && completed[0]?.repo) {
@@ -171,7 +179,7 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
       <FormRow label="Git URL" prompt="https://github.com/user/repo.git" value={url} onChanged={setUrl} />
       <Button title="克隆" action={() => cloneSingle()} disabled={cloning || loadingRepos || !url.trim()} />
     </Section>
-    <Section header={<Text>按 GitHub 用户名批量添加</Text>} footer={<Text>无 Token 时加载该用户全部公开仓库并匿名克隆；配置 Token 时还包含当前凭据可访问的私有仓库，认证失败不会降级。默认全选，加载完整列表后才能开始。</Text>}>
+    <Section header={<Text>按 GitHub 用户名批量添加</Text>} footer={<Text>无 Token 时加载该用户全部公开仓库并匿名克隆；配置 Token 时还包含当前凭据可访问的私有仓库，认证失败不会降级。未克隆默认勾选，已克隆仍可手动选择；加载完整列表后才能开始。</Text>}>
       {!hasToken() ? <Text>未配置 Token：仅公开仓库，可匿名加载与克隆。</Text> : null}
       <FormRow label="用户名" prompt="输入至少 2 个字符搜索用户，或填写完整 login" value={username} onChanged={(value: string) => changeUsername(value)} />
       <Text font="caption">搜索的是公开 GitHub 用户名，不是关联账号。点候选填写 login 后，再点「加载全部仓库」。</Text>
@@ -192,7 +200,7 @@ export function ClonePage({ onCloned }: { onCloned: (repo: RepoMeta, keepOpen?: 
         <Text>{publicOnly ? "本次列表仅包含公开仓库" : "本次列表包含当前 Token 已授权的仓库"}</Text>
         <Button title="全选" action={() => setSelected(ownedRepos.map(repo => repo.fullName))} disabled={cloning} />
         <Button title="取消全选" action={() => setSelected([])} disabled={cloning} />
-        {ownedRepos.map(repo => <Button key={repo.fullName} title={`${selected.includes(repo.fullName) ? "☑" : "☐"} ${repo.fullName}${repo.private ? "（私有）" : ""}`}
+        {ownedRepos.map(repo => <Button key={repo.fullName} title={`${selected.includes(repo.fullName) ? "☑" : "☐"} ${repo.fullName}${clonedRepos.has(repo.fullName.toLowerCase()) ? "（已克隆）" : ""}${repo.private ? "（私有）" : ""}`}
           action={() => setSelected(current => current.includes(repo.fullName) ? current.filter(name => name !== repo.fullName) : [...current, repo.fullName])} disabled={cloning} />)}
         <Button title={`批量克隆所选 ${selectedRepos.length} 个仓库`} action={() => execute(selectedRepos.map(repo => ({ name: repo.name, url: repo.url, githubRepo: repo })), true)} disabled={cloning || loadingRepos || !selectedRepos.length || loadedUser !== username.trim()} />
       </> : null}

@@ -1,6 +1,6 @@
 # scriptgit
 
-在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.3**。
+在 iPhone 的 Scripting App 中管理本地 Git 仓库，并浏览、编辑 GitHub 远端文件。当前版本 **1.2.4**。
 
 ## 导入
 
@@ -13,11 +13,11 @@ https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2
 ## 功能
 
 - 本地仓库添加、初始化、克隆及状态摘要；查看文件、改动、差异与提交历史。
-- **按 GitHub 用户名批量添加**：分页加载该用户拥有且当前凭据可访问的全部仓库，默认全选，可逐项选择，确认数量和目录后依次克隆并注册到本地列表。
+- **按 GitHub 用户名批量添加**：分页加载该用户拥有且当前凭据可访问的全部仓库，未克隆默认勾选，可逐项选择，确认数量和目录后依次克隆并注册到本地列表。
 - 分支、暂存、提交、推送、拉取、远端管理、冲突处理、回滚与差异对比。
 - GitHub Issues、Pull Requests 与 Actions 浏览及相关操作。
 - **GitHub 远端文件编辑**：无需克隆，选择仓库、分支与目录，加载现有 UTF-8 文本，填写提交消息后直接提交到指定分支。
-- 状态小组件及同步通知。
+- 状态小组件及同步通知；仓库页和设置页左上角关闭叉号为黑色。
 
 ## 使用
 
@@ -30,7 +30,7 @@ https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2
 
 在「克隆仓库」页输入部分 GitHub 用户名（至少 2 个字母、数字或 `-`），停顿约 350ms 后自动搜索公开用户，显示头像与 login 候选；可加载更多候选。点候选将填写完整 login，再点「加载全部仓库」；也可直接填写完整用户名加载。更改或清空输入会立即使旧仓库列表和选择失效，防止用旧用户名执行批量克隆。
 
-用户候选来自 GitHub 用户搜索，**不是关联账号列表**；GitHub 最多提供前 1000 个匹配结果，结果过多或不完整时请细化关键词。完整分页加载仓库成功后，列表默认全选；可「取消全选」或逐项切换。点「批量克隆所选 N 个仓库」，核对用户名、范围、数量和目标目录后确认。
+用户候选来自 GitHub 用户搜索，**不是关联账号列表**；GitHub 最多提供前 1000 个匹配结果，结果过多或不完整时请细化关键词。完整分页加载仓库成功后，**未克隆默认勾选**；已在本地注册且 GitHub origin 匹配的仓库标注「已克隆」，默认不勾选，仍可手动选择。「全选」包含已克隆项，「取消全选」清空选择。识别忽略 owner/repo 大小写及 HTTPS/SSH、`.git` 形式差异，不按同名目录猜测、不额外逐仓联网；成功克隆后标记即时更新，重开加载时按持久记录识别。执行时原有同名/已存在目录安全跳过规则不变。点「批量克隆所选 N 个仓库」，核对用户名、范围、数量和目标目录后确认。
 
 - **未配置 Token**：匿名分页加载该用户拥有的公开仓库，页面注明“仅公开仓库”，可直接匿名克隆；不请求当前账号或私有仓库接口。公开 fork 的详情读取也支持匿名。
 - **已配置 Token**：用户搜索与仓库读取沿用认证；本人列表包含已授权私有仓库，其他用户公开仓库与当前账号有权访问、归该用户拥有的私有仓库合并去重。Token 无效、权限不足或后续分页失败会明确报错，**不会静默降级为公开列表**，也不会把半份仓库列表作为“全部”使用。
@@ -89,6 +89,7 @@ NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/cloneQueue.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/anonymousClone.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/userSearch.test.cjs
 NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/startupRefresh.test.cjs
+NODE_PATH=/tmp/scriptgit-test-tools/node_modules node tests/clonedSelection.test.cjs
 ```
 
 测试使用 mock GitHub HTTP、Scripting UI、Data、编辑器、内存文件系统与克隆引擎，不会向 GitHub 写入，也不会在服务器克隆用户仓库。覆盖全部分页（本人私有/他人公开与可访问私有）、iCloud 默认与不可用、外部目录权限及书签、批量成功/部分失败/跳过/取消/同名安全与重跑，以及文件编辑的 SHA 冲突、草稿保留、退出确认回归；同时验证无 Token 分页、页面到真实克隆服务/HTTP 认证路径（底层网络与引擎 mock）、Token 失败不降级、私有读取/写入门禁，以及用户候选搜索分页、防抖、旧响应丢弃、选择和用户名更改失效；还覆盖慢/失败仓库启动隔离、刷新重入、隐藏页新增仓库、超时不解锁与不重复扫描、真实写入保持屏障、Git 引擎首次加载单飞，以及既有状态缓存/协调器回归；进行 TypeScript/TSX 语法检查。

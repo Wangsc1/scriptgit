@@ -22,7 +22,7 @@ function page(e,api){
   return load('pages/ClonePage.tsx',{
     scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':{useGitHubUserSearch:hook(api.searchGitHubUsers)},
     '../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:()=>null},'../hooks/useToast':{useToast},
-    '../services/repoStore':{pickDirectory:async()=>null},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,
+    '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>null},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,
     '../services/authStore':{hasToken:()=>false},'../services/notifyService':{notifySync:async()=>{},notifyError:async()=>{}},'../api/githubApi':{listMyRepos:async()=>[],...api},
     '../utils/format':{repoNameFromUrl:()=> 'repo'},'../utils/remoteProgress':{yieldForUi:async()=>{}},
   }).ClonePage

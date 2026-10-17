@@ -39,7 +39,7 @@ function page(e){
   const useToast=load('hooks/useToast.ts',{scripting:ui}).useToast
   return load('pages/ClonePage.tsx',{
     scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':load('hooks/useGitHubUserSearch.ts',{scripting:ui,'../api/githubApi':api}),'../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:message=>global.__jsx('Text',{},message)},'../hooks/useToast':{useToast},
-    '../services/repoStore':{pickDirectory:async()=>null},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,
+    '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>null},'../services/gitService':{RemoteCancelToken:progress.RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':e.queue,
     '../services/authStore':auth,'../services/notifyService':{notifySync:async()=>{},notifyError:async()=>{}},'../api/githubApi':api,
     '../utils/format':{repoNameFromUrl:url=>url.split('/').pop().replace(/\.git$/,'')},'../utils/remoteProgress':{yieldForUi:async()=>{}},
   }).ClonePage

@@ -217,7 +217,7 @@ export function RepoListPage() {
         <Toolbar>
           <ToolbarItem placement="topBarLeading">
             <Button action={dismiss}>
-              <Image systemName="xmark" fontWeight="semibold" foregroundStyle="red" />
+              <Image systemName="xmark" fontWeight="semibold" foregroundStyle="black" />
             </Button>
           </ToolbarItem>
           <ToolbarItem placement="primaryAction">

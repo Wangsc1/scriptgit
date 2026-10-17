@@ -160,13 +160,13 @@ async function main(){
     const useToast=load('hooks/useToast.ts',{scripting:ui}).useToast
     return load('pages/ClonePage.tsx',{
       scripting:ui,'../components/AvatarView':{AvatarView:'AvatarView'},'../hooks/useGitHubUserSearch':load('hooks/useGitHubUserSearch.ts',{scripting:ui,'../api/githubApi':{searchGitHubUsers:async()=>({items:[],total:0,hasMore:false,limited:false,incomplete:false})}}),'../components/FormRow':{FormRow:'FormRow'},'../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:message=>global.__jsx('Text',{},message)},'../hooks/useToast':{useToast},
-      '../services/repoStore':{pickDirectory:async()=>({path:'/external',accessBookmarkName:null})},'../services/gitService':{RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':queue,
+      '../utils/clonedGithubRepos':load('utils/clonedGithubRepos.ts',{'./github':load('utils/github.ts')}),'../services/repoStore':{listRepos:e.store.listRepos,pickDirectory:async()=>({path:'/external',accessBookmarkName:null})},'../services/gitService':{RemoteCancelToken},'../services/cloneWorkspace':e.workspace,'../services/cloneQueue':queue,
       '../services/authStore':{hasToken:()=>true},'../services/notifyService':{notifySync:async()=>{},notifyError:async()=>{}},
       '../api/githubApi':{listMyRepos:async()=>[],listOwnedRepos:async()=>[repo('bob','a'),repo('bob','b')],...api},'../utils/format':{repoNameFromUrl:url=>url.split('/').pop().replace(/\.git$/,'')},'../utils/remoteProgress':{yieldForUi:async()=>{}},
     }).ClonePage
   }
   function form(h,label){h.render();const found=all(h.tree).find(n=>n.type==='FormRow'&&n.props.label===label);assert.ok(found);return found}
-  await test('UI defaults all selected; unselect/select, count+directory confirmation, per-item results and keep-open registration',async()=>{
+  await test('UI defaults un-cloned selected (empty registry); unselect/select, count+directory confirmation, per-item results and keep-open registration',async()=>{
     const e=env(),registered=[];const h=mount(page(e),{onCloned:(r,keepOpen)=>registered.push([r,keepOpen])});await tick()
     form(h,'用户名').props.onChanged('bob');await node(h,'Button','加载全部仓库').props.action()
     assert.match(text(h),/已选\s+2\s+个/);await node(h,'Button','取消全选').props.action();assert.equal(node(h,'Button','批量克隆所选 0 个仓库').props.disabled,true)
