@@ -21,9 +21,7 @@ export function getRepoPendingAlert(pending: Exclude<RepoPendingAction, null>): 
     case "restore":
       return {
         title: "还原改动？",
-        message: pending.filepaths
-          ? `将「${pending.filepath}」及子目录内 ${pending.filepaths.length} 个文件还原到 HEAD，当前改动将丢失，此操作不可撤销。不影响其他目录。`
-          : `将「${pending.filepath}」还原到 HEAD，当前改动将丢失，此操作不可撤销。`,
+        message: `将「${pending.filepath}」还原到 HEAD，当前改动将丢失，此操作不可撤销。`,
         confirmButton: "还原",
       }
     case "revert":

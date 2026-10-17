@@ -15,7 +15,7 @@ facadeMocks['./git/autoPullService']=core;facadeMocks['./git/statusScanService']
 const facade=load('services/gitService.ts',facadeMocks),author={name:'Fixture',email:'fixture@example.invalid'};let groups=0,seq=0
 async function test(name,fn){await fn();groups++;console.log('PASS '+name)}
 async function fixture(){
- const dir=tmp+'/'+ ++seq;fs.mkdirSync(dir);ctx={git:wrapper,fs,dir,gitdir:dir+'/.git'};meta={name:'fixture',bookmarkName:'repo',source:'clone'};auth=null;fetchCalls=[]
+ const dir=tmp+'/'+ ++seq;fs.mkdirSync(dir);ctx={git:wrapper,fs,dir,gitdir:dir+'/.git'};meta={name:'fixture',bookmarkName:'repo',repoId:'fixture-'+seq,createdAt:seq,source:'clone'};auth=null;fetchCalls=[]
  await git.init({fs,dir,defaultBranch:'local-topic'});fs.writeFileSync(dir+'/a.txt','base');await git.add({fs,dir,filepath:'a.txt'});const base=await git.commit({fs,dir,author,message:'base'})
  fs.writeFileSync(dir+'/a.txt','remote');await git.add({fs,dir,filepath:'a.txt'});const target=await git.commit({fs,dir,author,message:'remote'})
  await git.writeRef({fs,dir,ref:'refs/heads/local-topic',value:base,force:true});await git.checkout({fs,dir,ref:'local-topic',force:true})
@@ -27,25 +27,51 @@ async function main(){
  await test('real fast-forward follows custom upstream, named HEAD/index/worktree correct, no merge commit or identity config',async()=>{
   const f=await fixture();assert.equal((await facade.autoPullFastForward('repo')).status,'updated');assert.equal(await f.head(),f.target);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'remote');assert.equal(await git.currentBranch({fs,dir:f.dir}),'local-topic');assert.deepEqual((await git.statusMatrix({fs,dir:f.dir})).map(r=>r.slice(1)),[[1,1,1]]);assert.equal(await git.getConfig({fs,dir:f.dir,path:'user.name'}),undefined);assert.equal((await git.readCommit({fs,dir:f.dir,oid:f.target})).commit.parent.length,1)
  })
- await test('divergence skips preserving ref/index/worktree and commit count; local ahead unchanged',async()=>{
-  const f=await fixture();fs.writeFileSync(f.dir+'/a.txt','local');await git.add({fs,dir:f.dir,filepath:'a.txt'});const local=await git.commit({fs,dir:f.dir,author,message:'local'}),index=fs.readFileSync(ctx.gitdir+'/index')
-  assert.equal((await facade.autoPullFastForward('repo')).status,'skipped');assert.equal(await f.head(),local);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'local');assert.deepEqual(fs.readFileSync(ctx.gitdir+'/index'),index);assert.equal((await git.log({fs,dir:f.dir})).length,2)
-  fetchImpl=async()=>{await git.writeRef({fs,dir:f.dir,ref:'refs/remotes/company/server-topic',value:f.base,force:true});return {fetchHead:f.base}};assert.equal((await facade.autoPullFastForward('repo')).status,'unchanged')
+ await test('default rejects non-clone; explicit all-sources fast-forwards local and legacy registered repos',async()=>{
+  for(const source of ['local',undefined]){
+   const f=await fixture();meta.source=source;const index=fs.readFileSync(ctx.gitdir+'/index')
+   for(const options of [undefined,{}, {includeAllSources:false}]){
+    assert.equal((await facade.autoPullFastForward('repo',options)).status,'skipped');assert.equal(fetchCalls.length,0);assert.equal(await f.head(),f.base);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'base');assert.deepEqual(fs.readFileSync(ctx.gitdir+'/index'),index)
+   }
+   assert.equal((await facade.autoPullFastForward('repo',{includeAllSources:true})).status,'updated');assert.equal(fetchCalls.length,1);assert.equal(await f.head(),f.target);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'remote');assert.equal(await git.currentBranch({fs,dir:f.dir}),'local-topic');assert.deepEqual((await git.statusMatrix({fs,dir:f.dir})).map(r=>r.slice(1)),[[1,1,1]])
+  }
  })
- await test('dirty/staged/untracked/ignored-untracked/merge/rebase/detached/missing-upstream skip BEFORE fetch, preserve worktree',async()=>{
+ await test('legacy repoId normalization remains compatible with all-sources fast-forward',async()=>{
+  const f=await fixture();meta.source='local';delete meta.repoId;const original=fetchImpl;fetchImpl=async o=>{meta.repoId='normalized';return original(o)}
+  assert.equal((await facade.autoPullFastForward('repo',{includeAllSources:true})).status,'updated');assert.equal(await f.head(),f.target)
+ })
+ await test('all-sources still requires registration and existing Git data; fetch-time registration changes skip',async()=>{
+  for(const options of [undefined,{includeAllSources:true}]){
+   const f=await fixture();meta=undefined;assert.equal((await facade.autoPullFastForward('repo',options)).status,'skipped');assert.equal(fetchCalls.length,0);assert.equal(await f.head(),f.base)
+  }
+  await fixture();meta.source='local';fs.unlinkSync(ctx.gitdir+'/HEAD');assert.equal((await facade.autoPullFastForward('repo',{includeAllSources:true})).status,'skipped');assert.equal(fetchCalls.length,0);assert.equal(fs.existsSync(ctx.gitdir+'/HEAD'),false)
+  for(const source of ['clone','local'])for(const kind of ['removed','source','repoId','createdAt']){
+   const f=await fixture();meta.source=source;const original=fetchImpl,index=fs.readFileSync(ctx.gitdir+'/index');fetchImpl=async o=>{const result=await original(o);if(kind==='removed')meta=undefined;else if(kind==='source')meta.source=source==='clone'?'local':'clone';else meta[kind]='replacement';return result}
+   const result=await facade.autoPullFastForward('repo',source==='local'?{includeAllSources:true}:undefined);assert.equal(result.status,'skipped',source+'/'+kind);assert.match(result.reason,/注册状态/);assert.equal(await f.head(),f.base);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'base');assert.deepEqual(fs.readFileSync(ctx.gitdir+'/index'),index)
+  }
+ })
+ for(const source of ['clone','local']){
+ const options=source==='local'?{includeAllSources:true}:undefined
+ await test(source+': divergence skips preserving ref/index/worktree and commit count; local ahead unchanged',async()=>{
+  const f=await fixture();meta.source=source;fs.writeFileSync(f.dir+'/a.txt','local');await git.add({fs,dir:f.dir,filepath:'a.txt'});const local=await git.commit({fs,dir:f.dir,author,message:'local'}),index=fs.readFileSync(ctx.gitdir+'/index')
+  assert.equal((await facade.autoPullFastForward('repo',options)).status,'skipped');assert.equal(await f.head(),local);assert.equal(fs.readFileSync(f.dir+'/a.txt','utf8'),'local');assert.deepEqual(fs.readFileSync(ctx.gitdir+'/index'),index);assert.equal((await git.log({fs,dir:f.dir})).length,2)
+  fetchImpl=async()=>{await git.writeRef({fs,dir:f.dir,ref:'refs/remotes/company/server-topic',value:f.base,force:true});return {fetchHead:f.base}};assert.equal((await facade.autoPullFastForward('repo',options)).status,'unchanged')
+ })
+ await test(source+': dirty/staged/untracked/ignored-untracked/merge/rebase/detached/missing-upstream skip BEFORE fetch, preserve worktree',async()=>{
   for(const kind of ['dirty','staged','untracked','ignored','merge','rebase','detached','upstream']){
-   const f=await fixture();if(kind==='dirty'||kind==='staged')fs.writeFileSync(f.dir+'/a.txt','draft');if(kind==='staged')await git.add({fs,dir:f.dir,filepath:'a.txt'});if(kind==='untracked')fs.writeFileSync(f.dir+'/new.txt','untracked')
+   const f=await fixture();meta.source=source;if(kind==='dirty'||kind==='staged')fs.writeFileSync(f.dir+'/a.txt','draft');if(kind==='staged')await git.add({fs,dir:f.dir,filepath:'a.txt'});if(kind==='untracked')fs.writeFileSync(f.dir+'/new.txt','untracked')
    if(kind==='ignored'){fs.writeFileSync(f.dir+'/.gitignore','secret\n');await git.add({fs,dir:f.dir,filepath:'.gitignore'});await git.commit({fs,dir:f.dir,author,message:'ignore'});fs.writeFileSync(f.dir+'/secret','keep')}
    if(kind==='merge')fs.writeFileSync(ctx.gitdir+'/gitgit-merge-state.json','invalid but protected');if(kind==='rebase')fs.mkdirSync(ctx.gitdir+'/rebase-merge');if(kind==='detached')await git.checkout({fs,dir:f.dir,ref:f.base});if(kind==='upstream')await git.setConfig({fs,dir:f.dir,path:'branch.local-topic.remote',value:undefined})
-   const head=await f.head(),text=fs.readFileSync(f.dir+'/a.txt');assert.equal((await facade.autoPullFastForward('repo')).status,'skipped',kind);assert.equal(fetchCalls.length,0,kind);assert.equal(await f.head(),head);assert.deepEqual(fs.readFileSync(f.dir+'/a.txt'),text)
+   const head=await f.head(),text=fs.readFileSync(f.dir+'/a.txt');assert.equal((await facade.autoPullFastForward('repo',options)).status,'skipped',kind);assert.equal(fetchCalls.length,0,kind);assert.equal(await f.head(),head);assert.deepEqual(fs.readFileSync(f.dir+'/a.txt'),text)
   }
  })
- await test('fetch-time dirty/staged/untracked/branch/HEAD/upstream/workdir changes rechecked before checkout',async()=>{
+ await test(source+': fetch-time dirty/staged/untracked/branch/HEAD/upstream/workdir changes rechecked before checkout',async()=>{
   for(const kind of ['dirty','staged','untracked','branch','head','upstream','workdir']){
-   const f=await fixture(),original=fetchImpl;fetchImpl=async o=>{const result=await original(o);if(kind==='dirty'||kind==='staged'){fs.writeFileSync(f.dir+'/a.txt','outside');if(kind==='staged')await git.add({fs,dir:f.dir,filepath:'a.txt'})}if(kind==='untracked')fs.writeFileSync(f.dir+'/new.txt','outside');if(kind==='branch')await git.branch({fs,dir:f.dir,ref:'other',checkout:true});if(kind==='head')await git.writeRef({fs,dir:f.dir,ref:'refs/heads/local-topic',value:f.target,force:true});if(kind==='upstream')await git.setConfig({fs,dir:f.dir,path:'branch.local-topic.merge',value:'refs/heads/other'});if(kind==='workdir')ctx={...ctx,dir:f.dir+'/moved'};return result}
-   assert.equal((await facade.autoPullFastForward('repo')).status,'skipped',kind);assert.notEqual(fs.readFileSync(f.dir+'/a.txt','utf8'),'remote',kind)
+   const f=await fixture();meta.source=source;const original=fetchImpl;fetchImpl=async o=>{const result=await original(o);if(kind==='dirty'||kind==='staged'){fs.writeFileSync(f.dir+'/a.txt','outside');if(kind==='staged')await git.add({fs,dir:f.dir,filepath:'a.txt'})}if(kind==='untracked')fs.writeFileSync(f.dir+'/new.txt','outside');if(kind==='branch')await git.branch({fs,dir:f.dir,ref:'other',checkout:true});if(kind==='head')await git.writeRef({fs,dir:f.dir,ref:'refs/heads/local-topic',value:f.target,force:true});if(kind==='upstream')await git.setConfig({fs,dir:f.dir,path:'branch.local-topic.merge',value:'refs/heads/other'});if(kind==='workdir')ctx={...ctx,dir:f.dir+'/moved'};return result}
+   assert.equal((await facade.autoPullFastForward('repo',options)).status,'skipped',kind);assert.notEqual(fs.readFileSync(f.dir+'/a.txt','utf8'),'remote',kind)
   }
  })
+ }
  await test('anonymous public transport has no Authorization; invalid configured token fails once with Basic auth, no fallback',async()=>{
   for(const token of [null,{username:'token',password:'invalid-test-token'}]){
    const f=await fixture();auth=token;const calls=[];global.fetch=async(url,options)=>{calls.push(options);return {status:token?401:200,statusText:'',url,headers:new Map(),dataStream:(async function*(){})()}}
@@ -62,7 +88,7 @@ async function main(){
  })
  function schedule(rows,operation){let reads=0;const queue=load('services/startupAutoPull.ts',{'./repoStore':{listRepos:()=>{reads++;return rows}},'./gitService':{autoPullFastForward:operation},'../utils/remoteProgress':progress});return {queue,reads:()=>reads}}
  await test('queue yields before Storage/workspace, starts once; single failure continues, local repos excluded and paths sanitized',async()=>{
-  const gate=deferred(),calls=[],e=schedule([{bookmarkName:'a',name:'/private/long/a',source:'clone'},{bookmarkName:'local',name:'local',source:'local'},{bookmarkName:'b',name:'b',source:'clone'}],async key=>{calls.push(key);if(key==='a'){await gate.promise;throw Error('EACCES /private/secret/token')}return {status:'updated',reason:'已快进更新'}})
+  const gate=deferred(),calls=[],e=schedule([{bookmarkName:'a',name:'/private/long/a',source:'clone'},{bookmarkName:'local',name:'local',source:'local'},{bookmarkName:'b',name:'b',source:'clone'}],async(key,options)=>{assert.equal(options.includeAllSources,undefined);calls.push(key);if(key==='a'){await gate.promise;throw Error('EACCES /private/secret/token')}return {status:'updated',reason:'已快进更新'}})
   const p=e.queue.startStartupPull();assert.equal(e.queue.startStartupPull(),p);assert.equal(e.reads(),0);assert.equal(calls.length,0);await new Promise(r=>setTimeout(r,5));assert.deepEqual(calls,['a']);gate.resolve();await p;assert.deepEqual(calls,['a','b']);await e.queue.startStartupPull();assert.deepEqual(calls,['a','b']);assert.doesNotMatch(JSON.stringify(e.queue.getStartupPullState()),/private|secret/);assert.deepEqual(e.queue.getStartupPullState().results.map(r=>r.status),['failed','updated'])
  })
  await test('timeout requests cancel only; original awaited before second item; no stop UI/API',async()=>{

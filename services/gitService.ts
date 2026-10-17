@@ -6,8 +6,8 @@
  */
 
 import { runWithBackgroundKeepAlive } from "./git/runtime"
-import { autoPullInternal, type AutoPullOutcome } from "./git/autoPullService"
-export type { AutoPullOutcome } from "./git/autoPullService"
+import { autoPullInternal, type AutoPullOptions, type AutoPullOutcome } from "./git/autoPullService"
+export type { AutoPullOptions, AutoPullOutcome } from "./git/autoPullService"
 import {
   applyStashInternal,
   dropStashInternal,
@@ -378,8 +378,8 @@ export async function push(
   )
 }
 
-/** 启动自动拉取专用：同仓真实 mutation 全程持锁，不采用手动合并路径。 */
-export function autoPullFastForward(bookmarkName: string, options?: RemoteOpOptions): Promise<AutoPullOutcome> {
+/** 安全快进：默认仅 clone；显式刷新可传 includeAllSources。同仓 mutation 全程持锁。 */
+export function autoPullFastForward(bookmarkName: string, options?: AutoPullOptions): Promise<AutoPullOutcome> {
   return runRepoMutation(bookmarkName, () => autoPullInternal(bookmarkName, options), false)
 }
 

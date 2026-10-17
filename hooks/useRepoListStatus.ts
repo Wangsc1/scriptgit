@@ -35,27 +35,55 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
   const [statusMap, setStatusMap] = useState<Record<string, RepoListStatus>>(() => cachedStatuses(listRepos()))
   const [snapshotMap, setSnapshotMap] = useState<Record<string, RepoSnapshot>>({})
   const [repoRefreshMap, setRepoRefreshMap] = useState<Record<string, RepoRefreshState>>({})
-  const [progress, setProgress] = useState({ running: false, completed: 0, total: 0, current: "" })
+  // 当前主页不展示逐仓进度；仅保存读数，避免每完成一个仓库都重渲染整张列表。
+  const progressRef = useRef({ running: false, completed: 0, total: 0, current: "" })
+  const setProgress = (value: typeof progressRef.current | ((previous: typeof progressRef.current) => typeof progressRef.current)) => {
+    progressRef.current = typeof value === "function" ? value(progressRef.current) : value
+  }
   const state = useRef({
+    publishTimer: null as ReturnType<typeof setTimeout> | null,
+    statuses: new Map<string, RepoListStatus>(),
+    refreshes: new Map<string, RepoRefreshState | undefined>(),
     active: false, epoch: 0, rerun: false, forceNext: false, forcing: false,
     pending: null as Promise<void> | null,
     reads: new Map<string, { promise: Promise<RepoListStatus>; startedAt: number }>(),
   })
   const exists = (key: string) => listRepos().some(repo => repo.bookmarkName === key)
 
-  function setRefresh(key: string, refresh?: RepoRefreshState) {
-    if (!state.current.active || !exists(key)) return
-    setRepoRefreshMap(previous => {
+  function publish() {
+    if (state.current.publishTimer !== null) clearTimeout(state.current.publishTimer)
+    state.current.publishTimer = null
+    const statuses = new Map(state.current.statuses), refreshes = new Map(state.current.refreshes)
+    state.current.statuses.clear(); state.current.refreshes.clear()
+    if (!state.current.active) return
+    const keys = new Set(listRepos().map(repo => repo.bookmarkName))
+    if (statuses.size) setStatusMap(previous => {
       const next = { ...previous }
-      if (refresh) next[key] = refresh
-      else delete next[key]
+      for (const [key, value] of statuses) if (keys.has(key)) next[key] = value
       return next
     })
+    if (refreshes.size) setRepoRefreshMap(previous => {
+      const next = { ...previous }
+      for (const [key, value] of refreshes) if (keys.has(key)) {
+        if (value) next[key] = value
+        else delete next[key]
+      }
+      return next
+    })
+  }
+  function schedulePublish() {
+    if (state.current.publishTimer === null) state.current.publishTimer = setTimeout(publish, 100)
+  }
+  function setRefresh(key: string, refresh?: RepoRefreshState) {
+    if (!state.current.active) return
+    state.current.refreshes.set(key, refresh)
+    schedulePublish()
   }
 
   function stop() {
     githubUpdated.stop()
     state.current.active = false
+    publish() // 取消待发布计时器，不在隐藏/卸载后写 UI 状态。
     state.current.epoch++
     state.current.rerun = false
     state.current.forceNext ||= state.current.forcing
@@ -74,7 +102,8 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     // 真实读取迟到完成仍可回填；未完成前始终保留同仓单飞记录。
     promise.then(status => {
       if (!state.current.active || !exists(key)) return
-      setStatusMap(previous => ({ ...previous, [key]: status }))
+      state.current.statuses.set(key, status)
+      schedulePublish()
       setRefresh(key, status.error ? { phase: "error", message: status.error } : undefined)
     }, error => {
       setRefresh(key, { phase: "error", message: String(error?.message || error) })
@@ -130,7 +159,10 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(MAX_READS, targets.length) }, () => worker()))
-    if (current()) setProgress({ running: false, completed, total: targets.length, current: "" })
+    if (current()) {
+      publish()
+      setProgress({ running: false, completed, total: targets.length, current: "" })
+    }
   }
 
   function refreshAll(force = false): Promise<void> {
@@ -177,5 +209,5 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     setRepoRefreshMap(previous => { const next = { ...previous }; delete next[bookmarkName]; return next })
   }
 
-  return { statusMap, snapshotMap, repoRefreshMap, progress, githubUpdatedProgress: githubUpdated.progress, refreshAll, refreshRepo, forgetRepo, appear, disappear: stop }
+  return { statusMap, snapshotMap, repoRefreshMap, progress: progressRef.current, githubUpdatedProgress: githubUpdated.progress, refreshAll, refreshRepo, forgetRepo, appear, disappear: stop }
 }

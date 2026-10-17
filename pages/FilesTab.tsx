@@ -1,5 +1,6 @@
 import { Button, DisclosureGroup, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
+import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
@@ -21,7 +22,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename") => void; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -66,18 +67,18 @@ function FileTreeNodeView({ node, open, removed, busy, remove, manage, changesBy
       </Button>
     )
   }
-  const hasChanges = [...changesByPath.keys()].some(path => path.startsWith(node.path + "/"))
+  const hasChanges = changedDirectories.has(node.path)
   const folderActions: any[] = []
   if (hasChanges) {
     folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => onRestore(node.path)} />)
     folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
-  return <DisclosureGroup trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
+  return <DisclosureGroup isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={COLOR_ACCENT} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {hasChanges ? <Text font="caption2" foregroundStyle={COLOR_ORANGE}>已修改</Text> : null}
   </HStack>}>
-    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} open={open} removed={removed} busy={busy} remove={remove} manage={manage} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
@@ -89,10 +90,23 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   onRestore: (filepath: string, filepaths?: string[]) => void
   mergeInProgress: boolean
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  function toggleExpanded(path: string, value: boolean) {
+    setExpanded(previous => {
+      const next = new Set(previous)
+      if (value) next.add(path)
+      else next.delete(path)
+      return next
+    })
+  }
+  const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [added, setAdded] = useState<string[]>([])
-  const visibleFiles = useMemo(() => [...new Set([...files, ...changes.map(c => c.filepath), ...added])], [files, changes, added])
+  const fileSignature = [...new Set([...files, ...changes.map(c => c.filepath), ...added])].join("\0")
+  const visibleFiles = useMemo(() => fileSignature ? fileSignature.split("\0") : [], [fileSignature])
+  const tree = useMemo(() => buildFileTree(visibleFiles), [visibleFiles])
+  const metadataPaths = useMemo(() => expandedFilePaths(tree, expanded), [tree, expanded])
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])
   const changesByPath = useMemo(() => new Map<string, FileChange>(changes.map(c => [c.filepath, c])), [changes])
@@ -101,32 +115,28 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   useEffect(() => () => { state.current.alive = false }, [])
   useEffect(() => {
     // 外部恢复或撤销删除后，新的改动结果应解除本页的即时删除标记。
-    setDeleted(previous => previous.filter(path => changes.some(c => c.filepath === path && c.worktreeDeleted)))
+    setDeleted(previous => {
+      const next = previous.filter(path => changes.some(c => c.filepath === path && c.worktreeDeleted))
+      return next.length === previous.length ? previous : next
+    })
   }, [changes])
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
         const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-        const next = new Map<string, { size: number; modified: number }>()
-        await Promise.all(visibleFiles.map(async (path) => {
-          if (removed.has(path)) return
-          try {
-            const absolute = root + "/" + path
-            const stat = await FileManager.stat(absolute)
-            next.set(path, { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) })
-          } catch (_e) {
-            // 文件可能刚刚被删除或不可访问，跳过
-          }
-        }))
+        const next = await readMetadataBatched(metadataPaths.filter(path => !removed.has(path)), async path => {
+          const stat = await FileManager.stat(root + "/" + path)
+          return { size: Number(stat.size ?? 0), modified: Number(stat.modificationDate ?? 0) }
+        }, () => cancelled || !state.current.alive)
         if (!cancelled && state.current.alive) setMetadata(next)
       } catch (e: any) {
-        if (state.current.alive) setError("元数据读取失败: " + String(e?.message || e))
+        if (!cancelled && state.current.alive) setError("元数据读取失败: " + String(e?.message || e))
       }
     }
     load()
     return () => { cancelled = true }
-  }, [bookmarkName, visibleFiles])
+  }, [bookmarkName, metadataPaths, changes, removed])
   async function open(path: string) {
     if (state.current.busy || removed.has(path)) return
     setError("")
@@ -188,12 +198,11 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
   }
 
-  // 树只随文件列表或元数据变化重建，避免滑动时反复构建
-  const tree = useMemo(() => buildFileTree(visibleFiles, { metadata }), [visibleFiles, metadata])
+  // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
   return <Section header={<Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {visibleFiles.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} open={open} removed={removed} busy={busy || loading || mergeInProgress} remove={remove} manage={manage} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

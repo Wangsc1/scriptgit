@@ -140,7 +140,7 @@ async function main(){
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  let groups=folders(),a=groups[0].props.trailingSwipeActions.actions
+  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.trailingSwipeActions.actions
   assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','提交','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
   assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
   await a[1].props.action();assert.equal(pushes,1)

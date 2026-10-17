@@ -8,9 +8,13 @@ import { githubUpdatedPatch } from "../utils/repoUpdated"
 /** 仅后台轻量 GitHub 元数据请求；与工作区/矩阵扫描无关，最多两路，不阻塞首屏。 */
 export function useRepoGithubUpdated(setRepos: (repos: RepoMeta[]) => void) {
   const [progress, setProgress] = useState({ running: false, completed: 0, total: 0, failed: 0, error: "" })
-  const state = useRef({ active: false, pending: null as Promise<void> | null, checked: new Map<string, number>() })
-  useEffect(() => () => { state.current.active = false }, [])
-  function stop() { state.current.active = false }
+  const state = useRef({ active: false, publishTimer: null as ReturnType<typeof setTimeout> | null, pending: null as Promise<void> | null, checked: new Map<string, number>() })
+  useEffect(() => stop, [])
+  function stop() {
+    state.current.active = false
+    if (state.current.publishTimer !== null) clearTimeout(state.current.publishTimer)
+    state.current.publishTimer = null
+  }
   function refresh(force = false): Promise<void> {
     const current = state.current
     current.active = true
@@ -26,8 +30,18 @@ export function useRepoGithubUpdated(setRepos: (repos: RepoMeta[]) => void) {
         targets.set(name, [...(targets.get(name) || []), repo.bookmarkName])
       }
       const queue = [...targets]; let cursor = 0, completed = 0, failed = 0, error = ""
-      const report = () => { if (current.active) setProgress({ running: completed < queue.length, completed, total: queue.length, failed, error }) }
-      report()
+      let reposDirty = false
+      const publish = () => {
+        if (current.publishTimer !== null) clearTimeout(current.publishTimer)
+        current.publishTimer = null
+        if (!current.active) return
+        if (reposDirty) { reposDirty = false; setRepos(listRepos()) }
+        setProgress({ running: completed < queue.length, completed, total: queue.length, failed, error })
+      }
+      const report = () => {
+        if (current.active && current.publishTimer === null) current.publishTimer = setTimeout(publish, 150)
+      }
+      publish()
       async function worker() {
         while (current.active) {
           const target = queue[cursor++]
@@ -43,13 +57,13 @@ export function useRepoGithubUpdated(setRepos: (repos: RepoMeta[]) => void) {
               if (keys.includes(repo.bookmarkName) && githubRepoFromRemoteUrl(repo.remoteUrl)?.toLowerCase() === name) updateRepo(repo.bookmarkName, patch)
             }
             current.checked.set(name, Date.now())
-            if (current.active) setRepos(listRepos())
+            reposDirty = true
           } catch (e: any) { failed++; error = String(e?.message || e) }
           completed++; report()
         }
       }
       await Promise.all([worker(), worker()])
-      if (current.active) setProgress({ running: false, completed, total: queue.length, failed, error })
+      publish()
     }).catch(e => {
       if (current.active) setProgress(previous => ({ ...previous, running: false, failed: previous.failed + 1, error: String(e?.message || e) }))
     }).finally(() => { current.pending = null })

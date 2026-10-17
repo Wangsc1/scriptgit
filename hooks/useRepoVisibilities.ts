@@ -52,6 +52,7 @@ export function useRepoVisibilities(
     if (pending.length === 0) return
 
     let stopped = false
+    let publishTimer: ReturnType<typeof setTimeout> | null = null
     let cursor = 0
 
     async function worker() {
@@ -60,10 +61,13 @@ export function useRepoVisibilities(
         if (!target) return
         try {
           cache.set(target.fullName, await getRepoVisibility(target.fullName))
+          if (!stopped && publishTimer === null) publishTimer = setTimeout(() => {
+            publishTimer = null
+            if (!stopped) setVersion(version => version + 1)
+          }, 100)
         } catch (_e) {
           // 权限不足、仓库不存在或网络抖动都只影响这一行，其它行继续
         }
-        setVersion((version) => version + 1)
       }
     }
 
@@ -71,6 +75,7 @@ export function useRepoVisibilities(
     // 列表变化或页面卸载后不再取新任务，已在途请求的结果仍然进缓存
     return () => {
       stopped = true
+      if (publishTimer !== null) clearTimeout(publishTimer)
     }
   }, [signature])
 

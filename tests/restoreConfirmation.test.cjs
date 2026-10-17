@@ -10,6 +10,7 @@ for (const action of [file, folder]) {
   assert.equal(alert.confirmButton, '还原')
   assert.match(alert.message, /当前改动将丢失，此操作不可撤销/)
 }
+assert.equal(getRepoPendingAlert({ ...folder, filepath: 'same' }).message, getRepoPendingAlert({ ...file, filepath: 'same' }).message)
 const page = fs.readFileSync(require('node:path').join(__dirname, '../pages/RepoDetailPage.tsx'), 'utf8')
 assert.match(page, /title=\{activeAlert.confirmButton\}\s+role="destructive"/)
 assert.match(page, /title="取消"\s+role="cancel"/)

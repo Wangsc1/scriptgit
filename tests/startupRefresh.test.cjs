@@ -42,13 +42,13 @@ async function main(){
       e=hookEnv(['a-slow','b-good','c-error'],key=>c.read(key,()=>c.scan(key,'列表出现',async()=>key==='a-slow'?slow.promise:key==='c-error'?Promise.reject(new Error('permission denied')):status())))
       assert.equal(e.calls.length,0);assert.equal(e.api().progress.running,false)
       e.api().appear();const cycle=e.api().refreshAll();await tick();assert.equal(e.published().length,3)
-      await time.advance(0);assert.deepEqual(e.calls.map(x=>x[0]),['a-slow'])
+      await time.advance(0);assert.deepEqual(e.calls.map(x=>x[0]),['a-slow','b-good'])
       await time.advance(10000);await cycle
       assert.deepEqual(e.calls.map(x=>x[0]),['a-slow','b-good','c-error'])
       let view=e.api();assert.equal(view.progress.running,false);assert.equal(view.progress.completed,3);assert.equal(view.repoRefreshMap['a-slow'].phase,'slow');assert.equal(view.statusMap['b-good'].workdirOk,true);assert.match(view.repoRefreshMap['c-error'].message,/permission denied/)
       const retry=e.api().refreshAll(true);await tick();await time.advance(0);await retry
       assert.equal(e.calls.filter(x=>x[0]==='a-slow').length,1)
-      slow.resolve(status({ahead:2}));await tick();view=e.api();assert.equal(view.statusMap['a-slow'].ahead,2);assert.equal(view.repoRefreshMap['a-slow'],undefined)
+      slow.resolve(status({ahead:2}));await tick();await time.advance(100);view=e.api();assert.equal(view.statusMap['a-slow'].ahead,2);assert.equal(view.repoRefreshMap['a-slow'],undefined)
     }finally{e?.h.unmount();time.restore()}
   })
   await test('two never-settling reads cap real work; remaining repos become explicit deferred, refresh promise finishes',async()=>{
@@ -100,14 +100,14 @@ async function main(){
       writeGate.resolve('written');assert.equal(await actual,'written');assert.equal(await following,'read-after-write');assert.equal(c.isWriting('same'),false)
     }finally{time.restore()}
   })
-  await test('real RepoListPage has operable first screen, hidden progress with working refresh/retry and non-spinning error rows',async()=>{
+  await test('real RepoListPage has operable first screen, hidden progress with pull-to-refresh and non-spinning error rows',async()=>{
     const time=clock();let page,e
     try{
       const gate=deferred();e=hookEnv(['a-slow','b-good'],key=>key==='a-slow'?gate.promise:Promise.resolve(status()))
       page=mount(readPage(e),{});assert.equal(page.tree.props.overlay,undefined)
-      assert.ok(node(page,'Button','重试状态刷新'));assert.equal(all(page.tree).filter(n=>typeof n.type==='function'&&n.props.repo).length,2)
+      assert.equal(typeof page.tree.props.refreshable,'function');assert.equal(all(page.tree).filter(n=>typeof n.type==='function'&&n.props.repo).length,2)
       page.tree.props.onAppear();await tick();await time.advance(0);assert.doesNotMatch(text(page),/正在检查|本轮已处理|GitHub 更新时间刷新|按 GitHub 最近更新时间|启动自动拉取结果|停止后续自动拉取/);assert.equal(all(page.tree).some(n=>n.type==='DisclosureGroup'),false)
-      await time.advance(10000);await tick();assert.equal(node(page,'Button','重试状态刷新').props.disabled,false)
+      await time.advance(10000);await tick();assert.equal(typeof page.tree.props.refreshable,'function')
       page.render();const row=all(page.tree).find(n=>typeof n.type==='function'&&n.props.repo?.bookmarkName==='a-slow');assert.equal(row.props.refresh.phase,'slow')
       const rendered=row.type(row.props);assert.equal(all(rendered).filter(n=>n.type==='ProgressView').length,0)
       assert.ok(JSON.stringify(rendered).includes('状态读取较慢'));assert.ok(JSON.stringify(rendered).includes('状态未确认'))

@@ -5,6 +5,8 @@ import { getCtx, resolveGitdir, type GitContext } from "./runtime"
 import { parseUpstreamConfig, upstreamMergeBranch } from "../../utils/remote"
 import { checkRemoteCancelled, createGitOnProgress, type RemoteOpOptions } from "../../utils/remoteProgress"
 
+/** 默认只拉取 clone；用户显式刷新可允许所有已注册来源，安全检查不变。 */
+export type AutoPullOptions = RemoteOpOptions & { includeAllSources?: boolean }
 export type AutoPullOutcome = { status: "updated" | "unchanged" | "skipped"; reason: string }
 class SkipAutoPull extends Error {}
 const skip = (reason: string): never => { throw new SkipAutoPull(reason) }
@@ -38,10 +40,13 @@ function same(a: Baseline, b: Baseline): boolean {
 }
 
 /** 必须由 facade 在同仓 mutation 屏障内调用。与手动 pull 的合并路径完全分离。 */
-export async function autoPullInternal(bookmarkName: string, options?: RemoteOpOptions): Promise<AutoPullOutcome> {
+export async function autoPullInternal(bookmarkName: string, options?: AutoPullOptions): Promise<AutoPullOutcome> {
   try {
     checkRemoteCancelled(options)
-    if (findRepo(bookmarkName)?.source !== "clone") skip("不是已注册的克隆仓库")
+    const repo = findRepo(bookmarkName)
+    if (!repo) return skip("仓库未注册")
+    if (!options?.includeAllSources && repo.source !== "clone") skip("不是已注册的克隆仓库")
+    const registration = { source: repo.source, repoId: repo.repoId, createdAt: repo.createdAt }
     if (!(await FileManager.exists(resolveGitdir(bookmarkName) + "/HEAD"))) skip("本地 Git 数据不可用，未自动初始化")
     const ctx = await getCtx(bookmarkName)
     const before = await inspect(ctx)
@@ -55,7 +60,9 @@ export async function autoPullInternal(bookmarkName: string, options?: RemoteOpO
       onProgress: createGitOnProgress(options),
     })
     checkRemoteCancelled(options)
-    if (findRepo(bookmarkName)?.source !== "clone") skip("仓库注册状态已变化")
+    const current = findRepo(bookmarkName)
+    // 旧注册记录可能在解析工作目录时补齐 repoId，不将该兼容迁移误判为重新注册。
+    if (!current || current.source !== registration.source || (registration.repoId && current.repoId !== registration.repoId) || current.createdAt !== registration.createdAt) skip("仓库注册状态已变化")
     const latest = await getCtx(bookmarkName)
     if (latest.dir !== dir || latest.gitdir !== gitdir) skip("工作区授权路径已变化")
     const after = await inspect(latest)

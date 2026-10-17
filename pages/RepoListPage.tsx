@@ -24,6 +24,8 @@ import {
   Menu,
   useState,
   useMemo,
+  useRef,
+  useEffect,
 } from "scripting"
 import type {
   RepoListStatus,
@@ -132,19 +134,37 @@ export function RepoListPage() {
     }
   }
 
-  // 下拉刷新：先刷新状态，再对全部克隆仓库做快进拉取
-  async function refreshAndPullAll() {
-    await refreshAll(true)
-    for (const repo of repos) {
-      if (repo.source !== "clone") continue
-      try {
-        await autoPullFastForward(repo.bookmarkName)
-        await refreshRepo(repo)
-      } catch (e: any) {
-        // 单个仓库拉取失败不阻断其它仓库
-        console.warn(`拉取 ${repo.name} 失败: ${String(e?.message || e)}`)
+  const pulling = useRef<Promise<void> | null>(null)
+  const alive = useRef(true)
+  useEffect(() => () => { alive.current = false }, [])
+
+  // 下拉刷新显式拉取所有来源，复用在途任务；不先做一次无用的全仓扫描。
+  function refreshAndPullAll(): Promise<void> {
+    if (pulling.current) return pulling.current
+    const pending = Promise.resolve().then(async () => {
+      const targets = listRepos()
+      const notes: string[] = []
+      let updated = 0, unchanged = 0
+      for (const repo of targets) {
+        if (!alive.current) break
+        // 运行期间被移除的仓库不再启动操作。
+        if (!listRepos().some(item => item.bookmarkName === repo.bookmarkName)) continue
+        await yieldForUi()
+        try {
+          const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true })
+          if (result.status === "updated") updated++
+          else if (result.status === "unchanged") unchanged++
+          else notes.push(`${repo.name}：${result.reason}`)
+        } catch (e: any) {
+          notes.push(`${repo.name}：拉取失败，${String(e?.message || e)}`)
+        }
       }
-    }
+      if (!alive.current) return
+      await refreshAll(true)
+      if (alive.current && notes.length) showAlert("批量拉取结果", `已更新 ${updated} 个，已是最新或本地领先 ${unchanged} 个。\n${notes.join("\n")}`)
+    }).finally(() => { if (pulling.current === pending) pulling.current = null })
+    pulling.current = pending
+    return pending
   }
 
   const activeAlert =
