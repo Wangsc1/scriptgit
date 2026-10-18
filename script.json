@@ -8,7 +8,7 @@
     "pt" : "",
     "it" : "",
     "en" : "",
-    "zh" : "",
+    "zh" : "面向 iPhone Scripting 的 Git 客户端：本地文件与空目录管理、真实差异、Stash、提交同步、批量克隆及 GitHub 协作。",
     "ru" : "",
     "es" : "",
     "ja" : "",
@@ -16,7 +16,7 @@
     "de" : ""
   },
   "entry" : "index.tsx",
-  "version" : "1.20",
+  "version" : "1.21",
   "localizedNames" : {
     "de" : "",
     "es" : "",
@@ -31,7 +31,7 @@
   "contributors" : [
 
   ],
-  "description" : "iPhone Scripting Git 客户端：本地仓库与文件编辑、真实差异、提交同步、批量克隆及 GitHub 协作",
+  "description" : "面向 iPhone Scripting 的 Git 客户端：本地文件与空目录管理、真实差异、Stash、提交同步、批量克隆及 GitHub 协作。",
   "icon" : "point.topleft.down.to.point.bottomright.curvepath",
   "permissions" : null,
   "iconImage" : "https://raw.githubusercontent.com/Wangsc1/scriptgit/main/icon-white.png",
