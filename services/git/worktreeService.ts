@@ -215,5 +215,6 @@ export async function restoreFileInternal(
     filepaths: [filepath],
     ref: "HEAD",
     force: true,
+    noUpdateHead: true,
   })
 }

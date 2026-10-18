@@ -96,7 +96,7 @@ async function main(){
     await node(h,'Button','克隆所选仓库').props.action()
     assert.match(confirm.message,/仅公开仓库/);assert.match(text(h),/成功 1/);assert.equal(e.engineCalls.length,1)
     assert.deepEqual(e.engineCalls[0].onAuth(),{username:'anonymous',password:''});assert.equal(registered.length,1);assert.equal(registered[0][1],true)
-    assert.ok(e.fm.files.has('/cloud/Scripting/git/public/README.md'));assert.equal(calls.length,4);assert.equal(calls.filter(c=>c.url.includes('/search/users?')).length,1);assert.ok(calls.every(c=>!c.options.headers.Authorization));h.unmount()
+    assert.ok(e.fm.files.has('/local/git/public/README.md'));assert.equal(calls.length,4);assert.equal(calls.filter(c=>c.url.includes('/search/users?')).length,1);assert.ok(calls.every(c=>!c.options.headers.Authorization));h.unmount()
   })
   await test('single public URL clone has no credential gate or Authorization header',async()=>{
     const e=integration(),registered=[];const calls=network(url=>{assert.ok(url.includes('/info/refs'));return {data:null}})

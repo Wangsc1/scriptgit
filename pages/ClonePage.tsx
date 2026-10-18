@@ -1,4 +1,4 @@
-/** 单个/按用户名批量克隆；默认 iCloud Drive/Scripting/git，不静默回落本地。 */
+/** 单个/按用户名批量克隆；默认本地 Scripting/git，手动选择目录仍保留。 */
 import { List, Section, Text, Button, HStack, useState, useEffect, useRef } from "scripting"
 import { AvatarView } from "../components/AvatarView"
 import { useGitHubUserSearch } from "../hooks/useGitHubUserSearch"
@@ -24,8 +24,8 @@ const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelle
 
 export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; initialUsername?: string }) {
   const [url, setUrl] = useState("")
-  const [destination, setDestination] = useState<CloneDestination>({ kind: "icloud" })
-  const [rootLabel, setRootLabel] = useState("iCloud Drive/Scripting/git")
+  const [destination, setDestination] = useState<CloneDestination>({ kind: "local" })
+  const [rootLabel, setRootLabel] = useState("在我的 iPhone / Scripting / git")
   const [directoryError, setDirectoryError] = useState("")
   const [cloning, setCloning] = useState(false)
   const [progress, setProgress] = useState("")
@@ -53,7 +53,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
   const userSearch = useGitHubUserSearch()
 
   useEffect(() => {
-    configureDestination({ kind: "icloud" })
+    configureDestination({ kind: "local" })
     if (hasToken()) loadMyRepos()
     changeUsername(initialUsername)
     return () => {
@@ -80,10 +80,10 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     setDirectoryError("")
     try {
       const root = await prepareCloneRoot(next)
-      if (alive.current && id === directoryRequest.current) setRootLabel("git")
+      if (alive.current && id === directoryRequest.current) setRootLabel(next.kind === "local" ? "在我的 iPhone / Scripting / git" : next.kind === "icloud" ? "iCloud Drive / Scripting / git" : "所选父目录 / git")
     } catch (e: any) {
       if (alive.current && id === directoryRequest.current) {
-        setRootLabel(next.kind === "icloud" ? "iCloud Drive/Scripting/git（不可用）" : next.parentPath + "/git")
+        setRootLabel(next.kind === "local" ? "在我的 iPhone / Scripting / git（不可用）" : next.kind === "icloud" ? "iCloud Drive / Scripting / git（不可用）" : "所选父目录 / git（不可用）")
         setDirectoryError(String(e?.message || e))
       }
     }
@@ -204,9 +204,10 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     navigationBarBackButtonHidden={cloning}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
-    <Section header={<Text>目标目录</Text>}>
+    <Section header={<Text>目标目录</Text>} footer={<Text>新克隆默认保存在本机，无需启用 iCloud。更改目录可选择 iCloud 或其它位置；不会迁移或修改已有仓库。</Text>}>
+      <Text>{rootLabel}</Text>
       {directoryError ? <Text foregroundStyle="red">{hideSystemDetails(directoryError)}</Text> : null}
-      <Button title="默认目录iCloud/Scripting/git" action={() => configureDestination({ kind: "icloud" })} disabled={cloning || loadingRepos} tint="label" />
+      <Button title="使用默认本地目录" action={() => configureDestination({ kind: "local" })} disabled={cloning || loadingRepos} tint="label" />
       <Button title="更改目录" action={changeDirectory} disabled={cloning || loadingRepos} />
     </Section>
     <Section header={<Text>单个仓库</Text>}>

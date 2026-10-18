@@ -2,7 +2,7 @@
 import type { GitHubRepo, RepoMeta } from "../types/git"
 import { getRepo } from "../api/githubApi"
 import { clone, RemoteCancelToken, isRemoteOperationCancelled } from "./gitService"
-import { createRepoId, getGitdirPath, listRepos, registerRepoByPath, resolveWorkdir } from "./repoStore"
+import { createRepoId, getGitdirPath, listRepos, registerRepoByPath, resolveRepoPathsReadOnly } from "./repoStore"
 import { prepareCloneRoot, type CloneDestination } from "./cloneWorkspace"
 import type { RemoteProgressInfo } from "../utils/remoteProgress"
 import { hideSystemDetails, relativeCloneLabel } from "../utils/displayPaths"
@@ -48,7 +48,10 @@ export async function runCloneQueue(requests: CloneRequest[], destination: Clone
         if (!/^[A-Za-z0-9._-]+$/.test(request.name) || request.name === "." || request.name === "..") throw new Error("仓库目录名称无效")
         const targetKey = key(path)
         const registered = listRepos().some(repo => {
-          try { return key(resolveWorkdir(repo.bookmarkName)) === targetKey } catch (_e) { return repo.workdir ? key(repo.workdir) === targetKey : false }
+          try {
+            const path = resolveRepoPathsReadOnly(repo.bookmarkName).workdir
+            return path ? key(path) === targetKey : false
+          } catch (_e) { return repo.workdir ? key(repo.workdir) === targetKey : false }
         })
         const names = await FileManager.readDirectory(root)
         const collision = names.some(name => key(name) === key(request.name))

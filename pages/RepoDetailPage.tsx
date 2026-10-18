@@ -265,7 +265,7 @@ export function RepoDetailPage({
       }, {
         isPresented: showDiagnostics,
         onChanged: setShowDiagnostics,
-        content: showDiagnostics ? <RepoDiagnosticsPage bookmarkName={bookmarkName} onClose={() => setShowDiagnostics(false)} /> : <Text>加载中…</Text>,
+        content: showDiagnostics ? <RepoDiagnosticsPage bookmarkName={bookmarkName} onAssociated={data.acceptHeadAssociation} onClose={() => setShowDiagnostics(false)} /> : <Text>加载中…</Text>,
       }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
@@ -447,7 +447,7 @@ export function RepoDetailPage({
         ),
       }}
     >
-      <Button title="仓库诊断（只读）" systemImage="info.circle" action={() => { nav.skipNextAppearLoad(); setShowDiagnostics(true) }} />
+      <Button title="仓库诊断与 HEAD 关联" systemImage="info.circle" action={() => { nav.skipNextAppearLoad(); setShowDiagnostics(true) }} />
       <RepoBranchSection
         branchInfo={data.branchInfo}
         branchesLoaded={data.branchesLoaded}

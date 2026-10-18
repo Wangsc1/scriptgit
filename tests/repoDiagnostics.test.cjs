@@ -74,14 +74,14 @@ async function main(){
  })
  await test('diagnostic UI reads on entry, copy requires explicit action/localOnly; refresh single-flight, safe errors and no late writes',async()=>{
   const pending=deferred();let calls=0,copies=[],closed=0
-  const Page=load('pages/RepoDiagnosticsPage.tsx',{scripting:ui,'../services/repoDiagnostics':{collectRepoDiagnostics:async()=>{calls++;if(calls===1)await pending.promise;return 'SAFE REPORT'}}}).RepoDiagnosticsPage
+  const Page=load('pages/RepoDiagnosticsPage.tsx',{scripting:ui,'../services/headAssociation':{},'../services/repoDiagnostics':{collectRepoDiagnostics:async()=>{calls++;if(calls===1)await pending.promise;return 'SAFE REPORT'}}}).RepoDiagnosticsPage
   global.Pasteboard={setItems:async(...args)=>copies.push(args)}
   const h=mount(Page,{bookmarkName:'id',onClose:()=>closed++});const button=title=>{h.render();return all(h.tree).find(n=>n.type==='Button'&&n.props.title===title)}
   assert.equal(calls,1);assert.equal(copies.length,0);assert.equal(button('复制诊断报告').props.disabled,true)
   button('正在读取…').props.action();assert.equal(calls,1);pending.resolve();await tick()
   button('复制诊断报告').props.action();await tick();assert.deepEqual(copies,[[[{'public.plain-text':'SAFE REPORT'}],{localOnly:true}]])
   button('完成').props.action();assert.equal(closed,1);h.unmount()
-  const gate=deferred();const Late=load('pages/RepoDiagnosticsPage.tsx',{scripting:ui,'../services/repoDiagnostics':{collectRepoDiagnostics:()=>gate.promise}}).RepoDiagnosticsPage
+  const gate=deferred();const Late=load('pages/RepoDiagnosticsPage.tsx',{scripting:ui,'../services/headAssociation':{},'../services/repoDiagnostics':{collectRepoDiagnostics:()=>gate.promise}}).RepoDiagnosticsPage
   const late=mount(Late,{bookmarkName:'id',onClose(){}});late.unmount();gate.resolve('late');await tick();assert.equal(late.lateWrites,0)
  })
  await test('detail entry is visible before branches load; opening/closing diagnostics does not trigger parent data refresh',async()=>{
@@ -97,7 +97,7 @@ async function main(){
   hook('../hooks/useRepoWorktreeActions','useRepoWorktreeActions',{commitSheetMode:null});hook('../hooks/useRepoPendingActions','useRepoPendingActions',{});hook('../hooks/useRepoBranchActions','useRepoBranchActions',{});hook('../hooks/useRepoSyncActions','useRepoSyncActions',{})
   mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid:noop}
   const Page=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage,h=mount(Page,{bookmarkName:'id',name:'All'})
-  const entry=all(h.tree).find(n=>n.type==='Button'&&n.props.title==='仓库诊断（只读）');assert.ok(entry);assert.ok(!entry.props.disabled)
+  const entry=all(h.tree).find(n=>n.type==='Button'&&n.props.title==='仓库诊断与 HEAD 关联');assert.ok(entry);assert.ok(!entry.props.disabled)
   entry.props.action();h.render();const cover=h.tree.props.fullScreenCover[2];assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'RepoDiagnosticsPage');assert.equal(cover.content.props.bookmarkName,'id');assert.equal(loads,0)
   cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);h.tree.props.onAppear();assert.equal(loads,0,'returning from read-only diagnostic skips data.loadAll/getCtx')
   h.unmount()

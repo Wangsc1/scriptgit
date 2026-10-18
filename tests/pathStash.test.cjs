@@ -23,8 +23,10 @@ async function main(){
   write('folder/a','staged a\n');cmd('add','folder/a');write('folder/a','working a\n')
   write('folder/b','changed b\n');write('folder/new','new file\n');write('folder2/c','different prefix\n')
   write('other','staged other\n');cmd('add','other');write('other','working other\n');fs.unlinkSync(dir+'/gone')
+  const originalHead=fs.readFileSync(ctx.gitdir+'/HEAD'),originalOid=cmd('rev-parse','HEAD')
   const oldOther=cmd('show',':other'),oldWork=fs.readFileSync(dir+'/other','utf8'),oldStatus=cmd('status','--porcelain')
   await createPathStash(ctx,'selected scope',author,selection)
+  assert.deepEqual(fs.readFileSync(ctx.gitdir+'/HEAD'),originalHead,'Stash create preserves symbolic HEAD bytes');assert.equal(cmd('rev-parse','HEAD'),originalOid)
   assert.equal(cmd('stash','list').trim().split('\n').length,1)
   const changed=cmd('diff','--name-only','stash@{0}^1','stash@{0}').trim().split('\n').sort()
   const expected=selection?.[0]==='folder/a'?['folder/a']:selection?['folder/a','folder/b','folder/new']:['folder/a','folder/b','folder/new','folder2/c','gone','other']
@@ -43,7 +45,9 @@ async function main(){
    await assert.rejects(service.applyStashInternal('temp',0),/覆盖未跟踪或忽略/)
    assert.equal(fs.readFileSync(dir+'/folder/new','utf8'),'do not overwrite ignored file\n');fs.unlinkSync(dir+'/folder/new');write('.git/info/exclude','')
   }
+  const beforeApplyHead=fs.readFileSync(ctx.gitdir+'/HEAD')
   await service.applyStashInternal('temp',0)
+  assert.deepEqual(fs.readFileSync(ctx.gitdir+'/HEAD'),beforeApplyHead,'Stash apply preserves HEAD bytes');assert.equal(cmd('rev-parse','HEAD'),originalOid)
   assert.equal(fs.readFileSync(dir+'/folder/a','utf8'),'working a\n');assert.equal(cmd('show',':folder/a'),'staged a\n')
   cmd('reset','--hard','-q','HEAD');cmd('clean','-fdq');write('new-head','new commit');cmd('add','.');cmd('commit','-qm','advance')
   await assert.rejects(service.applyStashInternal('temp',0),/基线已改变/)

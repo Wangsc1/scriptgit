@@ -411,6 +411,15 @@ export function useRepoDetailData({
     loadTrackedFiles,
     loadLog,
     loadBranches,
+    // HEAD-only association already verified the commit/ref; refresh display in memory,
+    // not via loadAll/getCtx/snapshot persistence (which can repair paths or write config).
+    acceptHeadAssociation: (branch: string) => {
+      setBranchInfo(previous => ({
+        ...previous, current: branch,
+        branches: previous.branches.includes(branch) ? previous.branches : [...previous.branches, branch],
+      }))
+      setRemoteOnlyBranches(previous => previous.filter(name => name !== branch))
+    },
     loadRemote,
     loadUpstream,
     loadMergeState,

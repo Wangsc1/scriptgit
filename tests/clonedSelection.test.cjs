@@ -26,7 +26,7 @@ async function main(){
     const names=marker.registeredGithubRepos([
       {name:'demo',remoteUrl:'https://github.com/alice/demo.git'},
       {name:'demo',remoteUrl:'https://gitlab.com/bob/demo.git'},
-      {name:'demo',workdir:'/cloud/Scripting/git/demo'},
+      {name:'demo',workdir:'/local/git/demo'},
       {name:'demo',pendingRemoteUrl:'https://github.com/bob/demo.git',upstreamUrl:'https://github.com/bob/demo.git'},
       {remoteUrl:'https://github.com.evil/bob/demo.git'},{remoteUrl:'https://github.com/bob/demo/tree/main'},
     ])
@@ -46,11 +46,11 @@ async function main(){
   })
   await test('real queue keeps safe skips; success marks immediately via registration; failures/plain directories not marked; remount derives from stored rows',async()=>{
     const e=env({clone:async url=>{if(url.endsWith('/fail.git'))throw Error('mock failure')}})
-    await e.workspace.prepareCloneRoot({kind:'icloud'})
-    await e.fm.createDirectory('/cloud/Scripting/git/existing',true)
-    await e.store.registerRepoByPath('/cloud/Scripting/git/existing','alias','ssh://git@github.com/BOB/Existing.git','existing')
+    await e.workspace.prepareCloneRoot({kind:'local'})
+    await e.fm.createDirectory('/local/git/existing',true)
+    await e.store.registerRepoByPath('/local/git/existing','alias','ssh://git@github.com/BOB/Existing.git','existing')
     e.rows.push({name:'shared',bookmarkName:'other-owner',remoteUrl:'https://github.com/alice/shared.git',createdAt:0})
-    await e.fm.createDirectory('/cloud/Scripting/git/plain',true)
+    await e.fm.createDirectory('/local/git/plain',true)
     const repos=['existing','shared','plain','good','fail'].map(n=>repo('bob',n));repos[0].private=true
     let reads=0,callbackChecks=0,h
     h=mount(page(e,repos,()=>reads++),{onCloned:r=>{callbackChecks++;assert.match(row(h,'bob/'+r.name).props.title,/已克隆/)}});await tick();await loadUser(h)
@@ -62,7 +62,7 @@ async function main(){
     assert.equal(callbackChecks,2);assert.equal(e.clones.length,3)
     for(const name of ['existing','shared','good'])assert.match(row(h,'bob/'+name).props.title,/已克隆/)
     for(const name of ['plain','fail'])assert.ok(!row(h,'bob/'+name).props.title.includes('已克隆'))
-    assert.equal(e.rows.length,4);assert.equal(reads,1);assert.ok(e.fm.files.has('/cloud/Scripting/git/plain'));assert.ok(e.fm.files.has('/cloud/Scripting/git/good/README.md'))
+    assert.equal(e.rows.length,4);assert.equal(reads,1);assert.ok(e.fm.files.has('/local/git/plain'));assert.ok(e.fm.files.has('/local/git/good/README.md'))
     h.unmount()
     const reopened=mount(page(e,repos,()=>reads++),{onCloned(){}});await tick();assert.equal(reads,1);await loadUser(reopened)
     for(const name of ['existing','shared','good'])assert.match(row(reopened,'bob/'+name).props.title,/^☐ .*已克隆/)

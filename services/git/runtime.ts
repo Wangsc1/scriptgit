@@ -226,5 +226,8 @@ export async function forceCheckoutRef(
     gitdir,
     ref,
     force: true,
+    // HEAD is a source tree here (e.g. abort-merge fallback), not a request to detach.
+    // Named branch switches and explicit OID checkouts retain their original semantics.
+    noUpdateHead: ref === "HEAD",
   })
 }

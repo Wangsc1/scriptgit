@@ -79,7 +79,7 @@ async function main(){
     await assert.rejects(api.listOwnedRepos('alice'),/403/)
     await assert.rejects(api.listOwnedRepos('../bad'),/用户名/)
   })
-  await test('iCloud default is container/git, auto-created without any bookmark or local fallback',async()=>{
+  await test('explicit legacy iCloud destination remains compatible without bookmark or migration',async()=>{
     const e=env();assert.equal(await e.workspace.prepareCloneRoot({kind:'icloud'}),'/cloud/Scripting/git');assert.ok(e.fm.files.has('/cloud/Scripting/git'));assert.equal(e.fm.bookmarkAttempts,0);assert.ok(!e.fm.files.has('/local/git'))
     const registered=await e.store.registerRepoByPath('/cloud/Scripting/git/a','a','https://github.com/o/a.git','a')
     assert.equal(registered.accessBookmarkName,undefined);assert.equal(e.store.resolveWorkdir('a'),'/cloud/Scripting/git/a');assert.equal(e.fm.bookmarkAttempts,0)
@@ -90,6 +90,15 @@ async function main(){
       const e=env();if(mode==='disabled')e.fm.isiCloudEnabled=false;if(mode==='offline')e.fm.setUnavailable(true);if(mode==='denied')e.fm.setDenied(true)
       await assert.rejects(e.workspace.prepareCloneRoot({kind:'icloud'}),/iCloud|权限/);assert.ok(!e.fm.created.includes('/local/git'));assert.equal(e.fm.bookmarkAttempts,0)
     }
+  })
+  await test('new local root/queue clones with iCloud disabled/offline; never migrates existing cloud/external repos',async()=>{
+    const e=env();e.fm.isiCloudEnabled=false;e.fm.setUnavailable(true)
+    e.rows.push({name:'old',bookmarkName:'legacy',repoId:'legacy',workdir:'/cloud/Scripting/git/old',createdAt:1},{name:'external',bookmarkName:'outside',repoId:'outside',workdir:'/external/git/old',createdAt:1})
+    const existing=JSON.stringify(e.rows),cloudEntries=[...e.fm.files.entries()].filter(([p])=>p.startsWith('/cloud/'))
+    assert.equal(await e.workspace.prepareCloneRoot({kind:'local'}),'/local/git');assert.equal(e.fm.bookmarkAttempts,0)
+    const result=await e.queue.runCloneQueue([req('bob','new')],{kind:'local'},{cancelToken:new RemoteCancelToken()})
+    assert.equal(result[0].status,'cloned');assert.equal(result[0].path,'/local/git/new');assert.equal(e.store.resolveWorkdir(result[0].repo.bookmarkName),'/local/git/new')
+    assert.equal(e.store.resolveRepoPathsReadOnly('legacy').workdir,'/cloud/Scripting/git/old');assert.equal(e.store.resolveRepoPathsReadOnly('outside').workdir,'/external/git/old');assert.equal(JSON.stringify(e.rows.slice(0,2)),existing);assert.deepEqual([...e.fm.files.entries()].filter(([p])=>p.startsWith('/cloud/')),cloudEntries);assert.equal(e.fm.bookmarkAttempts,0);assert.deepEqual(e.fm.removed,[])
   })
   await test('external parent bookmark is activated and registration retains git/repo relative path across relocation',async()=>{
     const e=env();e.fm.bookmarks.set('parent','/external')
@@ -180,12 +189,12 @@ async function main(){
   await test('UI single clone uses same default without directory picker and keeps original completion callback behavior',async()=>{
     const e=env(),registered=[];const h=mount(page(e),{onCloned:(...args)=>registered.push(args)});await tick()
     form(h,'Git URL').props.onChanged('https://github.com/bob/single.git');await node(h,'Button','克隆').props.action()
-    assert.ok(e.fm.files.has('/cloud/Scripting/git/single/README.md'));assert.equal(registered.length,1);assert.equal(registered[0].length,1);h.unmount()
+    assert.ok(e.fm.files.has('/local/git/single/README.md'));assert.equal(registered.length,1);assert.equal(registered[0].length,1);h.unmount()
   })
-  await test('UI pagination loading error never enables batch; iCloud unavailable is visible and single cloning errors, not local fallback',async()=>{
+  await test('UI pagination loading error never enables batch; iCloud unavailable does not block local single clone',async()=>{
     const e=env();e.fm.isiCloudEnabled=false
-    const wait=deferred();const h=mount(page(e,{listOwnedRepos:()=>wait.promise}),{onCloned:()=>{}});await tick();assert.match(text(h),/iCloud 未启用/)
-    form(h,'Git URL').props.onChanged('https://github.com/bob/a.git');await node(h,'Button','克隆').props.action();assert.equal(e.clones.length,0);h.render();assert.match(h.tree.props.toast.content.children.join(''),/iCloud/)
+    const wait=deferred();const h=mount(page(e,{listOwnedRepos:()=>wait.promise}),{onCloned:()=>{}});await tick();assert.ok(!text(h).includes('iCloud 未启用'))
+    form(h,'Git URL').props.onChanged('https://github.com/bob/a.git');await node(h,'Button','克隆').props.action();assert.equal(e.clones.length,1);assert.ok(e.fm.files.has('/local/git/a/README.md'))
     form(h,'用户名').props.onChanged('bob');await new Promise(resolve=>setTimeout(resolve,700));await tick();assert.match(text(h),/正在自动分页加载全部仓库/)
     wait.reject(new Error('page 2 failed'));await tick();assert.match(text(h),/加载失败，未开始克隆/);assert.ok(!all(h.tree).some(n=>n.type==='Button'&&String(n.props.title).startsWith('克隆所选仓库')));h.unmount()
   })
