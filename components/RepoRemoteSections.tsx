@@ -81,12 +81,13 @@ export function RepoRemoteSections({
           </HStack>
         }
         footer={
+          // 两段文字同为 footnote、单行，字号一致。
           <HStack alignment="center">
-            <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
+            <Text font="footnote" lineLimit={1} foregroundStyle={COLOR_SECONDARY_LABEL}>
               {branchUnavailable ? "分支信息未确认，读取成功后再操作" : pullActionFooterHint(branchInfo.current, upstream)}
             </Text>
             <Spacer />
-            {branchUnavailable ? null : <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>{pulledLabel}</Text>}
+            {branchUnavailable ? null : <Text font="footnote" lineLimit={1} foregroundStyle={COLOR_SECONDARY_LABEL}>{pulledLabel}</Text>}
           </HStack>
         }
       >
