@@ -24,7 +24,7 @@ const FilesTab=load('pages/FilesTab.tsx',{
  '../constants/colors':{},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/localImportExecution':load('services/localImportExecution.ts'),'../services/localFileImport':{},'../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),'../services/gitService':{},
 }).FilesTab
-const Segmented=load('components/FilledSegmentedControl.tsx',{scripting:ui}).FilledSegmentedControl
+const Segmented=load('components/FilledSegmentedControl.tsx',{scripting:ui,'../constants/colors':{COLOR_ACCENT:'systemBlue'}}).FilledSegmentedControl
 const TabContent=load('components/RepoDetailContent.tsx',{
  './FilledSegmentedControl':{FilledSegmentedControl:Segmented},scripting:ui,'../pages/FilesTab':{FilesTab},'../pages/HistoryTab':{HistoryTab:'HistoryTab'},'../pages/StashTab':{StashTab:'StashTab'},'../constants/colors':{},
 }).RepoDetailTabContent
