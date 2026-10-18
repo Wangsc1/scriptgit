@@ -491,7 +491,7 @@ async function main(){
   async function settleImport(){for(let i=0;i<1000;i++){h.render();if(!action('导入文件').props.disabled)return;await tick()}throw Error('import did not settle')}
   async function dispatch(title){action(title).props.action();h.render();await settleImport()}
   const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
-  assert.match(JSON.stringify(h.tree.props.header),/工作区文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.doesNotMatch(JSON.stringify(menu),/仅诊断|拖动记录/);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
+  assert.match(JSON.stringify(h.tree.props.header),/仓库文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.doesNotMatch(JSON.stringify(menu),/仅诊断|拖动记录/);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
   assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo']])
   nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
   await dispatch('创建文件');assert.equal(createPrompts.at(-1).title,'创建文件');assert.equal(createPrompts.at(-1).defaultValue,'');assert.equal(updates,0)

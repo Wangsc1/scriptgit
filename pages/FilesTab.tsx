@@ -481,7 +481,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
   }} header={<HStack frame={{ maxWidth: Infinity }}>
-    <Text>工作区文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
+    <Text>仓库文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
     <Menu label={<Image systemName="plus" />} disabled={additionDisabled}>
       <Section header={<Text>添加到仓库</Text>}>
         <Button title="创建文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("file")} />
