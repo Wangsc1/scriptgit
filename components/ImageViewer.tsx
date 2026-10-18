@@ -10,10 +10,10 @@ import {
 } from "scripting"
 
 // Local-only canvas follows the system appearance: slightly gray off-white by
-// day, black by night. Native layers use the dynamic pair; the WebView page
+// day, dark gray (page background) by night. Native layers use the dynamic pair; the WebView page
 // mirrors it with prefers-color-scheme so no layer shows a different color.
 export const LOCAL_IMAGE_BACKGROUND_LIGHT = "#F7F9FA"
-export const LOCAL_IMAGE_BACKGROUND_DARK = "#000000"
+export const LOCAL_IMAGE_BACKGROUND_DARK = "#1C1C1E"
 export const LOCAL_IMAGE_BACKGROUND = { light: LOCAL_IMAGE_BACKGROUND_LIGHT, dark: LOCAL_IMAGE_BACKGROUND_DARK }
 
 // 图片查看器页面：缩放、双击放大与惯性平移交给 WebKit 原生处理
