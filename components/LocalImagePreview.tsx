@@ -1,5 +1,5 @@
 import { Button, Text, VStack, ZStack, useMemo } from "scripting"
-import { ImageViewer } from "./ImageViewer"
+import { ImageViewer, LOCAL_IMAGE_BACKGROUND } from "./ImageViewer"
 import type { LocalWorktreeFile } from "../services/gitService"
 import { localImageDisplayDataUrl } from "../utils/localImageDisplay"
 
@@ -16,7 +16,8 @@ export function LocalImagePreview({ file, sessionId, onClose }: {
     <Text foregroundStyle="red">{display.error}；文件未修改，可关闭后重试或删除。</Text>
     <Button title="关闭" action={onClose} />
   </VStack>
-  return <ZStack frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
+  return <ZStack frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={LOCAL_IMAGE_BACKGROUND}
+    ignoresSafeArea={{ regions: "all", edges: "all" }}>
     <ImageViewer url={display.url} compactImage sessionId={sessionId} onClose={onClose} />
   </ZStack>
 }

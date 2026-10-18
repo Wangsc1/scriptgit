@@ -17,7 +17,7 @@ global.FileManager={
 global.UIImage={fromFile:p=>{decodes.push(p);if(fail==='throw')throw Error('native decode failed');if(fail==='decode')return null;return {preparingThumbnail:size=>{thumbs.push(size);if(fail==='thumb')return null;if(fail==='change')changed=true;return {native:true,width:size.width,height:size.height,toPNGBase64String:()=>'PNG',toJPEGBase64String:q=>'JPG'+q}}}}}
 const service=load('services/git/localFileService.ts',{'../repoStore':{resolveWorkdir:()=>root},'../localImportExecution':execution})
 let opened=[],readFailure=false,gate=null
-const page=load('components/LocalImagePreview.tsx',{'./ImageViewer':{ImageViewer:'ImageViewer'},'../utils/localImageDisplay':load('utils/localImageDisplay.ts'),scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(_,path)=>{opened.push(path);if(gate)await gate.promise;if(readFailure)throw Error('reopen failed');return service.readLocalFileForOpenInternal('repo',path)}}}).LocalImagePreview
+const page=load('components/LocalImagePreview.tsx',{'./ImageViewer':{ImageViewer:'ImageViewer',LOCAL_IMAGE_BACKGROUND:'#707070'},'../utils/localImageDisplay':load('utils/localImageDisplay.ts'),scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(_,path)=>{opened.push(path);if(gate)await gate.promise;if(readFailure)throw Error('reopen failed');return service.readLocalFileForOpenInternal('repo',path)}}}).LocalImagePreview
 async function main(){
  for(const name of ['camera.HEIC','camera.heic','camera.HeIf','camera.HEIF','photo.PNG','photo.JPEG','photo.jpg','small.png']){
   files.set(root+'/'+name,{size:name==='small.png'?15:3*1024*1024})
@@ -51,7 +51,7 @@ async function main(){
  const direct=await service.readLocalFileForOpenInternal('repo','direct.png');const directView=mount(page,{file:direct,onClose(){}});assert.equal(all(directView.tree).find(n=>n.type==='ImageViewer').props.url,direct.previewDataUrl);directView.unmount()
  const file=await service.readLocalFileForOpenInternal('repo','camera.HEIC');let closes=0,reloaded=[]
  let closed=0;const h=mount(page,{file,sessionId:5,onClose(){closed++}})
- const viewer=()=>all(h.tree).find(n=>n.type==='ImageViewer');assert.equal(viewer().props.url,'data:image/png;base64,PNG');assert.equal(viewer().props.compactImage,true);assert.ok(!all(h.tree).some(n=>n.type==='Image'||n.type==='ScrollView'))
+ const viewer=()=>all(h.tree).find(n=>n.type==='ImageViewer');assert.equal(viewer().props.url,'data:image/png;base64,PNG');assert.equal(h.tree.props.background,'#707070');assert.deepEqual(h.tree.props.ignoresSafeArea,{regions:'all',edges:'all'});assert.equal(viewer().props.compactImage,true);assert.ok(!all(h.tree).some(n=>n.type==='Image'||n.type==='ScrollView'))
  assert.ok(!all(h.tree).some(n=>n.type==='Button'),'no refresh/overlay button');assert.doesNotMatch(JSON.stringify(h.tree),/刷新/);viewer().props.onClose();assert.equal(closed,1);assert.equal(viewer().props.sessionId,5)
  assert.ok(!all(h.tree).some(n=>n.type==='LocalCodeEditor'||n.type==='WebView'))
  assert.equal(h.tree.type,'ZStack');assert.ok(!JSON.stringify(h.tree).includes('显示缩略图'));assert.ok(!JSON.stringify(h.tree).includes('图片只读'))

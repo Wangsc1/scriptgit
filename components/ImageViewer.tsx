@@ -10,7 +10,7 @@ import {
 
 // Local-only neutral canvas: transparent corners merge into the page, while
 // white icons retain contrast in both light and dark system appearances.
-const LOCAL_IMAGE_BACKGROUND = "#707070"
+export const LOCAL_IMAGE_BACKGROUND = "#707070"
 
 // 图片查看器页面：缩放、双击放大与惯性平移交给 WebKit 原生处理
 function buildHTML(url: string, compactImage: boolean): string {
@@ -214,7 +214,10 @@ export function ImageViewer({
     >
       {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
       <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={compactImage ? LOCAL_IMAGE_BACKGROUND : undefined}>
-        <WebView controller={controller} />
+        {/* Native WebView has no public opaque/backgroundColor API. Keep it
+            mounted/loading, but do not composite its empty pre-HTML surface.
+            Reveal only on the existing loadHTML completion, not a timer. */}
+        <WebView controller={controller} opacity={compactImage && !webViewReady ? 0 : 1} />
       </VStack>
     </ZStack>
   )

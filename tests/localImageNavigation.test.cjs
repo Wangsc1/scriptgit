@@ -7,7 +7,7 @@ const execution=load('services/localImportExecution.ts')
 let reads=0,fail=false,gate=null,sourceWrites=0,mergeLoads=0,skips=0
 const original={path:'synthetic.png',text:null,image:true,previewDataUrl:'data:image/png;base64,FIRST',version:{}}
 const refreshed={...original,previewImage:{native:'refreshed',toPNGBase64String:()=>'REFRESHED'}}
-const ImagePage=load('components/LocalImagePreview.tsx',{'./ImageViewer':{ImageViewer:'ImageViewer'},'../utils/localImageDisplay':load('utils/localImageDisplay.ts'),scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(bookmark,file)=>{reads++;assert.equal(bookmark,'repo');assert.equal(file,original.path);if(gate)await gate.promise;if(fail)throw Error('decode failed');return refreshed}}}).LocalImagePreview
+const ImagePage=load('components/LocalImagePreview.tsx',{'./ImageViewer':{ImageViewer:'ImageViewer',LOCAL_IMAGE_BACKGROUND:'#707070'},'../utils/localImageDisplay':load('utils/localImageDisplay.ts'),scripting:ui,'../services/localImportExecution':execution,'../services/gitService':{openLocalWorktreeFile:async(bookmark,file)=>{reads++;assert.equal(bookmark,'repo');assert.equal(file,original.path);if(gate)await gate.promise;if(fail)throw Error('decode failed');return refreshed}}}).LocalImagePreview
 const source=fs.readFileSync(path.join(__dirname,'../pages/RepoDetailPage.tsx'),'utf8'),mocks={scripting:ui}
 for(const match of source.matchAll(/import\s+\{([^}]+)\}\s+from\s+"([^"]+)"/g)){
  const [,names,module]=match;if(module==='scripting')continue;mocks[module]={};for(const token of names.split(',')){const name=token.trim();if(name)mocks[module][name]=name}

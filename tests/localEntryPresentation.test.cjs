@@ -7,7 +7,7 @@ const {useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts',{
  scripting:ui,'../services/localImportExecution':load('services/localImportExecution.ts'),'../services/repoStore':{resolveWorkdir:()=>root},
  '../services/gitService':{createLocalWorktreeEntry:async(...args)=>{calls.push(args);if(gate)await gate.promise;if(fail)throw Error('native write failed');return args[1]}},
 })
-const content=load('components/RepoDetailContent.tsx',{
+const content=load('components/RepoDetailContent.tsx',{'./FilledSegmentedControl':{FilledSegmentedControl:'FilledSegmentedControl'},
  scripting:ui,'../constants/colors':{},'../pages/FilesTab':{FilesTab:'FilesTab'},'../pages/HistoryTab':{HistoryTab:'HistoryTab'},'../pages/StashTab':{StashTab:'StashTab'},
 })
 const data={displayName:'Repo',branchInfo:{current:'main'},branchStateKnown:true,changes:[],tab:0,trackedFiles:[],mergeInProgress:false,loadAll:noop,refreshChangesAndSnapshot:async()=>{refreshes++;if(refreshGate)await refreshGate.promise}}

@@ -1,6 +1,6 @@
 /* Actual RepoDetailPage virtual nodes; native presentation is NOT emulated. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
-const {load,mount,ui,all,tick}=require('./remoteFiles.test.cjs')
+const {load,mount,ui,all,tick,deferred}=require('./remoteFiles.test.cjs')
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(root+'/pages/RepoDetailPage.tsx','utf8')
 const noop=()=>{},mocks={scripting:ui}
 // Every dependency is explicit; exercise the real List/presentation state, not native UIKit.
@@ -52,14 +52,14 @@ async function main(){
  const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(<View \/>\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
  for(const name of ['pages/FilesTab.tsx','pages/LocalFileEditor.tsx','services/git/localFileService.ts'])assert.doesNotMatch(fs.readFileSync(root+'/'+name,'utf8'),/Script.exit|Navigation.present/)
  // Capture actual WebView HTML for local/default modes; do not pretend to render native WebKit.
- const controllers=[];global.WebViewController=class{
+ let loadGate=null;const controllers=[];global.WebViewController=class{
   constructor(){controllers.push(this)}
   async addScriptMessageHandler(name,callback){this.close=callback}
-  async loadHTML(html){this.html=html}
+  async loadHTML(html){this.html=html;if(loadGate)await loadGate.promise}
   dispose(){this.disposed=true}
  }
  const {ImageViewer}=load('components/ImageViewer.tsx',{scripting:ui});let closed=0
- const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1)
+ loadGate=deferred();const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1);assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0,'pre-HTML WebView empty surface not composited');await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0);loadGate.resolve();loadGate=null;await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,1,'reveal on loadHTML completion, no timer')
  assert.equal(compact.tree.type,'ZStack');assert.equal(compact.tree.props.frame.maxHeight,'infinity');assert.equal(compact.tree.props.ignoresSafeArea.regions,'all')
  assert.match(local.html,/max-width: 80%/);assert.match(local.html,/max-height: 60%/);assert.match(local.html,/width: auto; height: auto; object-fit: contain/);assert.match(local.html,/box-sizing: border-box; padding: env\(safe-area-inset-top/);assert.match(local.html,/viewport-fit=cover/)
  assert.match(local.html,/html, body \{[\s\S]*?background: #707070/);assert.match(local.html,/img \{ background: transparent; \}/)
@@ -99,7 +99,7 @@ async function main(){
  }
  repeat.unmount()
  const normal=mount(ImageViewer,{url:'https://example.invalid/image.png',onClose(){}});await tick();const original=controllers.at(-1)
- assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
+ assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.equal(all(normal.tree).find(n=>n.type==='WebView').props.opacity,1,'shared mode rendering unchanged');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
  assert.doesNotMatch(original.html,/conic-gradient|background-size: 16px|#707070|img \{ background: transparent/);assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
  for(const name of ['DiffPage','CommitDiffPage','GitHubItemDetailPage'])assert.doesNotMatch(fs.readFileSync(root+'/pages/'+name+'.tsx','utf8'),/compactImage/)
  console.log('PASS compact local image HTML caps 80%/60% inside safe-area stage, intrinsic small-image sizing, full-screen container, unchanged close/zoom/error script and shared default mode.')
