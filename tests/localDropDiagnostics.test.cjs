@@ -21,7 +21,7 @@ const {FilesTab}=filesModule
 function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
 async function flush(){for(let i=0;i<20;i++){await tick();for(const fn of pending.splice(0))deliver(fn)}}
 function host(){const h=mount(FilesTab,{files:['source.txt','folder/keep'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onWorktreeChanged:async()=>{refreshes++}},{effectUpdates:true});return h}
-function parts(h){h.render();const nodes=all(expand(h.tree));return {file:nodes.find(n=>n.type==='Button'&&n.props.onDrag),drop:nodes.find(n=>n.type==='DisclosureGroup').props.label.props.onDrop}}
+function parts(h){h.render();const nodes=all(expand(h.tree));return {file:nodes.find(n=>n.type==='Button'&&n.props.onDrag),drop:nodes.find(n=>n.type==='DisclosureGroup').props.onDrop}}
 function shown(h){h.render();return all(h.tree).filter(n=>n.type==='Text').flatMap(n=>n.children).filter(s=>typeof s==='string'&&s.startsWith('拖动记录')).join('\n')}
 async function view(h){h.render();all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title==='查看拖动记录').props.action();await flush();h.render();return shown(h)}
 function liveText(h){h.render();return JSON.stringify(h.tree)}

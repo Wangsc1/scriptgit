@@ -87,10 +87,12 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
-  return <DisclosureGroup contextMenu={{ menuItems: <>
+  // Device evidence: onDrop on the nested label never fired (all callback counts 0).
+  // Attach it to the DisclosureGroup row itself, the outer List row container.
+  return <DisclosureGroup onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} contextMenu={{ menuItems: <>
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
-  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
+  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>

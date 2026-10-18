@@ -82,24 +82,25 @@ export function RepoRemoteSections({
         }
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            {branchUnavailable ? "分支信息未确认，读取成功后再操作" : pullActionFooterHint(branchInfo.current, upstream)}
-            {"\n"}
-            最近拉取：{pulledLabel}
+            {branchUnavailable ? "分支信息未确认，读取成功后再操作" : `${pullActionFooterHint(branchInfo.current, upstream)}　　拉取：${pulledLabel}`}
           </Text>
         }
       >
-        <Button action={onPush} disabled={branchUnavailable || mutating || mergeInProgress}>
-          <HStack alignment="center" spacing={6}>
-            <Image systemName="arrow.up.circle" />
-            <Text>推送 Push</Text>
-          </HStack>
-        </Button>
-        <Button action={onPull} disabled={branchUnavailable || mutating || mergeInProgress}>
-          <HStack alignment="center" spacing={6}>
-            <Image systemName="arrow.down.circle" />
-            <Text>拉取 Pull</Text>
-          </HStack>
-        </Button>
+        <HStack alignment="center">
+          <Button buttonStyle="plain" action={onPush} disabled={branchUnavailable || mutating || mergeInProgress}>
+            <HStack alignment="center" spacing={6}>
+              <Image systemName="arrow.up.circle" foregroundStyle={COLOR_ACCENT} />
+              <Text foregroundStyle={COLOR_ACCENT}>推送 Push</Text>
+            </HStack>
+          </Button>
+          <Spacer />
+          <Button buttonStyle="plain" action={onPull} disabled={branchUnavailable || mutating || mergeInProgress}>
+            <HStack alignment="center" spacing={6}>
+              <Image systemName="arrow.down.circle" foregroundStyle={COLOR_ACCENT} />
+              <Text foregroundStyle={COLOR_ACCENT}>拉取 Pull</Text>
+            </HStack>
+          </Button>
+        </HStack>
       </Section>
     )
   }
