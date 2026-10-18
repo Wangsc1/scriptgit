@@ -87,9 +87,19 @@ export function useRepoWorktreeActions({
     return runStaging("暂存", () => addFiles(bookmarkName, filepath).then(() => {}))
   }
 
-  /** 文件夹暂存：逐个暂存其下有改动的路径（addFiles 对已删除路径会执行 remove）。 */
-  function handleStagePaths(filepaths: string[]) {
-    return runStaging("暂存", async () => { for (const path of filepaths) await addFiles(bookmarkName, path) })
+  /** 文件树紫色「暂存」保存选中路径到 Stash；Changes 页 Stage 入口不变。 */
+  async function handleStagePaths(filepaths: string[]) {
+    if (stagingBusy || stashBusy || guardMergeBusy() || !filepaths.length) return
+    setStashBusy(true)
+    try {
+      await createStash(bookmarkName, "", filepaths)
+      await Promise.all([refreshChangesAndSnapshot(), loadStashes()])
+      showToast("已保存到 Stash", "success")
+    } catch (e: any) {
+      showToast("暂存失败：" + String(e?.message || e), "error")
+    } finally {
+      setStashBusy(false)
+    }
   }
 
   function handleUnstage(filepath: string) {

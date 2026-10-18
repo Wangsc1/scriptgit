@@ -245,10 +245,11 @@ export async function unstageAll(bookmarkName: string): Promise<void> {
 /** 创建 Stash */
 export async function createStash(
   bookmarkName: string,
-  message: string = ""
+  message: string = "",
+  paths?: string[]
 ): Promise<void> {
   return runRepoMutation(bookmarkName, () =>
-    createStashInternal(bookmarkName, message)
+    createStashInternal(bookmarkName, message, paths)
   )
 }
 

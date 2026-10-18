@@ -116,7 +116,7 @@ async function main(){
   const action=(name,title)=>all(row(name).props.contextMenu.menuItems).find(n=>n.type==='Button'&&n.props.title===title)
   const swipe=()=>row('menu.bin').props.trailingSwipeActions.actions[0]
   assert.equal(swipe().props.title,'删除');assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions.allowsFullSwipe,false)
-  assert.deepEqual(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
+  assert.deepEqual(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
   confirm=false;await swipe().props.action();assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false);assert.equal(updates,0)
   let next=null;global.Dialog.prompt=async()=>next
   await action('menu.bin','复制文件').props.action();await action('menu.bin','重命名').props.action();assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(updates,0)
@@ -144,15 +144,42 @@ async function main(){
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.trailingSwipeActions.actions
-  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','暂存','推送','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
-  assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
+  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.label.props.trailingSwipeActions.actions
+  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['推送','还原','暂存','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.label.props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.deepEqual(groups.at(-1).props.label.props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
   const by=t=>a.find(n=>n.props.title===t)
-  assert.equal(by('暂存').props.tint,'systemPurple','folder 暂存 is purple');await by('暂存').props.action();assert.deepEqual(staged,[['swipe-folder/sub/a']],'folder 暂存 stages exactly the changed paths under it')
+  assert.equal(by('暂存').props.tint,'systemPurple','folder 暂存 is purple');await by('暂存').props.action();assert.deepEqual(staged,[['swipe-folder/sub/a']],'folder 暂存 dispatches exactly its changed paths to Stash handler')
   await by('推送').props.action();assert.equal(pushes,1)
   confirm=false;await by('还原').props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
   confirm=false;await by('删除').props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
   confirm=true;await by('删除').props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
+ })
+ await test('nested swipe scope: folder labels retain actions; unchanged/changed nested files inherit no duplicate delete/stash/restore/push',async()=>{
+  const props={files:['nest/sub/clean','nest/sub/dirty'],changes:[{filepath:'nest/sub/dirty',status:'*modified'}],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged(){},onOpen(){},onStage(){},onPush(){},onRestore(){}}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  const groups=()=>{h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
+  groups()[0].props.onChanged(true);groups()[1].props.onChanged(true)
+  let checked=0
+  function check(n,inherited=[]){
+   if(!n||typeof n!=='object')return
+   if(Array.isArray(n)){n.forEach(v=>check(v,inherited));return}
+   const own=n.props?.trailingSwipeActions?.actions||[]
+   if(n.type==='DisclosureGroup'){
+    assert.equal(own.length,0,'container must not propagate folder actions to descendants')
+    assert.deepEqual(n.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['推送','还原','暂存','删除'])
+   }
+   if(n.type==='Button'&&n.props.contextMenu){
+    const titles=[...inherited,...own].map(a=>a.props.title)
+    const dirty=JSON.stringify(n.children).includes('dirty')
+    assert.deepEqual(titles,dirty?['推送','还原','暂存','删除']:['删除'])
+    assert.equal(new Set(titles).size,titles.length,'each legal action exactly once')
+    // Apple SwiftUI: actions start at originating edge; trailing is right in LTR.
+    assert.deepEqual([...titles].reverse(),dirty?['删除','暂存','还原','推送']:['删除']);checked++
+   }
+   check(n.children,[...inherited,...own])
+  }
+  h.render();check(expand(h.tree));assert.equal(checked,2);h.unmount()
  })
  await test('folder restore routes changed descendants to shared parent confirmation without changing disk',async()=>{
   await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let request
@@ -160,7 +187,7 @@ async function main(){
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
-  await group.props.trailingSwipeActions.actions[0].props.action()
+  await group.props.label.props.trailingSwipeActions.actions.find(n=>n.props.title==='还原').props.action()
   assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
@@ -323,7 +350,7 @@ async function main(){
   for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).props.label),/已删除/)}
   folder('parent').props.onChanged(true)
   const nestedGone=folders().filter(n=>JSON.stringify(n.props.label).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
-  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['还原','暂存','推送','删除'])
+  assert.deepEqual(all(folder('gone').props.label.props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['推送','还原','暂存','删除'])
   // A restored leaf makes its parent modified rather than deleted; fully clean refresh clears both.
   props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
   props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
@@ -590,7 +617,7 @@ async function main(){
   assert.equal(fs.readFileSync(dir+'/drag-conflict','utf8'),'source');assert.equal(fs.existsSync(dir+'/folder/drag-conflict'),false);assert.equal(removes,removedBefore)
   const gate=deferred();let began=false;const lock=coordinator.mutate(ctx.gitdir,async()=>{began=true;await gate.promise});while(!began)await tick();await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',dir),/其它写操作/);gate.resolve();await lock;fs.unlinkSync(dir+'/drag-link');fs.unlinkSync(dir+'/drag-link-dir')
  })
- await test('暂存 (purple swipe): real addFiles stages exactly the chosen paths in the index; HEAD unchanged, nothing committed or pushed',async()=>{
+ await test('Changes Git Stage remains: real addFiles stages chosen paths; HEAD unchanged, nothing committed or pushed',async()=>{
   await disk('stage-a.txt','a');await disk('stage-dir/b.txt','b');await disk('stage-dir/c.txt','c')
   const head=await git.resolveRef({fs,dir,ref:'HEAD'})
   const staged=async()=>(await git.statusMatrix({fs,dir})).filter(r=>r[0].startsWith('stage-')).map(r=>[r[0],r[2],r[3]]).sort()

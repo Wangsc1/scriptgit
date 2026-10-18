@@ -36,9 +36,16 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
     const metaParts: string[] = []
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
     if (meta && meta.modified != null) metaParts.push(formatDate(meta.modified))
-    // trailing 操作从右侧向内排列：视觉从左到右为 删除 / 提交 / 还原。
+    // trailing 从右向左展开；声明 推送 / 还原 / 暂存 / 删除，视觉顺序相反。
     const swipeActions: any[] = []
     if (change && !deleted) {
+      swipeActions.push(<Button
+        key="push"
+        title="推送"
+        tint="systemGreen"
+        action={() => onPush()}
+        disabled={busy || mergeInProgress}
+      />)
       swipeActions.push(<Button
         key="restore"
         title="还原"
@@ -51,13 +58,6 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
         title="暂存"
         tint={COLOR_PURPLE}
         action={() => onStage([node.path])}
-        disabled={busy || mergeInProgress}
-      />)
-      swipeActions.push(<Button
-        key="push"
-        title="推送"
-        tint="systemGreen"
-        action={() => onPush()}
         disabled={busy || mergeInProgress}
       />)
     }
@@ -79,7 +79,7 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
       </Button>
     )
   }
-  // 文件夹「暂存」：其下所有有改动的路径（含已删除的，addFiles 对其执行 remove）。
+  // 文件夹「暂存」：将其下所有改动路径保存到 Stash。
   const changesUnder = (directory: string) => [...changesByPath.keys()].filter(path => path.startsWith(directory + "/"))
   const hasChanges = changedDirectories.has(node.path)
   const folderBadge = renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE }
@@ -88,17 +88,18 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
     : hasChanges ? { text: "已修改", color: COLOR_ORANGE } : null
   const folderActions: any[] = []
   if (hasChanges) {
+    folderActions.push(<Button title="推送" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
     folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => onRestore(node.path)} />)
     folderActions.push(<Button title="暂存" tint={COLOR_PURPLE} disabled={busy || mergeInProgress} action={() => onStage(changesUnder(node.path))} />)
-    folderActions.push(<Button title="推送" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
+  // Scope swipe actions to the folder label; attaching to DisclosureGroup also decorates descendant rows.
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
   return <DisclosureGroup contextMenu={{ menuItems: <>
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
-  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
+  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} label={<HStack trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>

@@ -15,7 +15,7 @@ import {
   readSymbolicHeadBranch,
   writeUnbornHead,
 } from "./runtime"
-import { repairStashReflog } from "./stashService"
+import { createPathStash } from "./pathStashService"
 
 export async function isInitialized(bookmarkName: string): Promise<boolean> {
   try {
@@ -167,34 +167,18 @@ async function safeCurrentBranch(
 
 export async function createStashInternal(
   bookmarkName: string,
-  message = ""
+  message = "",
+  paths?: string[]
 ): Promise<void> {
-  const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
+  const ctx = await getCtx(bookmarkName)
+  const { git, fs, dir, gitdir } = ctx
   if (!(await hasResolvedHead(git, fs, dir, gitdir))) {
     throw new Error("首次提交前无法创建 Stash")
   }
-  const resolvedAuthor = await resolveAuthor()
-  await ensureGitConfigAuthor(git, fs, dir, gitdir, resolvedAuthor)
-  await addFilesInternal(bookmarkName, ".")
+  const author = await resolveAuthor()
   const branch = await safeCurrentBranch(git, fs, dir, gitdir)
-  const safeMessage =
-    sanitizeStashMessage(message) || (branch ? `WIP on ${branch}` : "WIP")
-  try {
-    await git.stash({
-      fs,
-      dir,
-      gitdir,
-      op: "push",
-      message: safeMessage,
-    })
-  } catch (error: any) {
-    const detail = String(error?.message || error)
-    if (/nothing to stash/i.test(detail) || /Could not find changes/i.test(detail)) {
-      throw new Error("没有可保存的改动")
-    }
-    throw error
-  }
-  await repairStashReflog(fs)
+  const safeMessage = sanitizeStashMessage(message) || (branch ? `WIP on ${branch}` : "WIP")
+  await createPathStash(ctx, safeMessage, author, paths)
 }
 
 export async function commitInternal(

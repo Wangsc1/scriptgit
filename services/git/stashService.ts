@@ -11,6 +11,7 @@ import {
   stashOidsNewestFirst,
 } from "../../utils/stash"
 import { getCtx } from "./runtime"
+import { PATH_STASH_INDEX_MESSAGE } from "./pathStashService"
 
 const STASH_REFLOG = "logs/refs/stash"
 const STASH_REF = "refs/stash"
@@ -128,6 +129,32 @@ export async function applyStashInternal(
   const matrix = await scanMutationMatrix({ git, fs, dir, gitdir }, "写操作应用Stash前检查")
   if (!isStatusMatrixClean(matrix)) {
     throw new Error("请先提交、暂存到 Stash 或丢弃当前改动，再应用 Stash")
+  }
+  const entries = await withStashOids(fs, parseStashEntries(await git.stash({ fs, dir, gitdir, op: "list" })))
+  const oid = entries[index]?.oid
+  if (oid) {
+    const { commit } = await git.readCommit({ fs, dir, gitdir, oid })
+    if (commit.parent.length === 2) {
+      const indexCommit = await git.readCommit({ fs, dir, gitdir, oid: commit.parent[1] })
+      if (indexCommit.commit.message.trim() === PATH_STASH_INDEX_MESSAGE) {
+        // Bundled stash.apply ignores the main worktree tree of a standard stash.
+        // Never overwrite newer history: cross-base application needs a real merge.
+        const head = await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" })
+        if (head !== commit.parent[0]) throw new Error("此 Stash 的基线已改变；请切回原提交后应用，或使用原生 Git 合并应用")
+        const tracked = new Set(await git.listFiles({ fs, dir, gitdir, ref: head }))
+        for (const filepath of await git.listFiles({ fs, dir, gitdir, ref: oid })) {
+          if (!tracked.has(filepath) && await fs.exists(dir + "/" + filepath)) {
+            throw new Error("应用 Stash 会覆盖未跟踪或忽略的文件：" + filepath)
+          }
+        }
+        await git.checkout({ fs, dir, gitdir, ref: oid, force: true, noUpdateHead: true })
+        const changed = await scanMutationMatrix({ git, fs, dir, gitdir }, "恢复 Stash 索引")
+        const paths = new Set(changed.map(row => row[0]))
+        for (const path of await git.listFiles({ fs, dir, gitdir, ref: commit.parent[1] })) paths.add(path)
+        for (const filepath of paths) await git.resetIndex({ fs, dir, gitdir, filepath, ref: commit.parent[1] })
+        return
+      }
+    }
   }
   await git.stash({ fs, dir, gitdir, op: "apply", refIdx: index })
 }
