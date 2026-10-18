@@ -32,7 +32,8 @@ export function getWorktreeEntries(bookmarkName: string): Promise<WorktreeEntrie
   return runStatusRead(bookmarkName, () => readWorktreeEntries(bookmarkName))
 }
 
-async function readWorktreeEntries(bookmarkName: string): Promise<WorktreeEntries> {
+/** Internal: caller must hold the repository read or mutation barrier. */
+export async function readWorktreeEntries(bookmarkName: string): Promise<WorktreeEntries> {
     const revision = statusRevision(bookmarkName)
     const { workdir: dir, gitdir } = resolveRepoPathsReadOnly(bookmarkName)
     if (!dir) throw new Error("工作区路径未确认")

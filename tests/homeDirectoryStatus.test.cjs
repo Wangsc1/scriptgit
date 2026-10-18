@@ -26,9 +26,9 @@ async function main(){
  await test('empty-only repo reports new directory separately, mixed file parent is not double counted, ignored/HEAD dirs excluded; real snapshot/cache/UI/action visibility agree',async()=>{
   for(const row of rows)values[row.bookmarkName]=await status.getRepoListStatus(row.bookmarkName,undefined,{force:true})
   assert.equal(values.empty.uncommitted,0);assert.equal(values.empty.newDirectories,1);assert.equal(values.mixed.uncommitted,1);assert.equal(values.mixed.newDirectories,0);assert.equal(values.clean.uncommitted,0);assert.equal(values.clean.newDirectories,0)
-  const h=homepage(values);assert.match(text(h.tree),/1 新增目录/);const actions=swipes(h);assert.deepEqual(actions[0],['拉取','删除'],'directory-only must NOT offer push/restore/Stash');assert.deepEqual(actions[1],['拉取','推送','还原','暂存','删除']);assert.deepEqual(actions[2],['拉取','删除']);h.unmount()
+  const h=homepage(values);assert.match(text(h.tree),/1 新增目录/);const actions=swipes(h);assert.deepEqual(actions[0],['拉取','还原','删除'],'directory-only offers restore, never push/Stash');assert.deepEqual(actions[1],['拉取','推送','还原','暂存','删除']);assert.deepEqual(actions[2],['拉取','删除']);h.unmount()
   const snapshots=await store.readSnapshots();assert.equal(snapshots.empty.newDirectories,1);assert.equal(snapshots.empty.uncommitted,0);assert.equal(statusScan.getCachedRepoStatus('empty').newDirectories,1)
-  const reopened=homepage({},snapshots);assert.match(text(reopened.tree),/1 新增目录/);assert.deepEqual(swipes(reopened)[0],['拉取','删除']);reopened.unmount()
+  const reopened=homepage({},snapshots);assert.match(text(reopened.tree),/1 新增目录/);assert.deepEqual(swipes(reopened)[0],['拉取','还原','删除']);reopened.unmount()
  })
  await test('explicit fresh scan sees external directory add/delete at unchanged revision; old cache is used only when explicitly requested',async()=>{
   fs.mkdirSync(contexts.empty.dir+'/another');assert.equal((await status.getRepoListStatus('empty',undefined,{force:true})).newDirectories,2)

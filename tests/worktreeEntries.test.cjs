@@ -55,10 +55,10 @@ async function main(){
  let h
  function folder(name){h.render();return all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(n=>n.type==='Text'&&n.children.includes(name)))}
  function badge(name,green){const row=folder(name);assert.ok(row,'visible '+name);const label=all(row.props.label);assert.equal(label.some(n=>n.type==='Text'&&n.children.includes('新增')),green,'badge '+name);assert.equal(label.find(n=>n.type==='Image').props.foregroundStyle,green?'systemGreen':'secondaryLabel');return row}
- await test('actual FilesTab first mount/refresh/remount shows empty directories green; tracked directories neutral, real modified tracked directory orange; empty folders retain management/delete only',async()=>{
+ await test('actual FilesTab first mount/refresh/remount shows empty directories green; tracked directories neutral, real modified tracked directory orange; empty folders retain management/delete and gain scoped restore only',async()=>{
   for(let i=0;i<3;i++){
    props.worktreeEntries=await scan.getWorktreeEntries('repo');h=mount(FilesTab,props,{effectUpdates:true});badge('app-temp',true);badge('nested',true).props.onChanged(true);badge('empty',true).props.onChanged(true);badge('leaf',true);badge('untracked',true);badge('tracked',false);badge('index-only',false)
-   const row=folder('app-temp');assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(n=>n.props.title),['删除']);assert.ok(all(row.props.contextMenu.menuItems).some(n=>n.props.title==='重命名'))
+   const row=folder('app-temp');assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(n=>n.props.title),['还原','删除']);assert.ok(all(row.props.contextMenu.menuItems).some(n=>n.props.title==='重命名'))
    props.worktreeEntries=await scan.getWorktreeEntries('repo');await tick();badge('app-temp',true);h.unmount()
   }
   props.changes=[{filepath:'tracked/base',status:'*modified',unstaged:true}];h=mount(FilesTab,props,{effectUpdates:true});const label=all(folder('tracked').props.label);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('已修改')));assert.equal(label.find(n=>n.type==='Image').props.foregroundStyle,'systemOrange');h.unmount();props.changes=[]
@@ -66,7 +66,7 @@ async function main(){
  await test('production empty import discovered after refresh without session hints and after remount; existing directory collision stays zero-write; managed delete disappears on refresh',async()=>{
   fs.mkdirSync(outside+'/Imported Empty');await internal.importLocalDirectoryInternal('repo',outside+'/Imported Empty',dir);props.worktreeEntries=await scan.getWorktreeEntries('repo');h=mount(FilesTab,props,{effectUpdates:true});badge('Imported Empty',true);h.unmount();h=mount(FilesTab,props,{effectUpdates:true});badge('Imported Empty',true)
   const before=snapshot();await assert.rejects(internal.importLocalDirectoryInternal('repo',outside+'/Imported Empty',dir),/同名/);assert.deepEqual(snapshot(),before)
-  global.Dialog={confirm:async()=>true};await folder('app-temp').props.label.props.trailingSwipeActions.actions[0].props.action();await tick();h.render();assert.ok(!folder('app-temp'));assert.ok(!fs.existsSync(dir+'/app-temp'));h.unmount()
+  global.Dialog={confirm:async()=>true};await folder('app-temp').props.label.props.trailingSwipeActions.actions.find(a=>a.props.title==='删除').props.action();await tick();h.render();assert.ok(!folder('app-temp'));assert.ok(!fs.existsSync(dir+'/app-temp'));h.unmount()
  })
  await test('actual detail data hook loads scan on initial files load, operation refresh, file-tab return and remount; read barrier blocks inventory behind writer',async()=>{
   let scans=0

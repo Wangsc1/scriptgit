@@ -1,8 +1,9 @@
+import type { RestoreScopePlan } from "../services/git/restoreScopeService"
 import type { CommitEntry, StashEntry } from "../types/git"
 import { commitTitle } from "./format"
 
 export type RepoPendingAction =
-  | { type: "restore"; filepath: string; filepaths?: string[] }
+  | { type: "restore"; filepath: string; filepaths?: string[]; restorePlan?: RestoreScopePlan }
   | { type: "revert"; entry: CommitEntry }
   | { type: "softReset"; entry: CommitEntry }
   | { type: "amend" }
@@ -19,6 +20,11 @@ export function getRepoPendingAlert(pending: Exclude<RepoPendingAction, null>): 
 } {
   switch (pending.type) {
     case "restore":
+      if (pending.restorePlan) return {
+        title: "还原文件并删除新增空目录？",
+        message: `范围：${pending.restorePlan.scope || "仓库全部工作区"}（${pending.filepath}）\n将还原 ${pending.restorePlan.filepaths.length} 个文件到 HEAD，并从叶到父删除 ${pending.restorePlan.empty?.directories.length || 0} 个新增空目录（含本次文件还原后预计清空的目录）。\n仅删除重新检查确实为空且未被跟踪的目录；隐藏/忽略内容、已跟踪目录和范围外目录保留。当前文件改动将丢失，不可撤销。`,
+        confirmButton: "还原",
+      }
       return {
         title: "还原改动？",
         message: `将「${pending.filepath}」还原到 HEAD，当前改动将丢失，此操作不可撤销。`,

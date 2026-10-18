@@ -6,6 +6,8 @@
  */
 
 import { runWithBackgroundKeepAlive } from "./git/runtime"
+import { prepareRestoreScopeInternal, restoreScopeInternal, type RestoreScopePlan } from "./git/restoreScopeService"
+export type { RestoreScopePlan } from "./git/restoreScopeService"
 import { autoPullInternal, type AutoPullOptions, type AutoPullOutcome } from "./git/autoPullService"
 export type { AutoPullOptions, AutoPullOutcome } from "./git/autoPullService"
 import {
@@ -348,6 +350,20 @@ export async function restoreFile(
   return runRepoMutation(bookmarkName, () =>
     restoreFileInternal(bookmarkName, filepath)
   )
+}
+
+/** Confirmed repository/folder restore. File-level restore retains its original scope. */
+export function prepareRestoreScope(bookmarkName: string, scope = ""): Promise<RestoreScopePlan> {
+  return runStatusRead(bookmarkName, async () => {
+    if (await getMergeConflictState(bookmarkName)) throw new Error("仓库存在未完成合并，请进入仓库处理")
+    return prepareRestoreScopeInternal(bookmarkName, scope)
+  })
+}
+export function restoreWorktreeScope(bookmarkName: string, plan: RestoreScopePlan): Promise<string> {
+  return runRepoMutation(bookmarkName, async () => {
+    if (await getMergeConflictState(bookmarkName)) throw new Error("仓库存在未完成合并，请进入仓库处理")
+    return restoreScopeInternal(bookmarkName, plan)
+  })
 }
 
 /** 多文件还原持有同一个写屏障，只在结束时刷新一次摘要。 */

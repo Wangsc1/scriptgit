@@ -76,7 +76,7 @@ async function main(){
   await git.checkout({...ctx,ref:oid,filepaths:['b'],noUpdateHead:true,force:true});assert.deepEqual(fs.readFileSync(gitdir+'/HEAD'),raw)
   await git.checkout({...ctx,ref:'HEAD',filepaths:['b'],force:true});assert.equal(fs.readFileSync(gitdir+'/HEAD','utf8'),oid+'\n','old restore behavior actually detaches')
   fs.writeFileSync(gitdir+'/HEAD',raw);fs.writeFileSync(dir+'/b','changed again')
-  const service=load('services/git/worktreeService.ts',{'./matrixScanService':{},'../../constants/git':{},'../../utils/stageSelection':{},'../../utils/stash':{},'../authStore':{},'./runtime':{...runtime,getCtx:async()=>ctx},'./pathStashService':{}})
+  const service=load('services/git/worktreeService.ts',{'./emptyDirectoryRemoval':load('services/git/emptyDirectoryRemoval.ts'),'./matrixScanService':{},'../../constants/git':{},'../../utils/stageSelection':{},'../../utils/stash':{},'../authStore':{},'./runtime':{...runtime,getCtx:async()=>ctx},'./pathStashService':{}})
   await service.restoreFileInternal('repo','b');assert.equal(fs.readFileSync(dir+'/b','utf8'),'base b\n');assert.deepEqual(fs.readFileSync(gitdir+'/HEAD'),raw)
   await runtime.forceCheckoutRef(git,adapter,dir,gitdir,'HEAD');assert.deepEqual(fs.readFileSync(gitdir+'/HEAD'),raw,'abort fallback source HEAD must stay attached')
   const mergeUtil=load('utils/mergeConflict.ts');fs.writeFileSync(gitdir+'/gitgit-merge-state.json',mergeUtil.serializeMergeState(mergeUtil.buildMergeState({oursOid:oid,theirsOid:oid,conflicts:[]})))

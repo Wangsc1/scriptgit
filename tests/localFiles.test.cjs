@@ -188,7 +188,7 @@ async function main(){
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
   await group.props.label.props.trailingSwipeActions.actions.find(n=>n.props.title==='还原').props.action()
-  assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
+  assert.deepEqual(request,['folder',['folder/b.txt'],true]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
  await test('directory native recursion includes binary/untracked/empty dirs; real Git A/D, unchanged HEAD/index and no JS content reads',async()=>{
@@ -511,7 +511,7 @@ async function main(){
   // Git has no empty-directory rows, so labels must survive real changes refreshes.
   const emptyIndex=fs.readFileSync(dir+'/.git/index'),emptyHead=await git.resolveRef({fs,dir,ref:'HEAD'})
   const folderRow=name=>nodes().find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))
-  const assertAddedFolder=name=>{const row=folderRow(name);assert.ok(row,'directory visible: '+name);const label=all(row.props.label);assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'green folder: '+name);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'),'green 新增: '+name);assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'],'empty directory is not a Git change; no push/restore/Stash actions');return row}
+  const assertAddedFolder=name=>{const row=folderRow(name);assert.ok(row,'directory visible: '+name);const label=all(row.props.label);assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'green folder: '+name);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'),'green 新增: '+name);assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['还原','删除'],'empty directory gains restore only; no push/Stash actions');return row}
   for(const [name,child] of [['UI Empty Imported',''],['UI Nested Empty','middle/leaf']]){
    selectedDirectory=outside+'/'+name;fs.mkdirSync(selectedDirectory+(child?'/'+child:''),{recursive:true});await dispatch('导入目录')
    for(let refresh=0;refresh<3;refresh++){

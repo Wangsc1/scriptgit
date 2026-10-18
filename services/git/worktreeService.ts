@@ -1,3 +1,4 @@
+import { inspectEmptyDirectories } from "./emptyDirectoryRemoval"
 import { scanMutationMatrix } from "./matrixScanService"
 import { DEFAULT_BRANCH } from "../../constants/git"
 import {
@@ -194,7 +195,8 @@ export async function commitInternal(
 
 export async function restoreFileInternal(
   bookmarkName: string,
-  filepath: string
+  filepath: string,
+  preserveDirectories = false
 ): Promise<void> {
   const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
   let hasHead = true
@@ -205,16 +207,24 @@ export async function restoreFileInternal(
   }
   if (!hasHead) {
     const fullPath = dir + "/" + filepath
-    if (await FileManager.exists(fullPath)) await FileManager.remove(fullPath)
+    if (preserveDirectories) await inspectEmptyDirectories(dir, [filepath], "unlink")
+    else if (await FileManager.exists(fullPath)) await FileManager.remove(fullPath)
     await git.remove({ fs, dir, gitdir, filepath }).catch(() => undefined)
     return
   }
-  await checkoutWithEmptyDirCleanup(git, fs, {
-    dir,
-    gitdir,
-    filepaths: [filepath],
-    ref: "HEAD",
-    force: true,
-    noUpdateHead: true,
-  })
+  const options = { dir, gitdir, filepaths: [filepath], ref: "HEAD", force: true, noUpdateHead: true }
+  if (preserveDirectories) {
+    // Scope restore owns empty-directory cleanup via atomic nonrecursive rmdir.
+    // Do not invoke FileManager-backed recursive rmdir or parent pruning here.
+    const guarded: any = {
+      ...fs,
+      unlink: async (path: string) => {
+        const relative = path.startsWith(dir + "/") ? path.slice(dir.length + 1) : path
+        await inspectEmptyDirectories(dir, [relative], "unlink")
+      },
+      rmdir: async () => { throw new Error("文件还原遇到目录变更，已停止；未递归删除") },
+    }
+    if (fs.promises) guarded.promises = { ...fs.promises, unlink: guarded.unlink, rmdir: guarded.rmdir }
+    await git.checkout({ fs: guarded, ...options })
+  } else await checkoutWithEmptyDirCleanup(git, fs, options)
 }

@@ -20,6 +20,7 @@ import {
   RemoteCancelToken,
   resetToCommitAndForcePush,
   restoreFile,
+  restoreWorktreeScope,
   revertCommit,
   softResetHead,
 } from "../services/gitService"
@@ -198,7 +199,10 @@ export function useRepoPendingActions({
       if (action.type === "restore") {
         await beginOpBusy("正在还原改动", action.filepath)
         try {
-          for (const filepath of action.filepaths ?? [action.filepath]) await restoreFile(bookmarkName, filepath)
+          if (action.restorePlan) {
+            const result = await restoreWorktreeScope(bookmarkName, action.restorePlan)
+            showAlert("还原完成", result)
+          } else for (const filepath of action.filepaths ?? [action.filepath]) await restoreFile(bookmarkName, filepath)
         } finally {
           await reloadRepo()
         }

@@ -41,7 +41,7 @@ import {
   sourceLabel,
   updateBranchLastPulledAt,
 } from "../services/repoStore"
-import { getChanges, restoreFiles, createStash, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
+import { getChanges, prepareRestoreScope, restoreWorktreeScope, type RestoreScopePlan, createStash, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { buildCommitMessage } from "../utils/format"
 import { RepoDetailPage } from "./RepoDetailPage"
@@ -67,7 +67,7 @@ export function RepoListPage() {
   const [repos, setRepos] = useState<RepoMeta[]>(() => listRepos())
   const [showClone, setShowClone] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<RepoMeta | null>(null)
-  const [pendingRestore, setPendingRestore] = useState<RepoMeta | null>(null)
+  const [pendingRestore, setPendingRestore] = useState<{ repo: RepoMeta; plan: RestoreScopePlan } | null>(null)
   const [restoringName, setRestoringName] = useState<string | null>(null)
   const restoring = useRef(false)
   const [stagingName, setStagingName] = useState<string | null>(null)
@@ -263,19 +263,27 @@ export function RepoListPage() {
     return pending
   }
 
+  async function requestRestore(repo: RepoMeta) {
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current) return
+    restoring.current = true
+    setRestoringName(repo.name)
+    try {
+      const plan = await prepareRestoreScope(repo.bookmarkName)
+      if (alive.current) setPendingRestore({ repo, plan })
+    } catch (e: any) { if (alive.current) showAlert("还原检查失败", String(e?.message || e)) }
+    finally { restoring.current = false; if (alive.current) setRestoringName(null) }
+  }
+
   async function doRestore() {
-    const repo = pendingRestore
+    const request = pendingRestore
+    const repo = request?.repo
     setPendingRestore(null)
     if (!repo || restoring.current || pushGate.current || pulling.current || singlePull.current) return
     restoring.current = true
     setRestoringName(repo.name)
     try {
-      const status = await getRepoListStatus(repo.bookmarkName, undefined, { source: "列表还原", force: true })
-      if (status.error || !status.workdirOk) throw new Error(status.error || "无法读取仓库")
-      if (status.mergeInProgress || status.conflictCount) throw new Error("仓库存在未完成合并，请进入仓库处理")
-      const changes = await getChanges(repo.bookmarkName, "列表还原")
-      await restoreFiles(repo.bookmarkName, changes.map(change => change.filepath))
-      if (alive.current) showAlert("还原完成", repo.name)
+      const result = await restoreWorktreeScope(repo.bookmarkName, request!.plan)
+      if (alive.current) showAlert("还原完成", `${repo.name}\n${result}`)
     } catch (e: any) {
       if (alive.current) showAlert("还原失败", String(e?.message || e))
     } finally {
@@ -305,7 +313,7 @@ export function RepoListPage() {
 
   const activeAlert =
     pendingRestore != null
-      ? { ...getRepoPendingAlert({ type: "restore", filepath: pendingRestore.name }), isConfirm: true as const }
+      ? { ...getRepoPendingAlert({ type: "restore", filepath: pendingRestore.repo.name, restorePlan: pendingRestore.plan }), isConfirm: true as const }
       : pendingDelete != null
       ? {
           title: "移除仓库？",
@@ -462,9 +470,10 @@ export function RepoListPage() {
                   ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
                     || (statusMap[repo.bookmarkName]?.ahead ?? snapshotMap[repo.bookmarkName]?.ahead ?? 0) > 0)
                     ? [<Button title="推送" tint="systemGreen" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null} action={() => pushOne(repo)} />] : []),
-                  ...((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
+                  ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
+                    || (statusMap[repo.bookmarkName]?.newDirectories ?? snapshotMap[repo.bookmarkName]?.newDirectories ?? 0) > 0)
                     ? [<Button title="还原" tint="systemOrange" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null}
-                        action={() => { if (!restoring.current && !pushGate.current && !pulling.current && !singlePull.current) setPendingRestore(repo) }} />] : []),
+                        action={() => void requestRestore(repo)} />] : []),
                   ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0)
                     ? [<Button title="暂存" tint="systemPurple" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null} action={() => void stageOne(repo)} />] : []),
                   <Button

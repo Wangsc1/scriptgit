@@ -95,7 +95,7 @@ export function RepoDetailTabContent({
   stashBusy: boolean
   onPush: () => void | Promise<void>
   onStage: (filepaths: string[]) => void | Promise<void>
-  onRestore: (filepath: string) => void
+  onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void
   onCreateStash: () => void | Promise<void>
   onApplyStash: (entry: StashEntry) => void | Promise<void>
   onDropStash: (entry: StashEntry) => void

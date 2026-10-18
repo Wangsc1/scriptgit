@@ -26,7 +26,7 @@ async function main(){
  }),{})
  const render=()=>{h.render();effects.splice(0).forEach(effect=>effect());return all(h.tree).filter(n=>n.props.trailingSwipeActions)}
  let swipes=render()
- assert.deepEqual(swipes.map(n=>n.props.trailingSwipeActions.actions.map(a=>a.props.title)),[['拉取','推送','还原','暂存','删除'],['拉取','推送','删除'],['拉取','删除'],['拉取','推送','还原','暂存','删除']])
+ assert.deepEqual(swipes.map(n=>n.props.trailingSwipeActions.actions.map(a=>a.props.title)),[['拉取','推送','还原','暂存','删除'],['拉取','推送','还原','删除'],['拉取','还原','删除'],['拉取','推送','还原','暂存','删除']])
  // Apple swipeActions: order starts at originating edge; trailing/LTR visual order reverses.
  assert.deepEqual(swipes[0].props.trailingSwipeActions.actions.map(a=>a.props.title).reverse().filter(t=>t!=='拉取'),['删除','暂存','还原','推送'])
  assert.deepEqual(swipes[0].props.trailingSwipeActions.actions.filter(a=>a.props.title!=='拉取').map(a=>a.props.tint),['systemGreen','systemOrange','systemPurple','systemRed'])

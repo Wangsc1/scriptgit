@@ -5,10 +5,11 @@
  * 需要确认的操作（丢弃改动、删除 Stash）只提交 PendingAction，由页面统一确认。
  */
 
-import { useState } from "scripting"
+import { useEffect, useRef, useState } from "scripting"
 import type { FileChange, StashEntry } from "../types/git"
 import {
   addFiles,
+  prepareRestoreScope,
   applyStash,
   commit,
   createStash,
@@ -53,6 +54,8 @@ export function useRepoWorktreeActions({
   setPending,
   showToast,
 }: UseRepoWorktreeActionsProps) {
+  const restorePreview = useRef({ busy: false, alive: true })
+  useEffect(() => { restorePreview.current.alive = true; return () => { restorePreview.current.alive = false } }, [])
   const [committing, setCommitting] = useState(false)
   const [stagingBusy, setStagingBusy] = useState(false)
   const [stashBusy, setStashBusy] = useState(false)
@@ -114,9 +117,16 @@ export function useRepoWorktreeActions({
     return runStaging("全部取消暂存", () => unstageAll(bookmarkName).then(() => {}))
   }
 
-  function handleRestore(filepath: string, filepaths?: string[]) {
-    if (stagingBusy || stashBusy || guardMergeBusy()) return
-    setPending({ type: "restore", filepath, filepaths })
+  async function handleRestore(filepath: string, filepaths?: string[], directory = false) {
+    if (restorePreview.current.busy || !restorePreview.current.alive || stagingBusy || stashBusy || guardMergeBusy()) return
+    if (!directory) { setPending({ type: "restore", filepath, filepaths }); return }
+    restorePreview.current.busy = true
+    setStagingBusy(true)
+    try {
+      const restorePlan = await prepareRestoreScope(bookmarkName, filepath)
+      if (restorePreview.current.alive) setPending({ type: "restore", filepath, restorePlan })
+    } catch (e: any) { if (restorePreview.current.alive) showToast("还原检查失败：" + String(e?.message || e), "error") }
+    finally { restorePreview.current.busy = false; if (restorePreview.current.alive) setStagingBusy(false) }
   }
 
   async function handleCreateStash() {
