@@ -14,7 +14,7 @@ for(let sel=0;sel<3;sel++){
   const text=b.children[0]
   assert.equal(b.type,'Button');assert.deepEqual(b.props.frame,{maxWidth:'infinity'});assert.equal(text.type,'Text');assert.deepEqual(text.children,[options[i].title])
   assert.equal(text.props.frame.maxWidth,'infinity');assert.equal(text.props.frame.alignment,'center')
-  if(i===sel)assert.deepEqual(text.props.background,{style:'systemGray5',shape:{type:'rect',cornerRadius:10}});else assert.equal(text.props.background,undefined,'only the selected segment has a block')
+  if(i===sel)assert.deepEqual(text.props.background,{style:{light:'#E5E5EA',dark:'#48484A'},shape:{type:'rect',cornerRadius:10}});else assert.equal(text.props.background,undefined,'only the selected segment has a block')
   const before=seen.length;b.props.action();assert.equal(seen.length,before+(i===sel?0:1))
  })
  h.unmount()
