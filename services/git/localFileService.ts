@@ -286,16 +286,46 @@ async function additionRoot(bookmarkName: string, expectedRoot?: string, creatio
   if (creationDate !== undefined && stat.creationDate !== creationDate) throw new Error("工作区目录身份已变化，未继续写入")
   return { root, creationDate: stat.creationDate }
 }
-async function additionTarget(bookmarkName: string, name: string, expectedRoot?: string) {
+/** Conflict diagnostics expose names, never provider/system paths or native error text. */
+function importDiagnosticName(value: string): string {
+  const name = value.replace(/\b(?:gh[opusr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "***")
+    .replace(/((?:token|access_token|password|authorization)\s*[=:]\s*)[^\s;,]+/gi, "$1***")
+  return JSON.stringify(name.slice(0, 100)).replace(/[\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))
+}
+async function importConflictType(target: string): Promise<string> {
+  try {
+    if (await FileManager.isLink(target)) return "符号链接"
+    if (!(await FileManager.exists(target))) return "枚举后已不存在或提供方状态不一致"
+    if (await FileManager.isDirectory(target)) return "目录"
+    if (await FileManager.isFile(target)) return "文件"
+    return "其它类型"
+  } catch (_) { return "类型读取失败" }
+}
+async function additionTarget(bookmarkName: string, name: string, expectedRoot?: string, sourcePath?: string) {
   validNewName(name)
   const identity = await additionRoot(bookmarkName, expectedRoot)
   async function check() {
     await additionRoot(bookmarkName, identity.root, identity.creationDate)
     const fold = (value: string) => value.normalize("NFC").toLowerCase()
     const names = await FileManager.readDirectory(identity.root)
-    if (names.some(entry => fold(entry.split("/").pop() || entry) === fold(name))) throw new LocalImportConflictError("根目录已有同名目标（含大小写重名），未覆盖")
+    const matched = names.find(entry => fold(entry.split("/").pop() || entry) === fold(name))
     const target = identity.root + "/" + name
-    if (await FileManager.isLink(target) || await FileManager.exists(target)) throw new LocalImportConflictError("目标已存在，未覆盖")
+    const sourceNote = sourcePath === target ? "；所选源目录就是目标目录" : ""
+    if (matched !== undefined) {
+      const entryName = matched.split("/").pop() || matched
+      const match = entryName === name ? "完全同名" : entryName.normalize("NFC") === name.normalize("NFC") ? "Unicode 等价" : "大小写/Unicode 等价"
+      // Keep the original conservative collision decision even if the provider's
+      // listing and existence check disagree. No overwrite/merge or retry writes.
+      const safeEntry = entryName !== "." && entryName !== ".." && !/[\\/]/.test(entryName)
+      const type = safeEntry ? await importConflictType(identity.root + "/" + entryName) : "条目格式异常"
+      throw new LocalImportConflictError(`根目录已有同名目标，未覆盖；导入名=${importDiagnosticName(name)}；冲突条目=${importDiagnosticName(entryName)}（${type}；${match}）；命中=目录枚举${sourceNote}`)
+    }
+    const link = await FileManager.isLink(target)
+    const exists = !link && await FileManager.exists(target)
+    if (link || exists) {
+      const type = link ? "符号链接" : await importConflictType(target)
+      throw new LocalImportConflictError(`目标已存在，未覆盖；导入名=${importDiagnosticName(name)}；冲突条目=${importDiagnosticName(name)}（${type}）；命中=${link ? "isLink" : "仅 exists"}，目录枚举未匹配${sourceNote}`)
+    }
     await additionRoot(bookmarkName, identity.root, identity.creationDate)
     return target
   }
@@ -424,7 +454,7 @@ export async function importLocalDirectoryInternal(bookmarkName: string, sourceP
   const sourceRoot = sourcePath.replace(/\/+$/, "")
   if (!sourceRoot.startsWith("/") || sourceRoot.includes("\\") || /[\x00-\x1f\x7f]/.test(sourceRoot) || sourceRoot.split("/").some(p => p === "." || p === ".." || p.toLowerCase() === ".git")) throw new Error("导入目录来源路径不安全")
   const name = sourceRoot.split("/").pop() || ""
-  const destination = await additionTarget(bookmarkName, name, expectedRoot)
+  const destination = await additionTarget(bookmarkName, name, expectedRoot, sourceRoot)
   if (destination.root === sourceRoot || destination.root.startsWith(sourceRoot + "/")) throw new Error("不能将源目录导入其自身内部")
   type Entry = { path: string; directory: boolean; size: number; modified: number; created: number }
   async function inspect(relative: string, known?: Entry[]) {
