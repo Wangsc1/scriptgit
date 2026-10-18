@@ -32,8 +32,7 @@ async function main() {
   global.FileManager = { stat: async () => { statCalls++; return { size: 1, modificationDate: 2 } } }
   const FilesTab = load('pages/FilesTab.tsx', {
     '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
-    './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
-    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
+    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
     '../utils/format': { formatBytes: String, formatDate: String }, '../services/repoStore': { resolveWorkdir: () => '/mock' },
     '../services/gitService': {}, '../services/localFileImport': {}, '../services/localImportExecution': load('services/localImportExecution.ts'), '../constants/colors': {},
   }).FilesTab

@@ -1,6 +1,5 @@
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
-import { LocalFileDragSession } from "../utils/localFileDrag"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
@@ -26,11 +25,9 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
   }
 }
 
-const DRAG_CALLBACKS = ["onDrag", "validateDrop", "dropEntered", "dropUpdated", "dropExited", "performDrop"] as const
-function newDragCounts(): Record<string, number> { return { onDrag: 0, validateDrop: 0, dropEntered: 0, dropUpdated: 0, dropExited: 0, performDrop: 0 } }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -59,9 +56,10 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
     }
     swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
-      <Button onDrag={!busy && !deleted && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? { data: () => dragFile(node.path), preview: <Text>{node.name}</Text> } : undefined} action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
+      <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
+        <Button title="移动到…" disabled={busy || deleted} action={() => moveTo(node.path)} />
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
         <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
@@ -87,16 +85,14 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
-  // Device evidence: onDrop on the nested label never fired (all callback counts 0).
-  // Attach it to the DisclosureGroup row itself, the outer List row container.
-  return <DisclosureGroup onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} contextMenu={{ menuItems: <>
+  return <DisclosureGroup contextMenu={{ menuItems: <>
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
   </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
@@ -122,9 +118,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [dragStatus, setDragStatus] = useState("")
-  // Ref-only bounded trace: native drag callbacks never set state or dispatch UI work for diagnostics.
-  const dragTrace = useRef({ entries: [] as string[], counts: newDragCounts(), lastCallback: "", lastDecision: "" })
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -321,143 +314,42 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     setRenamedFiles(previous => previous.filter(entry => entry.path !== path))
     setCopied(previous => [...previous.filter(entry => entry.path !== path), { path, before: changes, directory }])
   }
-  const dragSession = useRef(new LocalFileDragSession())
-  // Repo switches, merge/other operations and unmount invalidate any old capability.
-  useEffect(() => { dragSession.current.clear(); return () => dragSession.current.clear() }, [bookmarkName, loading, mergeInProgress, creationActive])
-  function dragUnavailable() { return !state.current.alive || state.current.busy || loading || mergeInProgress || creationActive || directoryForm !== null }
-  // Bounded diagnostic trace only: never let rendering/dispatch failure change
-  // the synchronous native callback result or defer provider loading.
-  function reportDrag(message: string) {
-    try {
-      const trace = dragTrace.current
-      if (!state.current.alive || trace.entries[trace.entries.length - 1] === message) return
-      trace.entries = [...trace.entries, message].slice(-8)
-    } catch (_) { /* Diagnostic failure must not affect drag/drop. */ }
+  // 长按菜单「移动到…」：选择一个已存在的文件夹（或仓库根目录），沿用原有的安全移动（路径检查、协调锁、不覆盖）。
+  function collectDirectories(nodes: FileTreeNode[], out: string[] = []): string[] {
+    for (const node of nodes) if (node.type === "directory") { out.push(node.path); collectDirectories(node.children, out) }
+    return out
   }
-  function dragLogSnapshot(): string {
-    const trace = dragTrace.current
-    const counts = DRAG_CALLBACKS.map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
-    return `拖动记录（查看时快照）：回调计数 ${counts}` + (trace.entries.length ? "\n" + trace.entries.join("\n") : "\n尚无拖动记录")
-  }
-  // Counts every native entry; only distinct consecutive callbacks add a trace line.
-  function enterDropCallback(name: string): boolean {
-    const trace = dragTrace.current
-    trace.counts[name] = (trace.counts[name] || 0) + 1
-    if (trace.lastCallback === name) return false
-    trace.lastCallback = name
-    reportDrag(`拖动：${name} 入口`)
-    return true
-  }
-  function dragFile(path: string): ItemProvider {
-    dragTrace.current.entries = []
-    dragTrace.current.counts = newDragCounts()
-    dragTrace.current.counts.onDrag = 1
-    dragTrace.current.lastCallback = ""
-    dragTrace.current.lastDecision = ""
-    dragSession.current.clear()
-    try {
-      if (dragUnavailable() || removed.has(path)) { reportDrag("拖动：当前不可拖动（忙碌、加载、合并或表单占用）"); return ItemProvider.fromText("") }
-      const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
-      const provider = ItemProvider.fromText(dragSession.current.begin(bookmarkName, root, path))
-      let types = "未报告"
-      try { types = provider.registeredTypes?.join(", ") || "未报告" } catch (_) { /* Diagnostics cannot change a successful drag. */ }
-      reportDrag(`拖动：已开始；源类型=${types}`)
-      return provider
-    } catch (e: any) {
-      reportDrag(`拖动：开始异常：${String(e?.message || e)}`)
-      return ItemProvider.fromText("")
-    }
-  }
-  // Official API: https://scriptingapp.github.io/guide/View%20Modifiers/onDrag%20and%20onDrop%20View%20Modifiers.md
-  // The published page gives no minimum app/iOS version; real gesture support
-  // (including coexistence with contextMenu) must be checked on the device.
-  function dropFolder(directory: string) {
-    // Device evidence: fromText advertises public.utf8-plain-text + public.url.
-    // Include the exact text UTI without relying on bridge subtype matching;
-    // URL representations are never accepted as workspace paths.
-    const types = ["public.utf8-plain-text", "public.plain-text"]
-    const accepts = (info: DropInfo, callback: string, record: boolean) => {
-      let reason: string
-      try {
-        reason = dragUnavailable() ? "忙碌、合并或表单占用" : deletedDirectories.has(directory) ? "目标目录已删除" :
-          !dragSession.current.eligible(bookmarkName, directory) ? "会话无效、过期、仓库变化或文件已在此目录" :
-          !info.hasItemsConforming(types) ? "文本类型不匹配" : "可接收，松手后移动"
-      } catch (error: any) {
-        const message = `拖动：${callback}.hasItemsConforming 异常：${String(error?.message || error)}`
-        if (record || dragTrace.current.lastDecision !== message) reportDrag(message)
-        dragTrace.current.lastDecision = message
-        return false
-      }
-      const message = `拖动：${callback} → ${reason}`
-      if (record || dragTrace.current.lastDecision !== message) reportDrag(message)
-      dragTrace.current.lastDecision = message
-      return reason === "可接收，松手后移动"
-    }
-    return {
-      types,
-      validateDrop: (info: DropInfo) => accepts(info, "validateDrop", enterDropCallback("validateDrop")),
-      dropUpdated: (info: DropInfo) => accepts(info, "dropUpdated", enterDropCallback("dropUpdated")) ? "move" : "forbidden",
-      dropEntered: (info: DropInfo) => { accepts(info, "dropEntered", enterDropCallback("dropEntered")) },
-      dropExited: (_info: DropInfo) => { enterDropCallback("dropExited") },
-      performDrop(info: DropInfo): boolean {
-        const record = enterDropCallback("performDrop")
-        if (!accepts(info, "performDrop", record)) return false
-        let stage = "performDrop.itemProviders"
-        try {
-          const providers = info.itemProviders(types)
-          reportDrag(`拖动：performDrop.itemProviders 返回${providers.length}项`)
-          if (providers.length !== 1) { dragSession.current.clear(); return false }
-          // Mandatory official lifetime rule: start loading NOW, before returning.
-          stage = "performDrop.loadText"
-          const text = providers[0].loadText()
-          reportDrag("拖动：performDrop.loadText 已启动")
-          state.current.busy = true
-          void finishDrop(text, directory).catch(error => console.error(error))
-          return true
-        } catch (e: any) {
-          reportDrag(`拖动：${stage} 异常：${String(e?.message || e)}`)
-          dragSession.current.clear(); state.current.busy = false
-          return false
-        }
-      },
-    }
-  }
-  async function finishDrop(text: Promise<string | null>, directory: string) {
-    // Observe native load rejection immediately, even if UI dispatch is delayed.
-    const loaded = text.then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }))
+  async function moveTo(path: string) {
+    if (state.current.busy || loading || mergeInProgress || creationActive || directoryForm !== null || removed.has(path)) return
+    const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+    const targets = collectDirectories(tree).filter(directory => directory !== parent && !deletedDirectories.has(directory)).sort()
+    if (targets.length === 0) { setError("没有可移动到的文件夹"); return }
+    const choice = await Dialog.actionSheet({ title: "移动到…", message: path, actions: targets.map(label => ({ label })) })
+    if (choice == null || !state.current.alive) return
+    const directory = targets[choice]
+    state.current.busy = true; setBusy(true); setError("")
     let enteredWrite = false
     try {
-      await localImportOnMain("拖动UI开始", () => { if (state.current.alive) { setBusy(true); setError("") } })
-      const result = await loaded
-      if (result.ok === false) throw result.error
-      const payload = result.value
-      reportDrag("拖动：loadText完成，正在校验内部会话")
-      if (!state.current.alive) return
-      const root = await localImportStep("拖动工作区授权", () => resolveWorkdir(bookmarkName).replace(/\/+$/, ""))
-      const drag = dragSession.current.consume(payload, bookmarkName, root, directory)
-      if (!drag) throw new Error("仅允许本页当前工作区的有效文件拖动；外来或过期内容未移动")
-      if (!state.current.alive || mergeInProgress || creationActive) return
-      const target = await localImportStep("拖动移动/协调锁", () => { checkQueuedWrite(); enteredWrite = true; reportDrag("拖动：校验通过，正在执行移动"); return moveLocalWorktreeFile(bookmarkName, drag.path, directory, drag.root) })
-      await localImportOnMain("拖动UI结果", () => {
+      const root = resolveWorkdir(bookmarkName).replace(/\/+$/, "")
+      const target = await localImportStep("移动到/协调锁", () => { checkQueuedWrite(); enteredWrite = true; return moveLocalWorktreeFile(bookmarkName, path, directory, root) })
+      await localImportOnMain("移动UI结果", () => {
         if (!state.current.alive) return
-        setAdded(previous => [...previous.filter(path => path !== drag.path), target])
-        setDeleted(previous => [...previous.filter(path => path !== target), drag.path])
-        setRenamedFiles(previous => [...previous.filter(entry => entry.path !== drag.path && entry.path !== target), { path: target, before: changes }])
-        setCopied(previous => previous.filter(entry => entry.path !== drag.path && entry.path !== target))
+        setAdded(previous => [...previous.filter(value => value !== path), target])
+        setDeleted(previous => [...previous.filter(value => value !== target), path])
+        setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, before: changes }])
+        setCopied(previous => previous.filter(entry => entry.path !== path && entry.path !== target))
       })
-      await localImportStep("拖动刷新改动", () => onWorktreeChanged())
-      reportDrag("拖动：移动成功，已刷新工作区")
+      await localImportStep("移动后刷新改动", () => onWorktreeChanged())
     } catch (e: any) {
       let message = String(e?.message || e)
-      reportDrag(enteredWrite ? "拖动：移动或刷新失败，详见错误" : "拖动：未进入写入，详见错误")
       if (enteredWrite) {
-        try { await localImportStep("拖动失败后刷新", () => onWorktreeChanged()) }
+        try { await localImportStep("移动失败后刷新", () => onWorktreeChanged()) }
         catch (refreshError: any) { message += "\n" + String(refreshError?.message || refreshError) }
       }
-      await localImportOnMain("拖动错误结果", () => { if (state.current.alive) setError(message) })
+      await localImportOnMain("移动错误结果", () => { if (state.current.alive) setError(message) })
     } finally {
-      dragSession.current.clear(); state.current.busy = false
-      await localImportOnMain("拖动UI收尾", () => { if (state.current.alive) setBusy(false) })
+      state.current.busy = false
+      await localImportOnMain("移动UI收尾", () => { if (state.current.alive) setBusy(false) })
     }
   }
 
@@ -532,14 +424,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   // Keep Menu actions lightweight: record an intent, then hand off after commit.
   // This boundary alone does not establish the cause of a native crash.
   // No Timer/Promise-delay masquerading as a main-JS-queue dispatcher.
-  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo" | "drag-log"
+  type AdditionKind = "file" | "directory" | "document" | "import-directory" | "photo"
   const [additionRequest, setAdditionRequest] = useState<{ kind: AdditionKind; bookmarkName: string } | null>(null)
   const additionPending = useRef(false)
   function requestAddition(kind: AdditionKind) {
-    if (kind === "drag-log") {
-      if (state.current.alive && !additionPending.current) { additionPending.current = true; setAdditionRequest({ kind, bookmarkName }) }
-      return
-    }
     if (!state.current.alive || state.current.busy || additionPending.current || loading || mergeInProgress || creationActive || directoryForm) return
     additionPending.current = true
     setAdditionRequest({ kind, bookmarkName })
@@ -549,7 +437,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     additionPending.current = false
     if (!state.current.alive) return
     setAdditionRequest(null)
-    if (additionRequest.kind === "drag-log") { setDragStatus(dragLogSnapshot()); return }
     if (additionRequest.bookmarkName !== bookmarkName || state.current.busy || loading || mergeInProgress || creationActive || directoryForm) return
     const kind = additionRequest.kind
     if (kind === "file" || kind === "directory") startCreation(kind === "directory")
@@ -575,14 +462,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         <Button title="导入目录" systemImage="folder" disabled={additionDisabled} action={() => requestAddition("import-directory")} />
         <Button title="导入图片" systemImage="photo" disabled={additionDisabled} action={() => requestAddition("photo")} />
       </Section>
-      <Section header={<Text>仅诊断，不改仓库</Text>}>
-        <Button title="查看拖动记录" systemImage="list.bullet.rectangle" disabled={additionDisabled} action={() => requestAddition("drag-log")} />
-      </Section>
     </Menu>
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {dragStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{dragStatus}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

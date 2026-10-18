@@ -12,9 +12,7 @@ async function pick(kind){mainOnly(kind);assert.equal(queue.getStore().phase,'ef
 const scripting=new Proxy({},{get:(_,key)=>key==='useEffect'?(fn,deps)=>ui.useEffect(()=>on('effect',fn),deps):ui[key]})
 const FilesTab=load('pages/FilesTab.tsx',{
  '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
- './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
- scripting,'../services/localImportExecution':load('services/localImportExecution.ts'),'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
- '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),
+ scripting,'../services/localImportExecution':load('services/localImportExecution.ts'),'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{}, '../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),
  '../utils/format':{formatBytes:String,formatDate:String},
  '../services/repoStore':{resolveWorkdir(){mainOnly('root');return '/authorized/work'}},
  '../services/localFileImport':{pickLocalDirectory:()=>pick('DocumentPicker.pickDirectory'),pickLocalDocuments:async()=>{const file=await pick('DocumentPicker');return file?[{name:file.name,acquire:async()=>file}]:[]},pickLocalPhotos:async()=>{const file=await pick('Photos.pick');return file?[{name:file.name,acquire:async()=>file}]:[]}},

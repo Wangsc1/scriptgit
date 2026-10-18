@@ -19,7 +19,7 @@ for(const [module,name]of [['useRepoPendingActions','useRepoPendingActions'],['u
 mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid(){}}
 const Parent=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage
 const FilesTab=load('pages/FilesTab.tsx',{
- scripting:ui,'../utils/localFileDrag':load('utils/localFileDrag.ts'),
+ scripting:ui,
  '../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
  '../constants/colors':{},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/localImportExecution':load('services/localImportExecution.ts'),'../services/localFileImport':{},'../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),'../services/gitService':{},
@@ -54,15 +54,13 @@ async function main(){
   if(tab===0){
    const fileNode=all(content.tree).find(n=>n.type===FilesTab),fileHost=mount(fileNode.type,fileNode.props,{effectUpdates:true})
    await tick();fileHost.render();assert.equal(fileHost.tree.type,'Section')
-   const nodes=all(expand(fileHost.tree)),folder=nodes.find(n=>n.type==='DisclosureGroup'),file=nodes.find(n=>n.type==='Button'&&n.props.onDrag)
-   assert.ok(folder.props.onDrop);assert.equal(folder.props.label.props.onDrop,undefined)
+   const nodes=all(expand(fileHost.tree)),folder=nodes.find(n=>n.type==='DisclosureGroup'),file=nodes.find(n=>n.type==='Button'&&n.props.contextMenu)
+   assert.equal(folder.props.onDrop,undefined);assert.equal(file.props.onDrag,undefined);assert.ok(all(file.props.contextMenu.menuItems).some(n=>n.props.title==='移动到…'),'file long-press menu has move-to')
    assert.equal(folder.props.label.props.background,undefined);assert.equal(folder.props.padding,undefined)
    assert.equal(folder.props.trailingSwipeActions.allowsFullSwipe,false)
    assert.equal(file.props.trailingSwipeActions.allowsFullSwipe,false)
    assert.ok(nodes.every(n=>!n.props?.gesture&&!n.props?.simultaneousGesture&&!n.props?.highPriorityGesture&&!n.props?.defersSystemGestures))
    assert.ok(nodes.every(n=>n.props?.frame?.maxHeight!=='infinity'))
-   const provider=file.props.onDrag.data();assert.equal(provider instanceof Promise,false)
-   assert.equal(folder.props.onDrop.validateDrop({hasItemsConforming:()=>true}),true)
    folder.props.onChanged(true);fileHost.render();assert.ok(all(expand(fileHost.tree)).some(n=>n.type==='Text'&&n.children.includes('keep')))
    fileHost.unmount();assert.equal(fileHost.lateWrites,0)
   }else assert.ok(all(content.tree).some(n=>n.type===(tab===1?'StashTab':'HistoryTab')))

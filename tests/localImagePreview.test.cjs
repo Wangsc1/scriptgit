@@ -58,7 +58,7 @@ async function main(){
  const absent=mount(page,{file:{...file,previewImage:undefined},onClose(){}});assert.match(JSON.stringify(absent.tree),/图片预览不可用/);assert.ok(!all(absent.tree).some(n=>n.type==='ImageViewer'));absent.unmount()
  h.unmount();assert.equal(h.lateWrites,0);assert.equal(opened.length,0,'no reopen/read path remains')
  assert.equal(h.tree.props.gesture,undefined);assert.equal(h.tree.props.simultaneousGesture,undefined)
- const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../pages/FilesTab.tsx'),'utf8');assert.ok(!source.includes('pickerStatus'));assert.ok(source.includes('pickLocalDirectory()'));assert.ok(source.includes('dragTrace'))
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../pages/FilesTab.tsx'),'utf8');assert.ok(!source.includes('pickerStatus'));assert.ok(source.includes('pickLocalDirectory()'));assert.ok(!source.includes('dragTrace'),'drag diagnostics removed')
  assert.equal(writes,0)
  // Display copy comes from the in-memory thumbnail object; failure/oversize are explicit and never fall back to source reads.
  const encoder=load('utils/localImageDisplay.ts'),MAX=encoder.LOCAL_IMAGE_DATA_URL_MAX_CHARS
