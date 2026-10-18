@@ -24,8 +24,9 @@ const FilesTab=load('pages/FilesTab.tsx',{
  '../constants/colors':{},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/localImportExecution':load('services/localImportExecution.ts'),'../services/localFileImport':{},'../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),'../services/gitService':{},
 }).FilesTab
+const Segmented=load('components/FilledSegmentedControl.tsx',{scripting:ui}).FilledSegmentedControl
 const TabContent=load('components/RepoDetailContent.tsx',{
- scripting:ui,'../pages/FilesTab':{FilesTab},'../pages/HistoryTab':{HistoryTab:'HistoryTab'},'../pages/StashTab':{StashTab:'StashTab'},'../constants/colors':{},
+ './FilledSegmentedControl':{FilledSegmentedControl:Segmented},scripting:ui,'../pages/FilesTab':{FilesTab},'../pages/HistoryTab':{HistoryTab:'HistoryTab'},'../pages/StashTab':{StashTab:'StashTab'},'../constants/colors':{},
 }).RepoDetailTabContent
 function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
 async function main(){
@@ -46,9 +47,9 @@ async function main(){
   const content=mount(TabContent,props)
   const segmentSection=content.tree.children[0]
   assert.equal(segmentSection.type,'Section')
-  const picker=all(segmentSection).find(n=>n.type==='Picker')
-  assert.equal(picker.props.pickerStyle,'segmented');assert.equal(picker.props.value,tab)
-  assert.deepEqual(picker.children.map(n=>[n.props.tag,n.children[0]]),[[0,'文件'],[1,'Stash'],[2,'状态']])
+  const picker=all(segmentSection).find(n=>n.type===Segmented)
+  assert.equal(picker.props.value,tab)
+  assert.deepEqual(picker.props.options,[{value:0,title:'文件'},{value:1,title:'Stash'},{value:2,title:'状态'}])
   picker.props.onChanged(tab)
   if(tab===0){
    const fileNode=all(content.tree).find(n=>n.type===FilesTab),fileHost=mount(fileNode.type,fileNode.props,{effectUpdates:true})

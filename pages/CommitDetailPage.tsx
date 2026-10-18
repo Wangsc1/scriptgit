@@ -1,6 +1,6 @@
+import { FilledSegmentedControl } from "../components/FilledSegmentedControl"
 import {
   List,
-  Picker,
   Section,
   Text,
   HStack,
@@ -184,15 +184,8 @@ export function CommitDetailPage({
             </Text>
           </Section>
           <Section>
-            <Picker
-              title="视图"
-              value={mode}
-              onChanged={(value: string) => setMode(value === "changes" ? "changes" : "files")}
-              pickerStyle="segmented"
-            >
-              <Text tag="changes">更改</Text>
-              <Text tag="files">文件</Text>
-            </Picker>
+            <FilledSegmentedControl value={mode} options={[{ value: "changes", title: "更改" }, { value: "files", title: "文件" }]}
+              onChanged={(value: string) => setMode(value === "changes" ? "changes" : "files")} />
           </Section>
           {mode === "changes" && loader ? (
             <CommitChangesSections

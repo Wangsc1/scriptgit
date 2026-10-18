@@ -26,7 +26,8 @@ const diffService=load('services/diffService.ts',{'./gitCore':{loadGitEngine:asy
 const changes=load('utils/commitChanges.ts',{})
 const treeNode=load('components/CommitFileTree.tsx',{scripting:ui,'../pages/CommitDiffPage':{CommitDiffPage:'CommitDiffPage'},'../constants/colors':colors}).CommitFileTreeNode
 const view=load("components/CommitChangesView.tsx",{scripting:ui,'./DiffViewer':{DiffViewer:'DiffViewer'},'../pages/CommitDiffPage':{CommitDiffPage:'CommitDiffPage'},'../utils/format':fmt,'../utils/commitChanges':changes,'../constants/colors':colors})
-const Page=load('pages/CommitDetailPage.tsx',{scripting:ui,'../utils/fileTree':fileTree,'../services/gitService':{getCommitDetail:commitService.getCommitDetail},'../components/CommitFileTree':{CommitFileTreeNode:treeNode},'../components/CommitChangesView':view,'../components/ImageViewer':{ImageViewer:'ImageViewer'},'../services/diffService':diffService,'../utils/commitChanges':changes,'../components/AvatarView':{AvatarView:'AvatarView'},'../utils/github':{resolvedGitAuthorAvatarUrl:()=>''},'../api/githubApi':{getCommitAvatarUrls:async()=>({})},'../utils/format':fmt,'../constants/colors':colors}).CommitDetailPage
+const Segmented=load('components/FilledSegmentedControl.tsx',{scripting:ui}).FilledSegmentedControl
+const Page=load('pages/CommitDetailPage.tsx',{'../components/FilledSegmentedControl':{FilledSegmentedControl:Segmented},scripting:ui,'../utils/fileTree':fileTree,'../services/gitService':{getCommitDetail:commitService.getCommitDetail},'../components/CommitFileTree':{CommitFileTreeNode:treeNode},'../components/CommitChangesView':view,'../components/ImageViewer':{ImageViewer:'ImageViewer'},'../services/diffService':diffService,'../utils/commitChanges':changes,'../components/AvatarView':{AvatarView:'AvatarView'},'../utils/github':{resolvedGitAuthorAvatarUrl:()=>''},'../api/githubApi':{getCommitAvatarUrls:async()=>({})},'../utils/format':fmt,'../constants/colors':colors}).CommitDetailPage
 let groups=0;async function test(name,fn){await fn();groups++;console.log('PASS '+name)}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms))
 async function until(check,label){for(let i=0;i<400;i++){if(check())return;await sleep(5)}throw Error('timeout: '+label)}
@@ -35,9 +36,9 @@ async function commit(message,opts={}){await git.add({fs,dir,filepath:'.'});for(
 const png1=Buffer.from([137,80,78,71,0,1,2]),png2=Buffer.from([137,80,78,71,0,9,9,9])
 function reset(){stats.reads=[];stats.peak=0;stats.activeFiles.clear();stats.gates.clear();stats.failOnce.clear();stats.failAlways.clear()}
 async function open(oid,props={}){
- const h=mount(Page,{bookmarkName:'repo',oid,...props});await until(()=>{h.render();return all(h.tree).some(n=>n.type==='Picker')},'detail loaded');return h
+ const h=mount(Page,{bookmarkName:'repo',oid,...props});await until(()=>{h.render();return all(h.tree).some(n=>n.type===Segmented)},'detail loaded');return h
 }
-const picker=h=>{h.render();return all(h.tree).find(n=>n.type==='Picker')}
+const picker=h=>{h.render();return all(h.tree).find(n=>n.type===Segmented)}
 const section=h=>{h.render();return all(h.tree).find(n=>n.type===view.CommitChangesSections)}
 const flat=n=>n==null||n===false?'':typeof n==='object'?(Array.isArray(n)?n:[n.props?.header,n.props?.footer,...(n.children||[])]).map(flat).join(''):String(n)
 const text=flat
@@ -56,7 +57,7 @@ async function main(){try{
 
  await test('segmented order is 更改 left / 文件 right, default 更改; 文件 keeps original tree and starts no diff reads',async()=>{
   reset();const h=await open(c2),p=picker(h)
-  assert.equal(p.props.pickerStyle,'segmented');assert.deepEqual(p.children.map(n=>[n.props.tag,n.children[0]]),[['changes','更改'],['files','文件']]);assert.equal(p.props.value,'changes');assert.ok(section(h))
+  assert.deepEqual(p.props.options,[{value:'changes',title:'更改'},{value:'files',title:'文件'}]);assert.equal(p.props.value,'changes');assert.ok(section(h))
   p.props.onChanged('files');h.render();assert.equal(picker(h).props.value,'files');assert.ok(!section(h));assert.ok(all(h.tree).some(n=>n.type===treeNode&&n.props.commitDetailStyle===true));assert.ok(all(h.tree).some(n=>JSON.stringify(n.children||'').includes('提交信息')))
   await sleep(30);assert.equal(stats.reads.length,0,'file view must not compute diffs');h.unmount()
  })

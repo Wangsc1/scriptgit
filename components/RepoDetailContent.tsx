@@ -1,4 +1,5 @@
-import { Button, Picker, Section, Text } from "scripting"
+import { FilledSegmentedControl } from "./FilledSegmentedControl"
+import { Button, Section, Text } from "scripting"
 import type { LocalWorktreeFile } from "../services/gitService"
 import type { CommitEntry, FileChange, StashEntry } from "../types/git"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
@@ -115,16 +116,8 @@ export function RepoDetailTabContent({
   return (
     <>
       <Section>
-        <Picker
-          title="视图"
-          value={tab}
-          onChanged={(value: number) => onTabChange(value as RepoDetailTab)}
-          pickerStyle="segmented"
-        >
-          <Text tag={0}>文件</Text>
-          <Text tag={1}>Stash</Text>
-          <Text tag={2}>状态</Text>
-        </Picker>
+        <FilledSegmentedControl value={tab} options={[{ value: 0, title: "文件" }, { value: 1, title: "Stash" }, { value: 2, title: "状态" }]}
+          onChanged={(value: number) => onTabChange(value as RepoDetailTab)} />
       </Section>
       {tab === 0 ? (
         <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />
