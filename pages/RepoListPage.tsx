@@ -516,6 +516,7 @@ function RepoRow({
 }) {
   const source = sourceLabel(repo)
   const uncommitted = status?.uncommitted ?? snapshot?.uncommitted ?? 0
+  const newDirectories = status?.newDirectories ?? snapshot?.newDirectories ?? 0
   const ahead = status?.ahead ?? snapshot?.ahead ?? 0
   const branch = status?.branch ?? snapshot?.branch
 
@@ -535,9 +536,10 @@ function RepoRow({
           text: mergeSummary,
           color: (status.conflictCount ?? 0) > 0 ? COLOR_RED : COLOR_ORANGE,
         }
-      } else if (uncommitted > 0 || ahead > 0 || status.behind > 0) {
+      } else if (uncommitted > 0 || newDirectories > 0 || ahead > 0 || status.behind > 0) {
         const parts: string[] = []
         if (uncommitted > 0) parts.push(`${uncommitted} 改动`)
+        if (newDirectories > 0) parts.push(`${newDirectories} 新增目录`)
         if (ahead > 0) parts.push(`${ahead}推送`)
         if (status.behind > 0) parts.push(`${status.behind}拉取`)
         // 本地改动与同步待处理状态均用橙色。
@@ -583,10 +585,11 @@ function RepoRow({
       {status == null ? (
         <HStack spacing={8}>
           {snapshot &&
-          (uncommitted > 0 || ahead > 0 || snapshot.behind > 0) ? (
+          (uncommitted > 0 || newDirectories > 0 || ahead > 0 || snapshot.behind > 0) ? (
             <Text font={12} foregroundStyle={COLOR_ORANGE}>
               {[
                 uncommitted > 0 ? `${uncommitted} 改动` : "",
+                newDirectories > 0 ? `${newDirectories} 新增目录` : "",
                 ahead > 0 ? `${ahead}推送` : "",
                 snapshot.behind > 0 ? `${snapshot.behind}拉取` : "",
               ]

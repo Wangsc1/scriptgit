@@ -22,7 +22,7 @@ async function main(){
   scripting,'../services/gitService':service,
   '../services/repoStore':{listRepos:()=>rows,sourceLabel:()=>'',updateBranchLastPulledAt:(...args)=>times.push(args)},
   '../hooks/useRepoSyncActions':actions,
-  '../hooks/useRepoListStatus':{useRepoListStatus:()=>({statusMap:{dirty:{uncommitted:1},ahead:{uncommitted:0,ahead:2},clean:{uncommitted:0,ahead:0}},snapshotMap:{cached:{uncommitted:1}},repoRefreshMap:{},githubUpdatedProgress:{},refreshRepo:()=>refreshed++})},
+  '../hooks/useRepoListStatus':{useRepoListStatus:()=>({statusMap:{dirty:{uncommitted:1,newDirectories:4},ahead:{uncommitted:0,ahead:2,newDirectories:3},clean:{uncommitted:0,ahead:0,newDirectories:2}},snapshotMap:{cached:{uncommitted:1,newDirectories:5}},repoRefreshMap:{},githubUpdatedProgress:{},refreshRepo:()=>refreshed++})},
  }),{})
  const render=()=>{h.render();effects.splice(0).forEach(effect=>effect());return all(h.tree).filter(n=>n.props.trailingSwipeActions)}
  let swipes=render()
@@ -56,7 +56,7 @@ async function main(){
  assert.equal(btn(0).props.disabled,false)
  // 只有未推送的提交（无未提交改动）：不弹窗，直接先拉后推，不再提交。
  calls.length=0;btn(1).props.action();render();await tick()
- assert.equal(h.tree.props.sheet,undefined);assert.equal(inputs().length,0);assert.deepEqual(calls,['status:ahead','pull:ahead:feature','push:ahead:feature'],'ahead-only repo pushes directly, no stage/commit')
+ assert.equal(h.tree.props.sheet,undefined);assert.equal(inputs().length,0);assert.deepEqual(calls,['status:ahead','pull:ahead:feature','push:ahead:feature'],'ahead + empty directories pushes directly, no stage/commit')
  // 提交后拉取失败：已提交的结果保留，不推送，提示失败。
  calls.length=0;fail=true;btn(0).props.action();render();confirm('再来一次','');render();await tick();render()
  assert.deepEqual(calls.filter(v=>v.startsWith('push:')),[],'failed pull must not push');assert.ok(calls.some(v=>v.startsWith('commit:')),'commit already happened')

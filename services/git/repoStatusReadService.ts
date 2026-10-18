@@ -4,6 +4,7 @@ import { measureOperation } from "../../utils/performance"
 import { findRepo, writeSnapshot } from "../repoStore"
 import { getMergeConflictState } from "./mergeConflictService"
 import { getRepoListStatusInternal } from "./repoStatusService"
+import { readNewDirectoryCount } from "./worktreeTreeService"
 import {
   cacheRepoStatus,
   canPublishStatus,
@@ -22,6 +23,7 @@ async function persistRepoSnapshot(bookmarkName: string, status: RepoListStatus)
       name: repo.name,
       branch: status.branch,
       uncommitted: status.uncommitted,
+      newDirectories: status.newDirectories,
       ahead: status.ahead,
       behind: status.behind,
       updatedAt: Date.now(),
@@ -54,6 +56,13 @@ export function getRepoListStatus(
       ),
       `${repoName} · ${source}`
     )
+    if (status.workdirOk && !status.error) {
+      try { status.newDirectories = await readNewDirectoryCount(bookmarkName, options.reuseWorktreeEntries === true) }
+      catch (error: any) {
+        status.workdirOk = false
+        status.error = "目录状态读取失败：" + String(error?.message || error)
+      }
+    }
     if (canPublishStatus(bookmarkName, revision)) {
       cacheRepoStatus(bookmarkName, status, revision)
       await persistRepoSnapshot(bookmarkName, status)

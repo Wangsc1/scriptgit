@@ -49,7 +49,10 @@ export type RepoSyncState = "upToDate" | "ahead" | "behind" | "diverged" | "unkn
 /** 仓库列表行状态（改动 / 待推送 / 合并冲突） */
 export interface RepoListStatus {
   branch: string | null
+  /** Git 文件改动数；不含目录展示状态。 */
   uncommitted: number
+  /** 未被文件路径涵盖的未跟踪叶目录数（展示用，不可提交）。旧快照可缺省。 */
+  newDirectories?: number
   ahead: number
   behind: number
   syncState: RepoSyncState
@@ -230,7 +233,10 @@ export interface GitResult<T = unknown> {
 export interface RepoSnapshot {
   name: string
   branch: string | null
+  /** Git 文件改动数；不含目录展示状态。 */
   uncommitted: number
+  /** 未被文件路径涵盖的未跟踪叶目录数（展示用，不可提交）。旧快照可缺省。 */
+  newDirectories?: number
   ahead: number
   behind: number
   updatedAt: number

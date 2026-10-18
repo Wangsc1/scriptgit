@@ -5,7 +5,7 @@ export type { StatusMatrix } from "./matrixScanService"
 import { isRepoStatusFresh } from "../../utils/statusFreshness"
 import { resolveGitdir } from "./runtime"
 
-export type StatusReadOptions = { source?: string; force?: boolean }
+export type StatusReadOptions = { source?: string; force?: boolean; /** 详情刚完成同代次目录读取时避免重复枚举。 */ reuseWorktreeEntries?: boolean }
 
 type CachedStatus = {
   status: RepoListStatus

@@ -1,15 +1,39 @@
 import { resolveRepoPathsReadOnly } from "../repoStore"
 import { createFS, loadGitEngine } from "../gitCore"
-import { runStatusRead } from "./statusScanService"
+import { runStatusRead, statusRevision, canPublishStatus } from "./statusScanService"
+import { setLruEntry } from "../../utils/lru"
 import { changedDirectoryPaths } from "../../utils/fileListPerformance"
 
 export type WorktreeEntries = { files: string[]; directories: string[]; untrackedDirectories: string[] }
+const directoryCounts = new Map<string, { revision: number; count: number }>()
+
+/** Count only untracked leaf directories not already represented by visible files.
+ * Parent containers and directories containing untracked Git files are not counted twice.
+ * This is display state, never a FileChange or a request to stage/commit/stash.
+ */
+export function countNewDirectories(entries: WorktreeEntries): number {
+  const fileParents = changedDirectoryPaths(entries.files)
+  const directoryParents = changedDirectoryPaths(entries.directories)
+  return entries.untrackedDirectories.filter(path => !fileParents.has(path) && !directoryParents.has(path)).length
+}
+
+/** Caller already holds runStatusRead; avoids nested coordinator reads. */
+export async function readNewDirectoryCount(bookmarkName: string, reuse = false): Promise<number> {
+  const paths = resolveRepoPathsReadOnly(bookmarkName)
+  const cached = directoryCounts.get(paths.gitdir + "\0" + paths.workdir)
+  if (reuse && cached?.revision === statusRevision(bookmarkName)) return cached.count
+  return countNewDirectories(await readWorktreeEntries(bookmarkName))
+}
 
 /** Metadata-only tree inventory. Never reads file payloads, follows links, or enters Git storage.
  * Untracked ignored paths are omitted; tracked HEAD/index paths remain visible even if ignored.
  */
 export function getWorktreeEntries(bookmarkName: string): Promise<WorktreeEntries> {
-  return runStatusRead(bookmarkName, async () => {
+  return runStatusRead(bookmarkName, () => readWorktreeEntries(bookmarkName))
+}
+
+async function readWorktreeEntries(bookmarkName: string): Promise<WorktreeEntries> {
+    const revision = statusRevision(bookmarkName)
     const { workdir: dir, gitdir } = resolveRepoPathsReadOnly(bookmarkName)
     if (!dir) throw new Error("工作区路径未确认")
     const { git } = await loadGitEngine()
@@ -58,6 +82,7 @@ export function getWorktreeEntries(bookmarkName: string): Promise<WorktreeEntrie
       return true
     }
     await visit("", 0)
-    return { files, directories, untrackedDirectories }
-  })
+    const result = { files, directories, untrackedDirectories }
+    if (canPublishStatus(bookmarkName, revision)) setLruEntry(directoryCounts, gitdir + "\0" + dir, { revision, count: countNewDirectories(result) }, 32)
+    return result
 }

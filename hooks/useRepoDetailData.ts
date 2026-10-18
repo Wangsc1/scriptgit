@@ -112,7 +112,7 @@ export function useRepoDetailData({
   async function refreshChangesAndSnapshot(): Promise<FileChange[]> {
     const currentChanges = await loadChanges()
     if (tab === 0) await loadTrackedFiles()
-    await getRepoListStatus(bookmarkName, currentChanges.length, { source: "详情改动摘要" })
+    await getRepoListStatus(bookmarkName, currentChanges.length, { source: "详情改动摘要", reuseWorktreeEntries: tab === 0 })
     return currentChanges
   }
 
@@ -277,7 +277,7 @@ export function useRepoDetailData({
       if (tab === 0) await loadTrackedFiles()
       if (tab === 1) await loadStashes()
       if (tab === 2) await loadLog()
-      await getRepoListStatus(bookmarkName, currentChanges.length, { source: `${source}摘要` })
+      await getRepoListStatus(bookmarkName, currentChanges.length, { source: `${source}摘要`, reuseWorktreeEntries: tab === 0 })
       return true
     } catch (e: any) {
       showToast("加载失败：" + String(e?.message || e), "error")
@@ -294,6 +294,7 @@ export function useRepoDetailData({
       setLoading(true)
       try {
         await loadTrackedFiles()
+        await getRepoListStatus(bookmarkName, changes.length, { source: "详情文件返回摘要", reuseWorktreeEntries: true })
       } catch (e: any) {
         showToast("加载失败：" + String(e?.message || e), "error")
       } finally {
