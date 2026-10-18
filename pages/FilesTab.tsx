@@ -1,5 +1,6 @@
-import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
+import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, LazyVStack, DragGesture, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
+import { FileRowSwipeIntent, type RowSwipeSample } from "../utils/fileRowSwipe"
 import { LocalFileDragSession } from "../utils/localFileDrag"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
@@ -29,39 +30,36 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 const DRAG_CALLBACKS = ["onDrag", "validateDrop", "dropEntered", "dropUpdated", "dropExited", "performDrop"] as const
 function newDragCounts(): Record<string, number> { return { onDrag: 0, validateDrop: 0, dropEntered: 0, dropUpdated: 0, dropExited: 0, performDrop: 0 } }
 
-const DROP_ZONE_CALLBACKS = ["dropZone.validate", "dropZone.entered", "dropZone.updated", "dropZone.exited", "dropZone.perform"] as const
-interface DropZoneTrace { entries: string[]; counts: Record<string, number>; lastCallback: string; lastDecision: string }
-export interface FileDropDiagnosticBridge { current: DropZoneTrace | null }
-
-/** List safe-area sibling, not a list row. Ref-only probe: never load or move payload. */
-export function FileDropDiagnosticZone({ bridge }: { bridge: FileDropDiagnosticBridge }) {
-  function record(name: string): boolean {
-    const trace = bridge.current
-    if (!trace) return false
-    trace.counts[name] = (trace.counts[name] || 0) + 1
-    if (trace.lastCallback !== name) {
-      trace.lastCallback = name
-      trace.entries = [...trace.entries, `拖动：${name} 入口（仅诊断，不移动）`].slice(-8)
-    }
-    return true
-  }
-  return <VStack padding={8} spacing={2} frame={{ maxWidth: "infinity", minHeight: 60 }}
-    background="systemGray5" contentShape={{ kind: "interaction", shape: "rect" }}
-    onDrop={{
-      types: ["public.utf8-plain-text", "public.plain-text"],
-      validateDrop: (_info: DropInfo) => record("dropZone.validate"),
-      dropEntered: (_info: DropInfo) => { record("dropZone.entered") },
-      dropUpdated: (_info: DropInfo) => record("dropZone.updated") ? "copy" : "forbidden",
-      dropExited: (_info: DropInfo) => { record("dropZone.exited") },
-      performDrop: (_info: DropInfo) => { record("dropZone.perform"); return false },
-    }}>
-    <Text font="caption">拖放接收区（诊断）</Text>
-    <Text font="caption2">拖到这里松手，不移动；再点菜单查看拖动记录</Text>
+interface SwipeRows {
+  open: string | null
+  close(): void
+  changed(path: string, value: RowSwipeSample): void
+  ended(path: string, value: RowSwipeSample): void
+}
+function rowSwipeGesture(swipe: SwipeRows, path: string, busy: boolean) {
+  return DragGesture({ minDistance: 0, coordinateSpace: "local" })
+    .onChanged(value => { if (!busy) swipe.changed(path, value) })
+    .onEnded(value => { if (!busy) swipe.ended(path, value) })
+}
+function FileActionStrip({ actions, close }: { actions: any[]; close(): void }) {
+  return <HStack spacing={12} padding={{ vertical: 8 }}>
+    {[...actions].reverse()}
+    <Button title="收起" action={close} />
+  </HStack>
+}
+/** No high-priority/edge deferral or per-frame UI mutation. */
+function FileSwipeRow({ path, busy, swipe, actions, children }: { path: string; busy: boolean; swipe: SwipeRows; actions: any[]; children: any }) {
+  return <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}
+    background="secondarySystemGroupedBackground" clipShape={{ type: "rect", cornerRadius: 10 }}
+    simultaneousGesture={rowSwipeGesture(swipe, path, busy)}>
+    {children}
+    {!busy && swipe.open === path ? <FileActionStrip actions={actions} close={swipe.close} /> : null}
   </VStack>
 }
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ swipe, node, dragFile, dropFolder, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { swipe: SwipeRows; node: FileTreeNode; dragFile: (path: string) => ItemProvider; dropFolder: (path: string) => any; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+  const act = <T,>(task: () => T): T => { swipe.close(); return task() }
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -77,23 +75,24 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
         key="restore"
         title="还原"
         tint="systemOrange"
-        action={() => onRestore(node.path)}
+        action={() => act(() => onRestore(node.path))}
         disabled={busy || mergeInProgress}
       />)
       swipeActions.push(<Button
         key="push"
         title="提交"
         tint="systemGreen"
-        action={() => onPush()}
+        action={() => act(() => onPush())}
         disabled={busy || mergeInProgress}
       />)
     }
-    swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
+    swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => act(() => remove(node.path))} />)
     return (
-      <Button onDrag={!busy && !deleted && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? { data: () => dragFile(node.path), preview: <Text>{node.name}</Text> } : undefined} action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
-        <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
-        <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
-      </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
+      <FileSwipeRow path={node.path} busy={busy || deleted} swipe={swipe} actions={swipeActions}>
+      <Button padding={{ vertical: 10, horizontal: 8 }} onDrag={!busy && !deleted && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? { data: () => dragFile(node.path), preview: <Text>{node.name}</Text> } : undefined} action={() => act(() => open(node.path))} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
+        <Button title="复制文件" disabled={busy || deleted} action={() => act(() => manage(node.path, "copy"))} />
+        <Button title="重命名" disabled={busy || deleted} action={() => act(() => manage(node.path, "rename"))} />
+      </> }}>
         <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
             <Image systemName={/\.(png|jpe?g|gif|webp|bmp|ico)$/i.test(node.path) ? "photo" : "doc.text"} foregroundStyle={badge ? badge.color as any : COLOR_SECONDARY_LABEL} />
@@ -103,6 +102,7 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
           {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
         </VStack>
       </Button>
+      </FileSwipeRow>
     )
   }
   const hasChanges = changedDirectories.has(node.path)
@@ -112,25 +112,28 @@ function FileTreeNodeView({ node, dragFile, dropFolder, open, removed, busy, rem
     : hasChanges ? { text: "已修改", color: COLOR_ORANGE } : null
   const folderActions: any[] = []
   if (hasChanges) {
-    folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => onRestore(node.path)} />)
-    folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
+    folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => act(() => onRestore(node.path))} />)
+    folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => act(() => onPush())} />)
   }
-  folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
+  folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => act(() => remove(node.path, true))} />)
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
-  return <DisclosureGroup contextMenu={{ menuItems: <>
-    <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
-    <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
-  </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} label={<HStack onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
+  return <DisclosureGroup padding={{ vertical: 8, horizontal: 8 }} contextMenu={{ menuItems: <>
+    <Button title="复制文件夹" disabled={busy} action={() => act(() => manage(node.path, "copy", true))} />
+    <Button title="重命名" disabled={busy} action={() => act(() => manage(node.path, "rename", true))} />
+  </> }} isExpanded={expanded.has(node.path)} onChanged={value => { swipe.close(); toggleExpanded(node.path, value) }} label={<HStack padding={6} background="secondarySystemGroupedBackground" clipShape={{ type: "rect", cornerRadius: 10 }} simultaneousGesture={rowSwipeGesture(swipe, node.path, busy)} onDrop={!busy && !deletedDirectories.has(node.path) && typeof ItemProvider !== "undefined" && typeof ItemProvider.fromText === "function" && typeof UUID !== "undefined" && typeof UUID.string === "function" ? dropFolder(node.path) : undefined} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
+    <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
+    </HStack>
+    {!busy && swipe.open === node.path ? <FileActionStrip actions={folderActions} close={swipe.close} /> : null}
+    </VStack>
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? <LazyVStack alignment="leading" spacing={4} padding={{ leading: 16 }}>{node.children.map(child => <FileTreeNodeView swipe={swipe} key={child.path} node={child} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}</LazyVStack> : null}
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry, dropDiagnosticBridge }: {
-  dropDiagnosticBridge?: FileDropDiagnosticBridge
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
@@ -140,6 +143,8 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   creationActive?: boolean
   onCreateEntry: (directory: boolean, onCreated: (path: string) => void) => void
 }) {
+  const [openActions, setOpenActions] = useState<string | null>(null)
+  const swipeIntent = useRef(new FileRowSwipeIntent())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   function toggleExpanded(path: string, value: boolean) {
     setExpanded(previous => {
@@ -155,11 +160,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   const [dragStatus, setDragStatus] = useState("")
   // Ref-only bounded trace: native drag callbacks never set state or dispatch UI work for diagnostics.
   const dragTrace = useRef({ entries: [] as string[], counts: newDragCounts(), lastCallback: "", lastDecision: "" })
-  useEffect(() => {
-    if (!dropDiagnosticBridge) return
-    dropDiagnosticBridge.current = dragTrace.current
-    return () => { if (dropDiagnosticBridge.current === dragTrace.current) dropDiagnosticBridge.current = null }
-  }, [dropDiagnosticBridge])
   const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
@@ -342,7 +342,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
 
   function startCreation(directory: boolean) {
     if (state.current.busy || loading || mergeInProgress || creationActive) return
-    // The stable parent List owns the presentation and operation lifecycle.
+    // The stable parent detail host owns the presentation and operation lifecycle.
     onCreateEntry(directory, path => showAddition(path, directory))
   }
   function showAddition(path: string, directory: boolean) {
@@ -356,6 +356,17 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     setRenamedFiles(previous => previous.filter(entry => entry.path !== path))
     setCopied(previous => [...previous.filter(entry => entry.path !== path), { path, before: changes, directory }])
   }
+  const swipe: SwipeRows = {
+    open: openActions,
+    close: () => { if (state.current.alive) setOpenActions(null) },
+    changed: (path, value) => { if (state.current.alive) swipeIntent.current.changed(path, value) },
+    ended: (path, value) => {
+      if (dragUnavailable()) return
+      const intent = swipeIntent.current.ended(path, value)
+      if (intent) setOpenActions(intent === "open" ? path : null)
+    },
+  }
+  useEffect(() => { setOpenActions(null) }, [busy, loading, mergeInProgress, creationActive, bookmarkName])
   const dragSession = useRef(new LocalFileDragSession())
   // Repo switches, merge/other operations and unmount invalidate any old capability.
   useEffect(() => { dragSession.current.clear(); return () => dragSession.current.clear() }, [bookmarkName, loading, mergeInProgress, creationActive])
@@ -371,7 +382,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   }
   function dragLogSnapshot(): string {
     const trace = dragTrace.current
-    const counts = [...DRAG_CALLBACKS, ...DROP_ZONE_CALLBACKS].map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
+    const counts = DRAG_CALLBACKS.map(name => `${name}=${trace.counts[name] || 0}`).join(" ")
     return `拖动记录（查看时快照）：回调计数 ${counts}` + (trace.entries.length ? "\n" + trace.entries.join("\n") : "\n尚无拖动记录")
   }
   // Counts every native entry; only distinct consecutive callbacks add a trace line.
@@ -384,6 +395,7 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     return true
   }
   function dragFile(path: string): ItemProvider {
+    swipeIntent.current.nativeDrag()
     dragTrace.current.entries = []
     dragTrace.current.counts = newDragCounts()
     dragTrace.current.counts.onDrag = 1
@@ -618,6 +630,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {dragStatus ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{dragStatus}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView swipe={swipe} key={node.path} node={node} dragFile={dragFile} dropFolder={dropFolder} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

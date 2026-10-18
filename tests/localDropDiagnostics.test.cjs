@@ -12,48 +12,24 @@ const filesModule=load('pages/FilesTab.tsx',{
  '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
  './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
- '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
+ '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
  '../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
  '../services/localImportExecution':execution,'../services/localFileImport':{},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/gitService':{moveLocalWorktreeFile:async()=>{moves++;return 'folder/source.txt'}},
 })
-const {FilesTab,FileDropDiagnosticZone}=filesModule
-function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+const {FilesTab}=filesModule
+function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
 async function flush(){for(let i=0;i<20;i++){await tick();for(const fn of pending.splice(0))deliver(fn)}}
-function host(bridge){const h=mount(FilesTab,{dropDiagnosticBridge:bridge,files:['source.txt','folder/keep'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onWorktreeChanged:async()=>{refreshes++}},{effectUpdates:true});return h}
+function host(){const h=mount(FilesTab,{files:['source.txt','folder/keep'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onWorktreeChanged:async()=>{refreshes++}},{effectUpdates:true});return h}
 function parts(h){h.render();const nodes=all(expand(h.tree));return {file:nodes.find(n=>n.type==='Button'&&n.props.onDrag),drop:nodes.find(n=>n.type==='DisclosureGroup').props.label.props.onDrop}}
 function shown(h){h.render();return all(h.tree).filter(n=>n.type==='Text').flatMap(n=>n.children).filter(s=>typeof s==='string'&&s.startsWith('拖动记录')).join('\n')}
 async function view(h){h.render();all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title==='查看拖动记录').props.action();await flush();h.render();return shown(h)}
 function liveText(h){h.render();return JSON.stringify(h.tree)}
 async function start(h){const before=dispatches,provider=parts(h).file.props.onDrag.data();assert.equal(dispatches,before,'drag start never dispatches UI work');await flush();return provider}
 async function mainTest(){
- // Same page-owned ref is wired to the external zone and FilesTab manual snapshot.
- const bridge={current:null}, probe=host(bridge);await flush()
- const zone=FileDropDiagnosticZone({bridge}),zoneDrop=zone.props.onDrop
- assert.equal(zone.type,'VStack');assert.equal(zone.props.frame.minHeight,60);assert.match(JSON.stringify(zone),/拖放接收区（诊断）/)
- assert.deepEqual(zoneDrop.types,parts(probe).drop.types)
- assert.ok(!all(expand(probe.tree)).some(n=>n.props?.onDrop===zoneDrop),'zone is not a List row')
- assert.equal(bridge.current.counts.onDrag,0)
- await start(probe)
- const baseline=liveText(probe),slotsBefore=probe.slots.slice(),dispatchBefore=dispatches,movesBefore=moves,refreshBefore=refreshes
- // No payload API may be touched, not even capability checks/loading.
- const forbiddenInfo=new Proxy({}, {get(){throw Error('diagnostic zone must not access payload')}})
- assert.equal(zoneDrop.validateDrop(forbiddenInfo),true)
- zoneDrop.dropEntered(forbiddenInfo)
- for(let i=0;i<501;i++)assert.equal(zoneDrop.dropUpdated(forbiddenInfo),'copy')
- assert.equal(zoneDrop.performDrop(forbiddenInfo),false);zoneDrop.dropExited(forbiddenInfo)
- await flush();assert.equal(dispatches,dispatchBefore);assert.equal(liveText(probe),baseline)
- probe.slots.forEach((slot,i)=>assert.equal(slot,slotsBefore[i],'zone does not call state setters'))
- assert.equal(moves,movesBefore);assert.equal(refreshes,refreshBefore)
- let zoneText=await view(probe)
- assert.match(zoneText,/onDrag=1 validateDrop=0 dropEntered=0 dropUpdated=0 dropExited=0 performDrop=0 dropZone.validate=1 dropZone.entered=1 dropZone.updated=501 dropZone.exited=1 dropZone.perform=1/)
- assert.match(zoneText,/dropZone.perform 入口（仅诊断，不移动）/);assert.ok(zoneText.split('\n').length<=9)
- await start(probe);zoneText=await view(probe);assert.match(zoneText,/dropZone.validate=0 dropZone.entered=0 dropZone.updated=0 dropZone.exited=0 dropZone.perform=0/)
- probe.unmount();assert.equal(bridge.current,null)
- assert.equal(zoneDrop.validateDrop(forbiddenInfo),false);assert.equal(zoneDrop.performDrop(forbiddenInfo),false);assert.equal(probe.lateWrites,0)
  const h=host();await flush()
  // Zero-entry state is explicit and viewing performs no native callback.
- let text=await view(h);assert.match(text,/回调计数 onDrag=0 validateDrop=0 dropEntered=0 dropUpdated=0 dropExited=0 performDrop=0 dropZone.validate=0 dropZone.entered=0 dropZone.updated=0 dropZone.exited=0 dropZone.perform=0\n尚无拖动记录/)
+ let text=await view(h);assert.match(text,/回调计数 onDrag=0 validateDrop=0 dropEntered=0 dropUpdated=0 dropExited=0 performDrop=0\n尚无拖动记录/)
  let provider=await start(h),drop=parts(h).drop
  const renderBase=liveText(h)
  assert.equal(shown(h),text,'drag start changes no visible row; old snapshot stays until viewed')
@@ -106,7 +82,7 @@ async function mainTest(){
  const original=execution.localImportOnMain
  execution.localImportOnMain=(phase,task)=>phase==='拖动阶段提示'?Promise.reject(Error('diagnostic UI unavailable')):original(phase,task)
  try{assert.equal(safeDrop.performDrop({hasItemsConforming:()=>true,itemProviders:()=>[safeProvider]}),true);await flush();assert.equal(moves,2)}finally{execution.localImportOnMain=original;safe.unmount()}
- console.log('PASS List-external probe exact independent counts, no payload/dispatch/state/move/refresh, manual shared snapshot, reset/unmount; ref-only drag trace: exact callback counts incl. zero, latest-eight lines, no state/dispatch/render from drag start or validate/enter/update/exit/perform, sync throw paths recorded only in ref, manual snapshot view, new-drag reset, normal synchronous load/move, unmount guard')
+ console.log('PASS ref-only drag trace: exact callback counts incl. zero, latest-eight lines, no state/dispatch/render from drag start or validate/enter/update/exit/perform, sync throw paths recorded only in ref, manual snapshot view, new-drag reset, normal synchronous load/move, unmount guard')
  console.log('LIMIT: diagnostic tests do not establish native onDrop delivery or fix the reported native failure')
 }
 mainTest().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>{delete global.Thread;delete global.UUID;delete global.ItemProvider})

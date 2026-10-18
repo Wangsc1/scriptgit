@@ -13,7 +13,7 @@ const content=load('components/RepoDetailContent.tsx',{
 const data={displayName:'Repo',branchInfo:{current:'main'},branchStateKnown:true,changes:[],tab:0,trackedFiles:[],mergeInProgress:false,loadAll:noop,refreshChangesAndSnapshot:async()=>{refreshes++;if(refreshGate)await refreshGate.promise}}
 const worktree={commitSheetMode:null,closeCommitSheet:noop}
 const {RepoDetailPage}=load('pages/RepoDetailPage.tsx',{
- scripting:ui,'./FilesTab':{FileDropDiagnosticZone:'FileDropDiagnosticZone'},'../components/LocalImagePreview':{LocalImagePreview:'LocalImagePreview'},'./LocalFileEditor':{LocalFileEditor:'LocalFileEditor'},
+ scripting:ui,'../components/LocalImagePreview':{LocalImagePreview:'LocalImagePreview'},'./LocalFileEditor':{LocalFileEditor:'LocalFileEditor'},
  '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:noop},
  '../hooks/useToast':{useToast:()=>({showToast:message=>errors.push(message)})},
  '../components/RepoBranchSection':{RepoBranchSection:'RepoBranchSection'},'../components/RepoRemoteSections':{RepoRemoteSections:'RepoRemoteSections'},

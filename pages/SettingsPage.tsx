@@ -11,6 +11,9 @@ import {
   Section,
   Text,
   HStack,
+  Spacer,
+  Rectangle,
+  Script,
   Button,
   Image,
   Navigation,
@@ -38,6 +41,7 @@ import {
 import { checkTokenValidity } from "../api/githubApi"
 import type { VerifiedGithubUser } from "../types/git"
 import {
+  COLOR_LABEL,
   COLOR_SECONDARY_LABEL,
   COLOR_GREEN,
   COLOR_ACCENT,
@@ -50,6 +54,8 @@ type AlertState = { title: string; message: string } | null
 export function SettingsPage() {
   // 与仓库 Tab 一致：左上角关闭 present 根界面
   const dismiss = Navigation.useDismiss()
+  // Official Script.metadata is the running script, not the Scripting host.
+  const scriptVersion = Script.metadata.version
   const [token, setTokenState] = useState("")
   const [tokenConfigured, setTokenConfigured] = useState(false)
   const [githubUser, setGithubUser] = useState<VerifiedGithubUser | null>(null)
@@ -288,14 +294,14 @@ export function SettingsPage() {
 
   return (
     <List
-      navigationTitle="设置"
-      navigationBarTitleDisplayMode="large"
+      navigationTitle=""
+      navigationBarTitleDisplayMode="inline"
       onAppear={() => setDiagnosticCount(getSlowOperations().length)}
       toolbar={
         <Toolbar>
           <ToolbarItem placement="topBarLeading">
             <Button action={dismiss}>
-              <Image systemName="xmark" fontWeight="semibold" foregroundStyle="white" />
+              <Image systemName="xmark" fontWeight="semibold" foregroundStyle={COLOR_LABEL} />
             </Button>
           </ToolbarItem>
         </Toolbar>
@@ -324,6 +330,13 @@ export function SettingsPage() {
         ),
       }}
     >
+      {/* No public large-title trailing accessory: keep title/version together
+          in the scrollable list, below (not beside) the close toolbar. */}
+      <HStack alignment="firstTextBaseline" listRowSeparator="hidden" listRowBackground={<Rectangle fill="clear" />}>
+        <Text font="largeTitle" fontWeight="bold" foregroundStyle={COLOR_LABEL}>设置</Text>
+        <Spacer />
+        <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>{`v${scriptVersion}`}</Text>
+      </HStack>
       <Section
         header={<Text>GitHub Token</Text>}
         footer={

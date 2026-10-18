@@ -29,7 +29,7 @@ const FilesTab=load('pages/FilesTab.tsx',{
  '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
  './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
- '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':performance,'../utils/format':{formatBytes:String,formatDate:String},
+ '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':performance,'../utils/format':{formatBytes:String,formatDate:String},
  '../services/localImportExecution':execution,'../services/localFileImport':picker,'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/gitService':{importLocalWorktreeFiles:async(_,sources,root,canWrite)=>{
   initiation.push(['writer',main]);return coordinator.mutate('repo',()=>batchInternal.importLocalFilesInternal('repo',sources,root,canWrite))

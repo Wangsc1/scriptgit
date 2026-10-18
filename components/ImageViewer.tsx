@@ -8,6 +8,10 @@ import {
   useState,
 } from "scripting"
 
+// Local-only neutral canvas: transparent corners merge into the page, while
+// white icons retain contrast in both light and dark system appearances.
+const LOCAL_IMAGE_BACKGROUND = "#707070"
+
 // 图片查看器页面：缩放、双击放大与惯性平移交给 WebKit 原生处理
 function buildHTML(url: string, compactImage: boolean): string {
   return `<!DOCTYPE html>
@@ -16,12 +20,12 @@ function buildHTML(url: string, compactImage: boolean): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=6, user-scalable=yes${compactImage ? ", viewport-fit=cover" : ""}">
 <style>
-${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color-scheme: dark) { html, body { background: #242424 !important; } .failed { color: #fff; } }\n  @media (prefers-color-scheme: light) { .failed { color: #111; } }" : ""}
+
   html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background: ${compactImage ? "#fff" : "#000"};
+    background: ${compactImage ? LOCAL_IMAGE_BACKGROUND : "#000"};
     -webkit-user-select: none;
     user-select: none;
   }
@@ -42,15 +46,7 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
     opacity: 0;
     transition: opacity 0.2s ease;
   }
-  ${compactImage ? `/* Local-only alpha visualization; attached to image bounds, not stage. */
-  img {
-    background-color: #fff;
-    background-image: conic-gradient(#bbb 25%, #fff 0 50%, #bbb 0 75%, #fff 0);
-    background-size: 16px 16px;
-  }
-  @media (prefers-color-scheme: dark) {
-    img { background-color: #666; background-image: conic-gradient(#444 25%, #777 0 50%, #444 0 75%, #777 0); }
-  }` : ""}
+  ${compactImage ? "img { background: transparent; }" : ""}
   img.ready {
     opacity: 1;
   }
@@ -73,7 +69,7 @@ ${compactImage ? "  :root { color-scheme: light dark; }\n  @media (prefers-color
     to { transform: rotate(360deg); }
   }
   .failed {
-    color: ${compactImage ? "#111" : "#fff"};
+    color: #fff;
     font: 15px -apple-system;
   }
 </style>
@@ -213,11 +209,11 @@ export function ImageViewer({
   return (
     <ZStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      background={compactImage ? { light: "white", dark: "#242424" } : "black"}
+      background={compactImage ? LOCAL_IMAGE_BACKGROUND : "black"}
       ignoresSafeArea={{ regions: "all", edges: "all" }}
     >
-      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint={compactImage ? { light: "#555555", dark: "white" } : "white"} />}
-      <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
+      <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={compactImage ? LOCAL_IMAGE_BACKGROUND : undefined}>
         <WebView controller={controller} />
       </VStack>
     </ZStack>

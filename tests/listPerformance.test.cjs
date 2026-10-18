@@ -6,7 +6,7 @@ const performance = load('utils/fileListPerformance.ts')
 function expand(n) {
   if (!n || typeof n !== 'object') return n
   if (Array.isArray(n)) return n.map(expand)
-  if (typeof n.type === 'function') return expand(n.type(n.props))
+  if (typeof n.type === 'function') return expand(n.type({...n.props,children:n.children}))
   return { ...n, children: (n.children || []).map(expand) }
 }
 async function main() {
@@ -33,7 +33,7 @@ async function main() {
   const FilesTab = load('pages/FilesTab.tsx', {
     '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
     './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
-    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
+    scripting: ui, '../components/NameInputSheet': { NameInputSheet: 'NameInputSheet' }, '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree': { buildFileTree }, '../utils/fileListPerformance': performance,
     '../utils/format': { formatBytes: String, formatDate: String }, '../services/repoStore': { resolveWorkdir: () => '/mock' },
     '../services/gitService': {}, '../services/localFileImport': {}, '../services/localImportExecution': load('services/localImportExecution.ts'), '../constants/colors': {},
   }).FilesTab
@@ -42,16 +42,16 @@ async function main() {
   const nodes = () => { h.render(); return all(expand(h.tree)) }
   let rows = nodes()
   assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 10)
-  assert.equal(rows.filter(n => n.props.trailingSwipeActions && n.type === 'Button').length, 0)
+  assert.equal(rows.filter(n => n.type === 'Button' && n.props.contextMenu).length, 0)
   assert.equal(statCalls, 0)
   rows.find(n => n.type === 'DisclosureGroup').props.onChanged(true)
   rows = nodes()
   assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 11)
   rows.filter(n => n.type === 'DisclosureGroup')[1].props.onChanged(true)
   rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 500)
+  assert.equal(rows.filter(n => n.type === 'Button' && n.props.contextMenu).length, 500)
   rows.find(n => n.type === 'DisclosureGroup').props.onChanged(false)
-  assert.equal(nodes().filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 0)
+  assert.equal(nodes().filter(n => n.type === 'Button' && n.props.contextMenu).length, 0)
   h.unmount()
   console.log('PASS 5000文件折叠惰性行、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
 

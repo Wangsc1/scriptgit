@@ -77,11 +77,11 @@ async function testAdaptersAndBatch(){
  const gate=deferred(),reader=coordinator.read('repo',()=>gate.promise);let exportsStarted=0
  const pending=batch([{name:'wait.bin',acquire:async()=>{exportsStarted++;return {sourcePath:later,name:'wait.bin',release:async()=>{}}}}]);await tick();assert.equal(exportsStarted,0);await assert.rejects(batch([]),/写|操作/);gate.resolve();await reader;await pending
 }
-function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
 async function testUI(){
  const FilesTab=load('pages/FilesTab.tsx',{
   scripting:ui,'./DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
-  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
+  '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
   '../services/localImportExecution':execution,'../services/localFileImport':picker,'../services/localImportBatchSummary':{localImportBatchSummary:summary},'../services/repoStore':{resolveWorkdir:()=>root},
   '../services/gitService':{importLocalWorktreeFiles:async(_,sources,expectedRoot,canWrite)=>{locks++;assert.equal(expectedRoot,work);return coordinator.mutate('repo',()=>internal.importLocalFilesInternal('repo',sources,work,canWrite))}},
  }).FilesTab

@@ -10,8 +10,7 @@
  * - 分支与同步动作：hooks/useRepoBranchActions、hooks/useRepoSyncActions
  */
 
-import { List, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
-import { FileDropDiagnosticZone, type FileDropDiagnosticBridge } from "./FilesTab"
+import { List, ScrollView, LazyVStack, VStack, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -224,16 +223,108 @@ export function RepoDetailPage({
           }
         : null
 
-  const dropDiagnosticBridge = useRef<FileDropDiagnosticBridge["current"]>(null)
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
+  const card = (content: any) => data.tab === 0 ? <VStack alignment="leading" spacing={8} padding={12}
+    frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemGroupedBackground"
+    clipShape={{ type: "rect", cornerRadius: 12 }}>{content}</VStack> : content
+  const detailContent = <>
+      {card(<RepoBranchSection
+        branchInfo={data.branchInfo}
+        branchesLoaded={data.branchesLoaded}
+        branchLoading={data.branchLoading}
+        branchError={data.branchError}
+        remoteOnlyBranches={data.remoteOnlyBranches}
+        remoteBranchNames={data.remoteBranchNames}
+        mergeSources={data.mergeSources}
+        deletableBranches={data.deletableBranches}
+        hasCommits={data.hasCommits}
+        hasRemote={data.hasRemote}
+        mergeInProgress={data.mergeInProgress}
+        mutating={mutating}
+        onDelete={pendingActions.requestDeleteBranch}
+        onMerge={handleMergeIntoCurrent}
+        onRename={handleRenameBranch}
+        onCreate={handleCreateBranch}
+        onSwitch={handleSwitchBranch}
+      />)}
+
+      {data.mergeInProgress ? (
+        card(<MergeConflictSection
+          conflictCount={data.conflictCount}
+          mutating={mutating}
+          onOpen={nav.openConflictsPage}
+        />)
+      ) : null}
+
+      {card(<RepoRemoteSections
+        branchInfo={data.branchInfo}
+        branchUnavailable={branchUnavailable}
+        upstream={data.upstream}
+        pulledLabel={data.pulledLabel}
+        hasRemote={data.hasRemote}
+        canUpload={canUpload}
+        mergeInProgress={data.mergeInProgress}
+        mutating={mutating}
+        hasCommits={data.hasCommits}
+        onCompare={() => nav.openPage("compare", { skipReload: true })}
+        onRollback={() => nav.openPage("rollback")}
+        onManageRemotes={() => nav.openPage("remotes")}
+        onUpload={() => nav.openPage("upload")}
+        onPush={handlePush}
+        onPull={handlePull}
+      />)}
+
+      <RepoDetailTabContent
+        tab={data.tab}
+        onTabChange={data.handleTabChange}
+        bookmarkName={bookmarkName}
+        changes={data.changes}
+        stashes={data.stashes}
+        log={data.log}
+        trackedFiles={data.trackedFiles}
+        onOpenLocalFile={openLocalFile}
+        creationActive={localCreation.busy}
+        onCreateLocalEntry={localCreation.open}
+        onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
+        loading={data.loading}
+        mergeInProgress={data.mergeInProgress}
+        onPush={handlePush}
+        onRestore={worktree.handleRestore}
+        committing={worktree.committing}
+        stagingBusy={worktree.stagingBusy}
+        stashBusy={worktree.stashBusy}
+        onCreateStash={worktree.handleCreateStash}
+        onApplyStash={worktree.handleApplyStash}
+        onDropStash={worktree.handleDropStash}
+        onCopyCommit={async (entry) => {
+          try {
+            // 只复制完整 oid，不要其它信息
+            await Pasteboard.setString(entry.oid)
+            showToast("已复制：" + shortOid(entry.oid), "success")
+          } catch (e: any) {
+            showToast("复制失败：" + String(e?.message || e), "error")
+          }
+        }}
+        onSelectCommit={(entry) => nav.openCommitDetail(entry.oid)}
+        onRevert={pendingActions.handleRevertRequest}
+        onSoftReset={pendingActions.handleSoftResetRequest}
+        onAmend={pendingActions.handleAmendRequest}
+        onSearch={data.handleHistorySearch}
+        onLoadMore={data.handleHistoryLoadMore}
+        historyHasMore={data.historyHasMore}
+        historySearchBusy={data.historySearchBusy}
+        historyTotalMatches={data.historyTotalMatches}
+        historyLoading={data.historyLoading}
+        historyLimited={data.historyLimited}
+        githubFullName={data.githubFullName}
+      />
+  </>
   return (
-    <List
-      // Official safeAreaInset: outside List rows, without replacing List or its swipe host.
-      safeAreaInset={data.tab === 0 ? { bottom: { spacing: 0, content: <FileDropDiagnosticZone bridge={dropDiagnosticBridge} /> } } : undefined}
+    <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       fullScreenCover={[{
         isPresented: localFile !== null,
-        // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
+        // 稳定详情宿主承载；切换 List/ScrollView 不重建编辑器或图片呈现。
         // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
         content: localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
@@ -283,7 +374,6 @@ export function RepoDetailPage({
         if (nav.consumeSkipNextAppearLoad()) return
         data.loadAll("详情出现", false)
       }}
-      refreshable={handleRefresh}
       toolbar={{
         topBarTrailing: data.githubFullName ? (
           <Menu title="GitHub" systemImage="rectangle.stack">
@@ -418,97 +508,11 @@ export function RepoDetailPage({
         ),
       }}
     >
-      <RepoBranchSection
-        branchInfo={data.branchInfo}
-        branchesLoaded={data.branchesLoaded}
-        branchLoading={data.branchLoading}
-        branchError={data.branchError}
-        remoteOnlyBranches={data.remoteOnlyBranches}
-        remoteBranchNames={data.remoteBranchNames}
-        mergeSources={data.mergeSources}
-        deletableBranches={data.deletableBranches}
-        hasCommits={data.hasCommits}
-        hasRemote={data.hasRemote}
-        mergeInProgress={data.mergeInProgress}
-        mutating={mutating}
-        onDelete={pendingActions.requestDeleteBranch}
-        onMerge={handleMergeIntoCurrent}
-        onRename={handleRenameBranch}
-        onCreate={handleCreateBranch}
-        onSwitch={handleSwitchBranch}
-      />
-
-      {data.mergeInProgress ? (
-        <MergeConflictSection
-          conflictCount={data.conflictCount}
-          mutating={mutating}
-          onOpen={nav.openConflictsPage}
-        />
-      ) : null}
-
-      <RepoRemoteSections
-        branchInfo={data.branchInfo}
-        branchUnavailable={branchUnavailable}
-        upstream={data.upstream}
-        pulledLabel={data.pulledLabel}
-        hasRemote={data.hasRemote}
-        canUpload={canUpload}
-        mergeInProgress={data.mergeInProgress}
-        mutating={mutating}
-        hasCommits={data.hasCommits}
-        onCompare={() => nav.openPage("compare", { skipReload: true })}
-        onRollback={() => nav.openPage("rollback")}
-        onManageRemotes={() => nav.openPage("remotes")}
-        onUpload={() => nav.openPage("upload")}
-        onPush={handlePush}
-        onPull={handlePull}
-      />
-
-      <RepoDetailTabContent
-        tab={data.tab}
-        dropDiagnosticBridge={dropDiagnosticBridge}
-        onTabChange={data.handleTabChange}
-        bookmarkName={bookmarkName}
-        changes={data.changes}
-        stashes={data.stashes}
-        log={data.log}
-        trackedFiles={data.trackedFiles}
-        onOpenLocalFile={openLocalFile}
-        creationActive={localCreation.busy}
-        onCreateLocalEntry={localCreation.open}
-        onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
-        loading={data.loading}
-        mergeInProgress={data.mergeInProgress}
-        onPush={handlePush}
-        onRestore={worktree.handleRestore}
-        committing={worktree.committing}
-        stagingBusy={worktree.stagingBusy}
-        stashBusy={worktree.stashBusy}
-        onCreateStash={worktree.handleCreateStash}
-        onApplyStash={worktree.handleApplyStash}
-        onDropStash={worktree.handleDropStash}
-        onCopyCommit={async (entry) => {
-          try {
-            // 只复制完整 oid，不要其它信息
-            await Pasteboard.setString(entry.oid)
-            showToast("已复制：" + shortOid(entry.oid), "success")
-          } catch (e: any) {
-            showToast("复制失败：" + String(e?.message || e), "error")
-          }
-        }}
-        onSelectCommit={(entry) => nav.openCommitDetail(entry.oid)}
-        onRevert={pendingActions.handleRevertRequest}
-        onSoftReset={pendingActions.handleSoftResetRequest}
-        onAmend={pendingActions.handleAmendRequest}
-        onSearch={data.handleHistorySearch}
-        onLoadMore={data.handleHistoryLoadMore}
-        historyHasMore={data.historyHasMore}
-        historySearchBusy={data.historySearchBusy}
-        historyTotalMatches={data.historyTotalMatches}
-        historyLoading={data.historyLoading}
-        historyLimited={data.historyLimited}
-        githubFullName={data.githubFullName}
-      />
-    </List>
+      {data.tab === 0 ? <ScrollView background="systemGroupedBackground" refreshable={handleRefresh}>
+        <LazyVStack alignment="leading" spacing={12} padding={16}>
+          {detailContent}
+        </LazyVStack>
+      </ScrollView> : <List refreshable={handleRefresh}>{detailContent}</List>}
+    </VStack>
   )
 }
