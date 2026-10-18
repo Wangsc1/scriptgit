@@ -54,12 +54,12 @@ async function main(){
  // Capture actual WebView HTML for local/default modes; do not pretend to render native WebKit.
  let loadGate=null;const controllers=[];global.WebViewController=class{
   constructor(){controllers.push(this)}
-  async addScriptMessageHandler(name,callback){this.close=callback}
+  async addScriptMessageHandler(name,callback){this[name]=callback;if(name==='closeViewer')this.close=callback}
   async loadHTML(html){this.loads=(this.loads||0)+1;this.html=html;if(loadGate)await loadGate.promise}
   dispose(){this.disposed=true}
  }
  const {ImageViewer}=load('components/ImageViewer.tsx',{scripting:ui});let closed=0
- loadGate=deferred();const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1);assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0,'pre-HTML WebView empty surface not composited');await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0);loadGate.resolve();loadGate=null;await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,1,'reveal on loadHTML completion, no timer')
+ loadGate=deferred();const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1);assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0,'pre-HTML WebView empty surface not composited');await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0);loadGate.resolve();loadGate=null;await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0,'navigation load completion is NOT image readiness');local.imageReady();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,1,'reveal only on page image/decode readiness')
  const sameControllerCount=controllers.length;for(let i=0;i<5;i++)compact.render();assert.equal(controllers.length,sameControllerCount,'same url/session re-render does not reconstruct controller');assert.equal(local.loads,1,'one loadHTML per open, not a repeated reload')
  assert.equal(compact.tree.type,'ZStack');assert.equal(compact.tree.props.frame.maxHeight,'infinity');assert.equal(compact.tree.props.ignoresSafeArea.regions,'all')
  assert.match(local.html,/max-width: 80%/);assert.match(local.html,/max-height: 60%/);assert.match(local.html,/width: auto; height: auto; object-fit: contain/);assert.match(local.html,/box-sizing: border-box; padding: env\(safe-area-inset-top/);assert.match(local.html,/viewport-fit=cover/)
@@ -71,11 +71,25 @@ async function main(){
  assert.match(local.html,/scale <= 1\.01 && \(edgeBack \|\| pullDown\)/);assert.match(local.html,/startX <= 24 && dx >= 80/);assert.match(local.html,/multiTouch/)
 
  assert.match(local.html,/initial-scale=1, minimum-scale=1, maximum-scale=6, user-scalable=yes/);assert.match(local.html,/图片加载失败/)
+ // Execute real local HTML readiness: image load alone waits for decode; frame
+ // callback is requested only after ready class applied; errors also reveal text.
+ const vmReady=require('node:vm'),script=local.html.match(/<script>([\s\S]*?)<\/script>/)[1]
+ async function readiness({cached=false,error=false}={}){
+  const decodeGate=deferred(),events={},frames=[],classes=[],messages=[]
+  const photo={complete:cached,naturalWidth:cached?1:0,decode:()=>decodeGate.promise,classList:{add:v=>classes.push(v)},addEventListener:(name,fn)=>events[name]=fn}
+  const stage={},spinner={classList:{add(){}}}
+  const context={Promise,requestAnimationFrame:fn=>frames.push(fn),document:{getElementById:id=>({photo,stage,spinner}[id]),addEventListener(){}},window:{webkit:{messageHandlers:{imageReady:{postMessage:()=>messages.push('ready')},closeViewer:{postMessage(){}}}}}}
+  vmReady.runInNewContext(script,context)
+  if(error){events.error();assert.match(stage.innerHTML,/图片加载失败/)}else{if(!cached)events.load();assert.equal(frames.length,0,'no reveal before decode');assert.equal(classes.length,0);decodeGate.resolve();await tick();assert.deepEqual(classes,['ready'])}
+  assert.equal(messages.length,0);assert.equal(frames.length,1);frames[0]();assert.deepEqual(messages,['ready']);events.error();assert.equal(frames.length,1,'readiness posts once')
+ }
+ await readiness();await readiness({cached:true});await readiness({error:true})
+ assert.doesNotMatch(local.html,/transition: opacity/,'local image no longer fades after reveal');
  // Execute the delivered touch handlers: edge right-back only, not ordinary panning/zoom/diagonal/multitouch.
  const vm=require('node:vm')
  function gesture({x=10,y=100,dx=100,dy=0,scale=1,multi=false,cancel=false,fast=false}={}){
   const listeners={},classes={add(){}},photo={complete:true,naturalWidth:1,classList:classes,addEventListener(){}},stage={},spinner={classList:classes};let count=0
-  const context={document:{getElementById:id=>({photo,stage,spinner}[id]),addEventListener:(name,fn)=>listeners[name]=fn},window:{visualViewport:{scale},webkit:{messageHandlers:{closeViewer:{postMessage:()=>count++}}}}}
+  const context={document:{getElementById:id=>({photo,stage,spinner}[id]),addEventListener:(name,fn)=>listeners[name]=fn},requestAnimationFrame:fn=>fn(),window:{visualViewport:{scale},webkit:{messageHandlers:{imageReady:{postMessage(){}},closeViewer:{postMessage:()=>count++}}}}}
   vm.runInNewContext(local.html.match(/<script>([\s\S]*?)<\/script>/)[1],context)
   const touch={clientX:x,clientY:y};listeners.touchstart({touches:multi?[touch,touch]:[touch]})
   if(cancel)listeners.touchcancel({})
@@ -87,7 +101,7 @@ async function main(){
  assert.equal(gesture({fast:true}),1);assert.equal(gesture({fast:true,scale:2}),0)
  assert.equal(gesture({fast:true,multi:true}),0);assert.equal(gesture({fast:true,cancel:true}),0)
  assert.equal(gesture({fast:true,x:100}),0)
- local.close();local.close();assert.equal(closed,1);compact.unmount();assert.equal(local.disposed,true)
+ local.close();local.close();assert.equal(closed,1);compact.unmount();assert.equal(local.disposed,true);local.imageReady();assert.equal(compact.lateWrites,0,'late decode ready after disposal ignored')
  const repeatProps={url:'data:image/png;base64,AA==',compactImage:true,sessionId:1,onClose:()=>closed++}
  let repeat=mount(ImageViewer,repeatProps);await tick();let prior=controllers.at(-1);prior.close();const beforeRepeat=closed
  for(let id=2;id<=4;id++){

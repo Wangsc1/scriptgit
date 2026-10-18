@@ -44,7 +44,7 @@ function buildHTML(url: string, compactImage: boolean): string {
     -webkit-touch-callout: none;
     /* 加载完成前不显示，避免出现半张图 */
     opacity: 0;
-    transition: opacity 0.2s ease;
+    ${compactImage ? "" : "transition: opacity 0.2s ease;"}
   }
   ${compactImage ? "img { background: transparent; }" : ""}
   img.ready {
@@ -88,7 +88,32 @@ function buildHTML(url: string, compactImage: boolean): string {
     spinner.classList.add("hidden")
   }
 
+  ${compactImage ? `// Ready is the decoded image + styled document, not loadHTML completion.
+  var readySent = false
+  function pageReady() {
+    if (readySent) return
+    readySent = true
+    requestAnimationFrame(function () {
+      window.webkit.messageHandlers.imageReady.postMessage(null)
+    })
+  }
   function showPhoto() {
+    var decoded = typeof photo.decode === "function" ? photo.decode() : Promise.resolve()
+    decoded.then(function () {
+      hideSpinner()
+      photo.classList.add("ready")
+      pageReady()
+    }, showError)
+  }
+  function showError() {
+    hideSpinner()
+    stage.innerHTML = '<div class="failed">图片加载失败</div>'
+    pageReady()
+  }
+  if (photo.complete && photo.naturalWidth > 0) showPhoto()
+  else photo.addEventListener("load", showPhoto)
+  photo.addEventListener("error", showError)
+` : `  function showPhoto() {
     hideSpinner()
     photo.classList.add("ready")
   }
@@ -104,6 +129,7 @@ function buildHTML(url: string, compactImage: boolean): string {
     hideSpinner()
     stage.innerHTML = '<div class="failed">图片加载失败</div>'
   })
+`}
 
   // 仅在未缩放且未发生位移时把单击视为关闭
   var startX = 0
@@ -188,13 +214,17 @@ export function ImageViewer({
         closing = true
         onClose()
       })
+      if (compactImage && !disposed) {
+        await controller.addScriptMessageHandler("imageReady", () => {
+          if (!disposed) setWebViewReady(true)
+        })
+      }
       if (!disposed) {
         await controller.loadHTML(buildHTML(url, compactImage))
       }
-      // WebView 自身初始化期间是黑屏，就绪后再撤掉原生指示器
-      if (!disposed) {
-        setWebViewReady(true)
-      }
+      // Local mode waits for image load/decode and a styled page frame; a
+      // navigation load completion alone preceded a white surface in video.
+      if (!disposed && !compactImage) setWebViewReady(true)
     }
 
     setup()
@@ -216,7 +246,7 @@ export function ImageViewer({
       <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={compactImage ? LOCAL_IMAGE_BACKGROUND : undefined}>
         {/* Native WebView has no public opaque/backgroundColor API. Keep it
             mounted/loading, but do not composite its empty pre-HTML surface.
-            Reveal only on the existing loadHTML completion, not a timer. */}
+            Local mode reveals on imageReady from the decoded page, not a timer. */}
         <WebView controller={controller} opacity={compactImage && !webViewReady ? 0 : 1} />
       </VStack>
     </ZStack>

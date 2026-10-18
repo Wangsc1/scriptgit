@@ -26,7 +26,8 @@ const diffService=load('services/diffService.ts',{'./gitCore':{loadGitEngine:asy
 const changes=load('utils/commitChanges.ts',{})
 const treeNode=load('components/CommitFileTree.tsx',{scripting:ui,'../pages/CommitDiffPage':{CommitDiffPage:'CommitDiffPage'},'../constants/colors':colors}).CommitFileTreeNode
 const view=load("components/CommitChangesView.tsx",{scripting:ui,'./DiffViewer':{DiffViewer:'DiffViewer'},'../pages/CommitDiffPage':{CommitDiffPage:'CommitDiffPage'},'../utils/format':fmt,'../utils/commitChanges':changes,'../constants/colors':colors})
-const FilledControl=load('components/FilledSegmentedControl.tsx',{scripting:ui}).FilledSegmentedControl
+const segmentUi=new Proxy(ui,{get:(target,name)=>name==='modifiers'?()=>{const m={frame(){return this},listRowInsets(){return this},listRowSeparator(){return this}};return m}:target[name]})
+const FilledControl=load('components/FilledSegmentedControl.tsx',{scripting:segmentUi}).FilledSegmentedControl
 const Page=load('pages/CommitDetailPage.tsx',{'../components/FilledSegmentedControl':{FilledSegmentedControl:FilledControl},scripting:ui,'../utils/fileTree':fileTree,'../services/gitService':{getCommitDetail:commitService.getCommitDetail},'../components/CommitFileTree':{CommitFileTreeNode:treeNode},'../components/CommitChangesView':view,'../components/ImageViewer':{ImageViewer:'ImageViewer'},'../services/diffService':diffService,'../utils/commitChanges':changes,'../components/AvatarView':{AvatarView:'AvatarView'},'../utils/github':{resolvedGitAuthorAvatarUrl:()=>''},'../api/githubApi':{getCommitAvatarUrls:async()=>({})},'../utils/format':fmt,'../constants/colors':colors}).CommitDetailPage
 let groups=0;async function test(name,fn){await fn();groups++;console.log('PASS '+name)}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms))
@@ -58,7 +59,7 @@ async function main(){try{
  await test('segmented order is 更改 left / 文件 right, default 更改; 文件 keeps original tree and starts no diff reads',async()=>{
   reset();const h=await open(c2),p=picker(h)
   assert.deepEqual(p.props.options,[{value:'changes',title:'更改'},{value:'files',title:'文件'}]);assert.equal(p.props.value,'changes');assert.ok(section(h))
-  const filled=mount(p.type,p.props);assert.equal(filled.tree.type,'GeometryReader');const segmentRow=filled.tree.children[0]({size:{width:350,height:44}});assert.equal(segmentRow.children.length,2);assert.deepEqual(segmentRow.children[0].children[0].children[0].props,{fill:'systemGray4',cornerRadius:8,frame:{width:175,height:44}});segmentRow.children[1].props.action();h.render();assert.equal(picker(h).props.value,'files');assert.ok(!section(h));assert.ok(all(h.tree).some(n=>n.type===treeNode&&n.props.commitDetailStyle===true));assert.ok(all(h.tree).some(n=>JSON.stringify(n.children||'').includes('提交信息')))
+  const filled=mount(p.type,p.props);assert.equal(filled.tree.type,'GeometryReader');const segmentRow=filled.tree.children[0]({size:{width:350,height:48}});assert.equal(segmentRow.children.length,2);assert.deepEqual(segmentRow.children[0].children[0].children[0].props,{fill:'systemGray4',cornerRadius:8,frame:{width:175,height:48}});segmentRow.children[1].props.action();h.render();assert.equal(picker(h).props.value,'files');assert.ok(!section(h));assert.ok(all(h.tree).some(n=>n.type===treeNode&&n.props.commitDetailStyle===true));assert.ok(all(h.tree).some(n=>JSON.stringify(n.children||'').includes('提交信息')))
   await sleep(30);assert.equal(stats.reads.length,0,'file view must not compute diffs');h.unmount()
  })
  await test('single commit boundary: only c2 vs first parent, real counts, binary image, delete/add, no later commit or worktree content',async()=>{
