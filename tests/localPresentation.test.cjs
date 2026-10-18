@@ -55,11 +55,12 @@ async function main(){
  let loadGate=null;const controllers=[];global.WebViewController=class{
   constructor(){controllers.push(this)}
   async addScriptMessageHandler(name,callback){this.close=callback}
-  async loadHTML(html){this.html=html;if(loadGate)await loadGate.promise}
+  async loadHTML(html){this.loads=(this.loads||0)+1;this.html=html;if(loadGate)await loadGate.promise}
   dispose(){this.disposed=true}
  }
  const {ImageViewer}=load('components/ImageViewer.tsx',{scripting:ui});let closed=0
  loadGate=deferred();const compact=mount(ImageViewer,{url:'data:image/png;base64,AA==',compactImage:true,onClose:()=>closed++});await tick();const local=controllers.at(-1);assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0,'pre-HTML WebView empty surface not composited');await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,0);loadGate.resolve();loadGate=null;await tick();compact.render();assert.equal(all(compact.tree).find(n=>n.type==='WebView').props.opacity,1,'reveal on loadHTML completion, no timer')
+ const sameControllerCount=controllers.length;for(let i=0;i<5;i++)compact.render();assert.equal(controllers.length,sameControllerCount,'same url/session re-render does not reconstruct controller');assert.equal(local.loads,1,'one loadHTML per open, not a repeated reload')
  assert.equal(compact.tree.type,'ZStack');assert.equal(compact.tree.props.frame.maxHeight,'infinity');assert.equal(compact.tree.props.ignoresSafeArea.regions,'all')
  assert.match(local.html,/max-width: 80%/);assert.match(local.html,/max-height: 60%/);assert.match(local.html,/width: auto; height: auto; object-fit: contain/);assert.match(local.html,/box-sizing: border-box; padding: env\(safe-area-inset-top/);assert.match(local.html,/viewport-fit=cover/)
  assert.match(local.html,/html, body \{[\s\S]*?background: #707070/);assert.match(local.html,/img \{ background: transparent; \}/)
