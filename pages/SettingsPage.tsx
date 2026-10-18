@@ -348,7 +348,8 @@ export function SettingsPage() {
           </Text>
         }
       >
-        <HStack alignment="center" spacing={6}>
+        <HStack alignment="center" spacing={12}>
+          <HStack frame={{ width: 28 }} alignment="center">
           {githubUser && tokenCheck?.status !== "invalid" ? (
             <AvatarView url={githubUser.avatarUrl} size={20} />
           ) : (
@@ -357,7 +358,8 @@ export function SettingsPage() {
               foregroundStyle={tokenStatus.color}
             />
           )}
-          <Text font="subheadline" foregroundStyle={tokenStatus.color}>
+          </HStack>
+          <Text font="body" foregroundStyle={tokenStatus.color}>
             {tokenStatus.text}
           </Text>
         </HStack>
@@ -379,18 +381,18 @@ export function SettingsPage() {
           </>
         ) : (
           <>
-            <Button
-              title={verifying ? "验证中…" : "验证有效性"}
-              systemImage="checkmark.shield"
-              action={handleReverify}
-              disabled={verifying}
-            />
-            <Button
-              title="清除 Token"
-              systemImage="trash"
-              foregroundStyle="red"
-              action={confirmClearToken}
-            />
+            <Button action={handleReverify} disabled={verifying}>
+              <HStack alignment="center" spacing={12}>
+                <Image systemName="checkmark.shield" frame={{ width: 28 }} />
+                <Text font="body">{verifying ? "验证中…" : "验证有效性"}</Text>
+              </HStack>
+            </Button>
+            <Button foregroundStyle="red" action={confirmClearToken}>
+              <HStack alignment="center" spacing={12}>
+                <Image systemName="trash" frame={{ width: 28 }} />
+                <Text font="body">清除 Token</Text>
+              </HStack>
+            </Button>
           </>
         )}
       </Section>
