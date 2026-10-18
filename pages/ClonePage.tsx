@@ -243,7 +243,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
       <Text>{counts}</Text>
       {results.map((item, index) => <Text key={`${index}:${item.url}`} foregroundStyle={item.status === "failed" ? "red" : "label"}>{`${STATUS[item.status]} · ${item.name}\n${item.displayPath}\n${hideSystemDetails(item.message)}`}</Text>)}
     </Section> : null}
-    {hasToken() ? <Section header={<Text>我的 GitHub 仓库（单个克隆）</Text>}>
+    {hasToken() ? <Section header={<Text>我的 GitHub 仓库（Token）</Text>}>
       {loadingMyRepos ? <Text>加载中…</Text> : null}
       {myReposError ? <Text foregroundStyle="red">{myReposError}</Text> : null}
       {myRepos.map(repo => <Button key={repo.fullName} title={repo.fullName + (clonedRepos.has(repo.fullName.toLowerCase()) ? "（已克隆）" : "")} action={() => {
