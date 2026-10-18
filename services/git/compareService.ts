@@ -1,3 +1,4 @@
+import { countCommitsUntil } from "./commitTraversal"
 import type { CommitEntry, RefCompareResult } from "../../types/git"
 import { resolvePullTarget } from "../../utils/branchMerge"
 import { topologyFromCounts } from "../../utils/gitSync"
@@ -69,35 +70,6 @@ async function withCompareTimeout<T>(
   } finally {
     if (timer != null) clearTimeout(timer)
   }
-}
-
-async function countCommitsUntil(
-  git: any,
-  fs: any,
-  dir: string,
-  gitdir: string,
-  tipOid: string,
-  stopOid: string | null,
-  maxCount: number,
-  options?: RemoteOpOptions
-): Promise<number> {
-  let count = 0
-  let current: string | null = tipOid
-  const seen = new Set<string>()
-  while (current && current !== stopOid && count < maxCount) {
-    checkRemoteCancelled(options)
-    if (seen.has(current)) break
-    seen.add(current)
-    count++
-    const result: { commit: { parent?: string[] } } = await git.readCommit({
-      fs,
-      dir,
-      gitdir,
-      oid: current,
-    })
-    current = result.commit.parent?.[0] || null
-  }
-  return count
 }
 
 async function collectCompareCommits(

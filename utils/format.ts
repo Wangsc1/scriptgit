@@ -102,20 +102,3 @@ export function buildCommitMessage(title: string, description?: string): string 
   if (!body) return head
   return `${head}\n\n${body}`
 }
-
-/** 复制用：完整 commit 信息（oid / 作者 / 日期 / message） */
-export function formatFullCommit(entry: {
-  oid: string
-  message: string
-  author: { name: string; email: string }
-  date: string
-}): string {
-  const lines = [
-    `commit ${entry.oid}`,
-    `Author: ${entry.author.name} <${entry.author.email}>`,
-    `Date:   ${entry.date}`,
-    "",
-    entry.message,
-  ]
-  return lines.join("\n")
-}

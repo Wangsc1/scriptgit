@@ -184,30 +184,6 @@ async function refreshRepoSnapshot(bookmarkName: string): Promise<void> {
   }
 }
 
-/** 仓库是否已初始化（gitdir 下存在 HEAD 且 config 可读） */
-
-/** 获取认证（未配置则抛出友好错误） */
-
-/** gitdir 内合并状态文件名（非标准 git，供 UI 恢复冲突列表） */
-
-/**
- * 执行 merge(abortOnConflict=false)；冲突时写状态并抛友好错误。
- * 干净合并后 force checkout 当前分支以对齐工作区。
- */
-
-/** 查询当前合并冲突状态 */
-
-/**
- * 只 fetch 不 merge：刷新 refs/remotes/<remote>/<branch>，不改动工作区/索引。
- * 用于重编/回退前让「未推送」安全判定基于最新的远端 tip，
- * 避免因远端跟踪引用陈旧把「远端已领先」误判为「未推送」。
- */
-
-/**
- * 绑定 origin 并推送当前分支（上传 GitHub 用）。
- * 若已有 origin 则更新 URL。
- */
-
 export async function initRepo(bookmarkName: string): Promise<void> {
   return runRepoMutation(bookmarkName, () => initRepoInternal(bookmarkName), false)
 }

@@ -133,21 +133,3 @@ export function desiredOriginAfterFailedPush(
   if (originalOrigin?.url) return { url: originalOrigin.url }
   return null
 }
-
-/** 尝试获取仓库级写锁；已占用时返回 false */
-export function acquireRepoMutationLock(
-  locks: Set<string>,
-  lockKey: string
-): boolean {
-  if (locks.has(lockKey)) return false
-  locks.add(lockKey)
-  return true
-}
-
-/** 释放仓库级写锁 */
-export function releaseRepoMutationLock(
-  locks: Set<string>,
-  lockKey: string
-): void {
-  locks.delete(lockKey)
-}

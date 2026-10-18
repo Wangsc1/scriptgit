@@ -40,8 +40,6 @@ import { toastContent } from "../components/Toast"
 import { useToast } from "../hooks/useToast"
 import { yieldForUi } from "../utils/remoteProgress"
 
-type AlertState = { title: string; message: string } | null
-
 export function RemotesPage({
   bookmarkName,
   onChanged,
@@ -72,12 +70,7 @@ export function RemotesPage({
   const branchRequestRef = useRef(0)
 
   const [pendingDelete, setPendingDelete] = useState<RemoteInfo | null>(null)
-  const [alertState, setAlertState] = useState<AlertState>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
-
-  function showAlert(title: string, message: string) {
-    setAlertState({ title, message })
-  }
 
   async function refreshRemoteBranches(remote: string): Promise<void> {
     const request = ++branchRequestRef.current
@@ -286,13 +279,7 @@ export function RemotesPage({
             : `将移除 ${pendingDelete.remote}（${pendingDelete.url}）。分支 upstream 配置不会自动清理。`,
         isConfirm: true as const,
       }
-    : alertState
-      ? {
-          title: alertState.title,
-          message: alertState.message,
-          isConfirm: false as const,
-        }
-      : null
+    : null
 
   return (
     <List
@@ -363,10 +350,9 @@ export function RemotesPage({
         onChanged: (presented: boolean) => {
           if (!presented) {
             setPendingDelete(null)
-            setAlertState(null)
           }
         },
-        actions: activeAlert?.isConfirm ? (
+        actions: (
           <>
             <Button
               title="取消"
@@ -379,8 +365,6 @@ export function RemotesPage({
               action={confirmDelete}
             />
           </>
-        ) : (
-          <Button title="好" role="cancel" action={() => setAlertState(null)} />
         ),
       }}
     >

@@ -30,17 +30,14 @@ import {
   paginateHistory,
 } from "../utils/history"
 import {
-  acquireRepoMutationLock,
   buildUploadPendingPatch,
   buildUploadSuccessPatch,
   computeSyncTopology,
   desiredOriginAfterFailedPush,
-  releaseRepoMutationLock,
   resolveUploadRemoteTarget,
   topologyFromCounts,
 } from "../utils/gitSync"
 import {
-  pathsNeedingStage,
   pathsNeedingUnstage,
   stageActionForRow,
 } from "../utils/stageSelection"
@@ -886,68 +883,6 @@ function testUploadFailureRecovery(): void {
   )
 }
 
-async function testRepoMutationLock(): Promise<void> {
-  const locks = new Set<string>()
-  const repoA = "/git-repos/repo-a"
-  const repoB = "/git-repos/repo-b"
-
-  assert(
-    acquireRepoMutationLock(locks, repoA) === true,
-    "空闲仓库应成功获取写锁"
-  )
-  assert(
-    acquireRepoMutationLock(locks, repoA) === false,
-    "同一仓库并发写操作应立即失败"
-  )
-  assert(
-    acquireRepoMutationLock(locks, repoB) === true,
-    "不同仓库之间应允许并行写操作"
-  )
-
-  // 模拟 in-flight 操作完成后 finally 释放
-  let releasedInFinally = false
-  try {
-    // 已占用时外层应拒绝，不进入 operation
-    if (!acquireRepoMutationLock(locks, repoA)) {
-      // 预期路径
-    } else {
-      throw new Error("已占用锁不应再次获取成功")
-    }
-  } finally {
-    // 模拟成功路径的 finally：只释放自己持有的锁
-    releaseRepoMutationLock(locks, repoA)
-    releasedInFinally = true
-  }
-  assert(releasedInFinally, "写操作 finally 必须执行")
-  assert(!locks.has(repoA), "释放后同仓库应可再次获取锁")
-  assert(
-    acquireRepoMutationLock(locks, repoA) === true,
-    "finally 释放后同仓库写操作应可重试"
-  )
-  // 上一断言只验证可重获，随即释放以免干扰后续失败路径
-  releaseRepoMutationLock(locks, repoA)
-
-  // 失败路径也必须释放
-  let sawError = false
-  try {
-    if (!acquireRepoMutationLock(locks, repoA)) {
-      throw new Error("测试准备失败：未能再次占用锁")
-    }
-    try {
-      throw new Error("模拟写操作失败")
-    } finally {
-      releaseRepoMutationLock(locks, repoA)
-    }
-  } catch (error: any) {
-    sawError = String(error?.message || error).includes("模拟写操作失败")
-  }
-  assert(sawError, "写操作失败应向上抛出")
-  assert(!locks.has(repoA), "写操作失败后锁仍须释放")
-  assert(locks.has(repoB), "释放 A 不得影响 B 的锁")
-  releaseRepoMutationLock(locks, repoB)
-  assert(locks.size === 0, "全部释放后锁集合应为空")
-}
-
 function testStageSelection(): void {
   // statusMatrix: [filepath, head, workdir, stage]
   const matrix = [
@@ -961,20 +896,6 @@ function testStageSelection(): void {
     ["staged-new.txt", 0, 2, 2],
     ["/leading-slash.txt", 1, 2, 1],
   ] as const
-
-  const needStage = pathsNeedingStage(matrix)
-  assert(
-    needStage.join(",") ===
-      "unstaged-mod.txt,both-mod.txt,unstaged-del.txt,untracked.txt,leading-slash.txt",
-    "全部暂存应包含工作区与索引不同的路径（含删除与未跟踪）"
-  )
-  assert(
-    !needStage.includes("clean.txt") &&
-      !needStage.includes("staged-mod.txt") &&
-      !needStage.includes("staged-del.txt") &&
-      !needStage.includes("staged-new.txt"),
-    "已与索引一致的路径不应再被全部暂存"
-  )
 
   const needUnstage = pathsNeedingUnstage(matrix)
   assert(
@@ -2397,7 +2318,6 @@ async function main(): Promise<void> {
   testFileTree()
   testSyncTopology()
   testUploadFailureRecovery()
-  await testRepoMutationLock()
   testStageSelection()
   testStashHelpers()
   testRemoteHelpers()

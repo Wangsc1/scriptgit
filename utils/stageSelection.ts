@@ -15,23 +15,6 @@ export function normalizeMatrixPath(filepath: unknown): string {
 }
 
 /**
- * 工作区与索引不同 → 可暂存（含删除）。
- * 对齐 addFilesInternal 对 filepath="." 的筛选：row[2] !== row[3]
- */
-export function pathsNeedingStage(matrix: readonly StatusMatrixRow[]): string[] {
-  const paths: string[] = []
-  for (const row of matrix) {
-    const path = normalizeMatrixPath(row[0])
-    if (!path) continue
-    const work = row[2]
-    const stage = row[3]
-    if (work === stage) continue
-    paths.push(path)
-  }
-  return paths
-}
-
-/**
  * HEAD 与索引不同 → 可取消暂存。
  * 对齐 getChanges 的 staged: head !== stage
  */

@@ -45,8 +45,6 @@ import {
   COLOR_GREEN,
 } from "../constants/colors"
 
-type AlertState = { title: string; message: string } | null
-
 export function ConflictsPage({
   bookmarkName,
   onChanged,
@@ -60,12 +58,7 @@ export function ConflictsPage({
   // 仓库级长操作的全屏遮罩标题（检测/完成/中止）；单文件解决与复制清单保持行内
   const [busyOverlay, setBusyOverlay] = useState<string | null>(null)
   const [pendingAbort, setPendingAbort] = useState(false)
-  const [alertState, setAlertState] = useState<AlertState>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
-
-  function showAlert(title: string, message: string) {
-    setAlertState({ title, message })
-  }
 
   async function loadState() {
     setLoading(true)
@@ -208,13 +201,7 @@ export function ConflictsPage({
           "将丢弃本次合并产生的冲突解决进度，并尝试恢复工作区。未提交的合并结果会丢失。",
         isConfirm: true as const,
       }
-    : alertState
-      ? {
-          title: alertState.title,
-          message: alertState.message,
-          isConfirm: false as const,
-        }
-      : null
+    : null
 
   return (
     <List
@@ -251,10 +238,9 @@ export function ConflictsPage({
         onChanged: (presented: boolean) => {
           if (!presented) {
             setPendingAbort(false)
-            setAlertState(null)
           }
         },
-        actions: activeAlert?.isConfirm ? (
+        actions: (
           <>
             <Button
               title="取消"
@@ -267,8 +253,6 @@ export function ConflictsPage({
               action={handleAbort}
             />
           </>
-        ) : (
-          <Button title="好" role="cancel" action={() => setAlertState(null)} />
         ),
       }}
     >
