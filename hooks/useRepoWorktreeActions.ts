@@ -56,7 +56,7 @@ export function useRepoWorktreeActions({
   const [committing, setCommitting] = useState(false)
   const [stagingBusy, setStagingBusy] = useState(false)
   const [stashBusy, setStashBusy] = useState(false)
-  const [commitSheetMode, setCommitSheetMode] = useState<"commit" | "amend" | "push" | null>(
+  const [commitSheetMode, setCommitSheetMode] = useState<"commit" | "amend" | null>(
     null
   )
   // 提交表单内的校验提示：弹窗打开时不能用父页 toast（会被 sheet 遮住）

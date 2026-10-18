@@ -10,8 +10,7 @@
  * - 分支与同步动作：hooks/useRepoBranchActions、hooks/useRepoSyncActions
  */
 
-import { List, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
-import { RepoDiagnosticsPage } from "./RepoDiagnosticsPage"
+import { List, Text, TextField, Button, Menu, useState, useRef, useEffect } from "scripting"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -53,7 +52,6 @@ export function RepoDetailPage({
   bookmarkName: string
   name: string
 }) {
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [localFile, setLocalFile] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
   const localSession = useRef(0)
   const [localImage, setLocalImage] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
@@ -194,23 +192,44 @@ export function RepoDetailPage({
     showConflictNotice,
   })
 
-  async function handlePush() {
-    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
-    await performPush()
+  // 与首页相同的原生 alert.actions 双输入；独立于 commit/amend 底部表单。
+  const [pushForm, setPushForm] = useState<{ error: string | null } | null>(null)
+  const [pushTitle, setPushTitle] = useState("")
+  const [pushDescription, setPushDescription] = useState("")
+  const pushFormOpen = useRef(false)
+  // Native dismissal can arrive after confirmation rerendered this List.
+  const pushDismissPending = useRef(false)
+  const pushGate = useRef(false)
+  function closePushForm() {
+    pushFormOpen.current = false
+    setPushForm(null)
   }
-  /** 左滑/文件夹的「推送」：有改动 → 弹出提交说明，确认后全部暂存、提交并推送；无改动 → 只推送已有提交。 */
+  function pushBlocked() {
+    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return true }
+    return mutating || data.mergeInProgress || pushGate.current ||
+      worktree.commitSheetMode != null || pendingActions.pending != null || alertState != null
+  }
+  async function runPush(message?: string) {
+    pushGate.current = true
+    try { await performPush(message) }
+    finally { pushGate.current = false }
+  }
+  /** 顶部、文件和文件夹「推送」共用同一入口，提交范围始终是全仓改动。 */
   function requestCommitAndPush() {
-    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
-    if (mutating || data.mergeInProgress) return
-    if (data.changes.length === 0) { void performPush(); return }
-    worktree.setCommitSheetMode("push")
+    if (pushBlocked() || pushFormOpen.current) return
+    if (data.changes.length === 0) return runPush()
+    pushFormOpen.current = true
+    pushDismissPending.current = true
+    setPushTitle(`更新 ${data.changes.length} 个文件`)
+    setPushDescription("")
+    setPushForm({ error: null })
   }
   async function confirmCommitAndPush(title: string, description: string) {
-    const message = buildCommitMessage(title, description)
-    if (!title.trim()) { setPushSheetError("请填写提交信息（标题）"); return }
-    setPushSheetError(null)
-    worktree.closeCommitSheet()
-    await performPush(message)
+    if (!pushFormOpen.current) return
+    if (!title.trim()) { setPushForm({ error: "请填写提交信息（标题）" }); return }
+    if (pushBlocked()) { setPushForm({ error: "分支、合并或操作状态已变化，请取消后重试" }); return }
+    closePushForm()
+    await runPush(buildCommitMessage(title, description))
   }
   async function handlePull() {
     if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
@@ -239,7 +258,6 @@ export function RepoDetailPage({
           }
         : null
 
-  const [pushSheetError, setPushSheetError] = useState<string | null>(null)
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
   return (
@@ -262,10 +280,6 @@ export function RepoDetailPage({
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
         content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} file={localImage.file}
           onClose={() => closeLocalImage(localImage.id)} /> : <Text>加载中…</Text>,
-      }, {
-        isPresented: showDiagnostics,
-        onChanged: setShowDiagnostics,
-        content: showDiagnostics ? <RepoDiagnosticsPage bookmarkName={bookmarkName} onAssociated={data.acceptHeadAssociation} onClose={() => setShowDiagnostics(false)} /> : <Text>加载中…</Text>,
       }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
@@ -378,19 +392,7 @@ export function RepoDetailPage({
         onChanged: (presented: boolean) => {
           if (!presented) worktree.closeCommitSheet()
         },
-        content: worktree.commitSheetMode === "push" ? (
-          <CommitMessageSheet
-            key="push"
-            navigationTitle="提交并推送"
-            confirmTitle="推送"
-            footer="将暂存全部改动并提交，再推送到远端。"
-            initialTitle={`更新 ${data.changes.length} 个文件`}
-            initialDescription=""
-            error={pushSheetError}
-            onCancel={() => { setPushSheetError(null); worktree.closeCommitSheet() }}
-            onConfirm={confirmCommitAndPush}
-          />
-        ) : worktree.commitSheetMode === "amend" ? (
+        content: worktree.commitSheetMode === "amend" ? (
           <CommitMessageSheet
             key={`amend-${pendingActions.amendDraft.title}`}
             navigationTitle="重编提交"
@@ -416,16 +418,30 @@ export function RepoDetailPage({
         ),
       }}
       alert={{
-        title: activeAlert?.title ?? "",
-        message: <Text>{activeAlert?.message ?? ""}</Text>,
-        isPresented: activeAlert != null,
+        title: pushForm ? "提交并推送" : activeAlert?.title ?? "",
+        message: <Text>{pushForm ? pushForm.error || `将暂存「${data.displayName}」的全部改动并提交，再拉取、推送。` : activeAlert?.message ?? ""}</Text>,
+        isPresented: pushForm != null || activeAlert != null,
         onChanged: (presented: boolean) => {
           if (!presented) {
+            // 推送确认自动 dismiss 可能用确认前或重渲染后的回调：
+            // 两者都只关闭输入，不能清掉新产生的冲突提示/pending/amend。
+            if (pushForm || pushDismissPending.current) {
+              pushDismissPending.current = false
+              closePushForm()
+              return
+            }
             pendingActions.clearPending()
             setAlertState(null)
           }
         },
-        actions: activeAlert?.isConfirm ? (
+        actions: pushForm ? (
+          <>
+            <TextField title="提交标题（必填）" value={pushTitle} onChanged={setPushTitle} />
+            <TextField title="描述（可选）" value={pushDescription} onChanged={setPushDescription} />
+            <Button title="取消" role="cancel" action={closePushForm} />
+            <Button title="推送" disabled={!pushTitle.trim()} action={() => confirmCommitAndPush(pushTitle, pushDescription)} />
+          </>
+        ) : activeAlert?.isConfirm ? (
           <>
             <Button
               title="取消"
@@ -447,7 +463,6 @@ export function RepoDetailPage({
         ),
       }}
     >
-      <Button title="仓库诊断与 HEAD 关联" systemImage="info.circle" action={() => { nav.skipNextAppearLoad(); setShowDiagnostics(true) }} />
       <RepoBranchSection
         branchInfo={data.branchInfo}
         branchesLoaded={data.branchesLoaded}
@@ -490,7 +505,7 @@ export function RepoDetailPage({
         onRollback={() => nav.openPage("rollback")}
         onManageRemotes={() => nav.openPage("remotes")}
         onUpload={() => nav.openPage("upload")}
-        onPush={handlePush}
+        onPush={requestCommitAndPush}
         onPull={handlePull}
       />
 
