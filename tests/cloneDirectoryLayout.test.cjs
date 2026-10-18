@@ -25,16 +25,12 @@ async function main(){
   assert.ok(!text(h).includes('每个仓库保存到'))
   assert.ok(!text(h).includes('无 Token 时加载该用户全部公开仓库'))
   const buttons=all(h.tree).filter(n=>n.type==='Button').map(n=>n.props.title)
-  assert.ok(buttons.indexOf('使用默认本地目录')<buttons.indexOf('更改目录'))
+  assert.ok(!buttons.includes('使用默认本地目录'));assert.ok(buttons.includes('更改目录'))
+  assert.ok(e.fm.files.has('/local/git'));assert.ok(text(h).includes('我的 iPhone / Scripting / git'))
   assert.ok(!text(h).includes('/cloud/Scripting/git'))
   assert.ok(!buttons.includes('使用默认 iCloud/Scripting/git / 重试'))
   await node(h,'Button','更改目录').props.action()
   assert.ok(e.fm.files.has('/external/git'));assert.ok(!text(h).includes('/external/git'))
-  e.fm.isiCloudEnabled=false
-  await node(h,'Button','使用默认本地目录').props.action()
-  assert.ok(!text(h).includes('iCloud 未启用'));assert.ok(e.fm.files.has('/local/git'));assert.ok(text(h).includes('在我的 iPhone / Scripting / git'))
-  e.fm.isiCloudEnabled=true
-  await node(h,'Button','使用默认本地目录').props.action()
   assert.ok(!text(h).includes('iCloud 未启用'));assert.ok(!e.fm.files.has('/cloud/Scripting/git'))
   h.render()
   all(h.tree).find(n=>n.type==='FormRow'&&n.props.label==='用户名').props.onChanged('bob')
@@ -48,6 +44,6 @@ async function main(){
   const root=path.join(__dirname,'..')
   const source=ts.createSourceFile('ClonePage.tsx',fs.readFileSync(path.join(root,'pages/ClonePage.tsx'),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
   assert.equal(source.parseDiagnostics.length,0)
-  console.log('PASS local default with iCloud disabled/offline; visible Chinese directory label; external/default switching; batch confirmation and TSX syntax.')
+  console.log('PASS local default with iCloud disabled/offline; visible Chinese directory label; external selection; removed default-directory row; batch confirmation and TSX syntax.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

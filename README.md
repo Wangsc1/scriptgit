@@ -38,7 +38,7 @@
 ## 快速开始
 
 1. 在仓库页右上角「+」选择「本地仓库」或「克隆仓库」。
-2. 以后新克隆默认保存到本地 **在我的 iPhone / Scripting / git / <repo>**（`FileManager.documentsDirectory + "/git"`），无需启用 iCloud；可用「更改目录」选择 iCloud 或其他父目录并授权访问，「使用默认本地目录」可切回本地。既有 iCloud/外部仓库继续按原路径与书签访问，不迁移、删除或重写。官方 FileManager 文档确认 documentsDirectory 是本地 Documents 且在文件 App 可见（小组件不可访问）：https://scriptingapp.github.io/guide/Utilities/FileManager.md
+2. 以后新克隆默认保存到本地 **我的 iPhone / Scripting / git / <repo>**（`FileManager.documentsDirectory + "/git"`），无需启用 iCloud；可用「更改目录」选择 iCloud 或其他父目录并授权访问。既有 iCloud/外部仓库继续按原路径与书签访问，不迁移、删除或重写。官方 FileManager 文档确认 documentsDirectory 是本地 Documents 且在文件 App 可见（小组件不可访问）：https://scriptingapp.github.io/guide/Utilities/FileManager.md
 3. 公开用户搜索、公开仓库加载和克隆无需 Token。访问私有仓库或向 GitHub 写入时，在「设置」中配置并验证 GitHub Token。
 4. 本地提交作者自动使用已验证 Token 对应的 GitHub 用户名，无需另外填写姓名或邮箱。
 5. 本地文件保存后，到「改动」页检查差异，再手动暂存、提交和推送。

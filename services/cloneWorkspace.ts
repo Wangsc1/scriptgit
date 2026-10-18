@@ -1,4 +1,4 @@
-/** 新克隆默认本地「在我的 iPhone / Scripting / git」；已有路径不迁移。
+/** 新克隆默认本地「我的 iPhone / Scripting / git」；已有路径不迁移。
  * Official: https://scriptingapp.github.io/guide/Utilities/FileManager.md
  * documentsDirectory is local Documents, visible in Files (not accessible to widgets).
  */
