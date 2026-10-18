@@ -1,5 +1,6 @@
 import {
   ProgressView,
+  Rectangle,
   VStack,
   WebView,
   ZStack,
@@ -242,13 +243,18 @@ export function ImageViewer({
       background={compactImage ? LOCAL_IMAGE_BACKGROUND : "black"}
       ignoresSafeArea={{ regions: "all", edges: "all" }}
     >
-      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
       <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={compactImage ? LOCAL_IMAGE_BACKGROUND : undefined}>
         {/* Native WebView has no public opaque/backgroundColor API. Keep it
             mounted/loading, but do not composite its empty pre-HTML surface.
             Local mode reveals on imageReady from the decoded page, not a timer. */}
         <WebView controller={controller} opacity={compactImage && !webViewReady ? 0 : 1} />
       </VStack>
+      {/* Opacity on the native WebView may only apply after its first frame, which
+          matches the one-frame white flash in the recording. An opaque sibling
+          drawn ABOVE the WebView cannot be bypassed by the WebView's own surface;
+          it is removed only on imageReady. Local mode only. */}
+      {compactImage && !webViewReady ? <Rectangle fill={LOCAL_IMAGE_BACKGROUND} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} /> : null}
+      {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
     </ZStack>
   )
 }
