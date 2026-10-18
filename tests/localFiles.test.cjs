@@ -507,6 +507,31 @@ async function main(){
   createInput='UI-CREATED.JSON';await dispatch('创建文件');assert.match(createErrors.at(-1),/同名/)
   const before=updates;await dispatch('导入文件');await dispatch('导入目录');await dispatch('导入图片');assert.equal(updates,before);assert.equal(photoCalls,1)
   selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
+  // Real directory picker -> facade/coordinator -> native mkdir -> FilesTab:
+  // Git has no empty-directory rows, so labels must survive real changes refreshes.
+  const emptyIndex=fs.readFileSync(dir+'/.git/index'),emptyHead=await git.resolveRef({fs,dir,ref:'HEAD'})
+  const folderRow=name=>nodes().find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))
+  const assertAddedFolder=name=>{const row=folderRow(name);assert.ok(row,'directory visible: '+name);const label=all(row.props.label);assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'green folder: '+name);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'),'green 新增: '+name);assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'],'empty directory is not a Git change; no push/restore/Stash actions');return row}
+  for(const [name,child] of [['UI Empty Imported',''],['UI Nested Empty','middle/leaf']]){
+   selectedDirectory=outside+'/'+name;fs.mkdirSync(selectedDirectory+(child?'/'+child:''),{recursive:true});await dispatch('导入目录')
+   for(let refresh=0;refresh<3;refresh++){
+    if(refresh===0){props.changes=await service.getChanges('repo');props.files=await load('services/git/statusQueryService.ts').getTrackedFiles('repo')}
+    else {props.changes=[...props.changes];props.files=[...props.files]}
+    await tick();h.render()
+    const rootRow=assertAddedFolder(name);assert.equal(props.changes.some(c=>c.filepath===name||c.filepath.startsWith(name+'/')),false)
+    if(child){rootRow.props.onChanged(true);assertAddedFolder('middle').props.onChanged(true);assertAddedFolder('leaf')}
+   }
+   assert.deepEqual(fs.readdirSync(dir+'/'+name+(child?'/'+child:'')),[],'no .gitkeep or other placeholder')
+   assert.deepEqual(fs.readdirSync(selectedDirectory+(child?'/'+child:'')),[],'source remains empty')
+  }
+  // Existing destination directories are NOT merged by the production import service.
+  // A rejected conflict must not mark the existing folder or inject its source children.
+  selectedDirectory=outside+'/folder';fs.mkdirSync(selectedDirectory+'/not-imported-empty',{recursive:true});await dispatch('导入目录');assert.match(text(h),/同名|存在/)
+  assert.equal(fs.existsSync(dir+'/folder/not-imported-empty'),false);assert.doesNotMatch(JSON.stringify(folderRow('folder').props.label),/新增/)
+  selectedDirectory=null;const cancelRefresh=updates;await dispatch('导入目录');assert.equal(updates,cancelRefresh);assertAddedFolder('UI Empty Imported')
+  assert.deepEqual(fs.readFileSync(dir+'/.git/index'),emptyIndex);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),emptyHead)
+  // Hints intentionally belong to this mounted FilesTab only, not new persistence.
+  const reopened=mount(Host,props,{effectUpdates:true});assert.doesNotMatch(JSON.stringify(reopened.tree),/UI Empty Imported|UI Nested Empty/);reopened.unmount()
   const photoBytes=Buffer.from([137,80,78,71,13,10,26,10,0,255]);fs.writeFileSync(outside+'/picker-original.PNG',photoBytes)
   global.Photos.pick=async opts=>{assert.deepEqual(opts,{filter:'images',limit:50});return [{itemProvider:{registeredTypes:['public.png','public.image'],hasRepresentationConforming:type=>type==='public.png',loadFilePath:async type=>{assert.equal(type,'public.png');return outside+'/picker-original.PNG'}}}]}
   global.ImageIO={readMetadata:async path=>{assert.equal(path,outside+'/picker-original.PNG');return {pixelWidth:1}}}

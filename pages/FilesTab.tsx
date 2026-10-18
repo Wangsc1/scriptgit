@@ -408,6 +408,10 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
           if (!state.current.alive) return
           setAdded(previous => [...new Set([...previous, ...result.files])])
           setDirectories(previous => [...new Set([...previous, ...result.directories])])
+          // Import creates these directories exclusively (existing targets are refused).
+          // Empty directories have no Git row, so copied hints alone are pruned on
+          // refresh. Keep the same mount-local hint used by 「创建目录」 instead.
+          setSessionCreatedDirectories(previous => [...new Set([...previous, ...result.directories])])
           setCopied(previous => [...previous,
             ...result.directories.map(path => ({ path, before: changes, directory: true })),
             ...result.files.map(path => ({ path, before: changes })),
