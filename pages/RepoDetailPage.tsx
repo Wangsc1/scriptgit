@@ -11,6 +11,7 @@
  */
 
 import { List, Text, Button, Menu, useState, useRef, useEffect } from "scripting"
+import { RepoDiagnosticsPage } from "./RepoDiagnosticsPage"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -52,6 +53,7 @@ export function RepoDetailPage({
   bookmarkName: string
   name: string
 }) {
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [localFile, setLocalFile] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
   const localSession = useRef(0)
   const [localImage, setLocalImage] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
@@ -260,6 +262,10 @@ export function RepoDetailPage({
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
         content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} file={localImage.file}
           onClose={() => closeLocalImage(localImage.id)} /> : <Text>加载中…</Text>,
+      }, {
+        isPresented: showDiagnostics,
+        onChanged: setShowDiagnostics,
+        content: showDiagnostics ? <RepoDiagnosticsPage bookmarkName={bookmarkName} onClose={() => setShowDiagnostics(false)} /> : <Text>加载中…</Text>,
       }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
@@ -441,6 +447,7 @@ export function RepoDetailPage({
         ),
       }}
     >
+      <Button title="仓库诊断（只读）" systemImage="info.circle" action={() => { nav.skipNextAppearLoad(); setShowDiagnostics(true) }} />
       <RepoBranchSection
         branchInfo={data.branchInfo}
         branchesLoaded={data.branchesLoaded}

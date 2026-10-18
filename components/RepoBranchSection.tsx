@@ -143,7 +143,7 @@ export function RepoBranchSection({
         >
           {branchInfo.branches.map((branch) => (
             <Text key={branch} tag={branch}>
-              {remoteBranchNames.includes(branch) ? `${branch} · 远端` : `${branch} · 本地`}
+              {remoteOnlyBranches.includes(branch) ? `${branch} · 远端` : `${branch} · 本地`}
             </Text>
           ))}
         </Picker>

@@ -1,6 +1,5 @@
 import { createHttpTransport } from "../gitCore"
 import { getAuth, resolveAuthor } from "../authStore"
-import { DEFAULT_BRANCH } from "../../constants/git"
 import {
   buildConflictFilesFromErrorData,
   defaultMergeCommitMessage,
@@ -27,6 +26,7 @@ import {
   getCtx,
   hasAnyCommit,
   readSymbolicHeadBranch,
+  resolveCurrentBranch,
   runWithEmptyDirCleanup,
 } from "./runtime"
 import {
@@ -260,6 +260,13 @@ export async function pullInternal(
 ): Promise<PullResult> {
   const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
   checkRemoteCancelled(options)
+  const explicitRef = (ref || "").trim()
+  // No implicit main/master when HEAD is missing, nonlocal, detached or unreadable.
+  // Validate before config writes or network; an explicit caller-supplied branch is unchanged.
+  const currentLocal = explicitRef || await resolveCurrentBranch(git, fs, dir, gitdir)
+  if (!currentLocal) {
+    throw new Error("当前 HEAD 未指向可确认的本地分支，请先查看「仓库诊断（只读）」；未自动选择 main/master")
+  }
   await assertNoMergeInProgress(gitdir)
   const auth = getAuth()
   const http = createHttpTransport(auth?.username, auth?.password)
@@ -267,17 +274,6 @@ export async function pullInternal(
   await ensureGitConfigAuthor(git, fs, dir, gitdir, resolvedAuthor)
   await emitRemoteProgress(options, "Connecting")
 
-  const explicitRef = (ref || "").trim()
-  let currentLocal = ""
-  try {
-    currentLocal =
-      (await git.currentBranch({ fs, dir, gitdir, fullname: false })) || ""
-  } catch (_e) {
-    currentLocal = ""
-  }
-  if (!currentLocal) {
-    currentLocal = (await readSymbolicHeadBranch(fs)) || DEFAULT_BRANCH
-  }
   const upstream = explicitRef
     ? null
     : await readUpstreamForBranch(git, fs, dir, gitdir, currentLocal)

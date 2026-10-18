@@ -504,6 +504,41 @@ export function resolveWorkdir(bookmarkName: string): string {
   return dir
 }
 
+/** 诊断专用解析：只读 Storage 与已有书签；绝不补建书签、回写路径或创建目录。 */
+export function resolveRepoPathsReadOnly(bookmarkName: string): {
+  workdir: string | null
+  storedWorkdir: string | null
+  gitdir: string
+  source: string
+  bookmarkChecks: string[]
+} {
+  const repo = findRepo(bookmarkName)
+  if (!repo) throw new Error("REPO_NOT_FOUND")
+  const bookmarkChecks: string[] = []
+  for (const [label, name] of [["accessBookmark", repo.accessBookmarkName], ["legacyBookmark", repo.bookmarkName]]) {
+    if (!name) { bookmarkChecks.push(label + ": 未保存"); continue }
+    try {
+      if (!FileManager.bookmarkExists(name)) { bookmarkChecks.push(label + ": 不存在"); continue }
+      // Activates existing security-scoped access only; no add/remove/refresh API.
+      const root = FileManager.bookmarkedPath(name)
+      if (!root) { bookmarkChecks.push(label + ": 未解析到路径"); continue }
+      bookmarkChecks.push(label + ": 已解析")
+      let workdir = root
+      if (repo.workdirRelative !== undefined) workdir = resolveRelativeWorkdir(root, repo.workdirRelative)
+      else if (repo.workdir) {
+        const w = normalizePath(repo.workdir), b = normalizePath(root)
+        if (w === b || w.startsWith(b + "/")) workdir = repo.workdir
+      }
+      return { workdir, storedWorkdir: repo.workdir || null, gitdir: getGitdirPath(repo), source: label, bookmarkChecks }
+    } catch (_error) {
+      // Native error messages may contain credentials/URLs; expose outcome, not arbitrary text.
+      bookmarkChecks.push(label + ": 读取失败")
+    }
+  }
+  const workdir = repo.workdir || (repo.bookmarkName.startsWith("/") ? repo.bookmarkName : null)
+  return { workdir, storedWorkdir: repo.workdir || null, gitdir: getGitdirPath(repo), source: repo.workdir ? "storedWorkdir" : workdir ? "legacyPath" : "unresolved", bookmarkChecks }
+}
+
 /** 根据 bookmarkName 查找仓库 */
 export function findRepo(bookmarkName: string): RepoMeta | undefined {
   return readRepos().find((r) => r.bookmarkName === bookmarkName)
