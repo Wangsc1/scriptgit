@@ -9,9 +9,12 @@ import {
   useState,
 } from "scripting"
 
-// Local-only neutral canvas: transparent corners merge into the page, while
-// white icons retain contrast in both light and dark system appearances.
-export const LOCAL_IMAGE_BACKGROUND = "#707070"
+// Local-only canvas follows the system appearance: slightly gray off-white by
+// day, black by night. Native layers use the dynamic pair; the WebView page
+// mirrors it with prefers-color-scheme so no layer shows a different color.
+export const LOCAL_IMAGE_BACKGROUND_LIGHT = "#F7F9FA"
+export const LOCAL_IMAGE_BACKGROUND_DARK = "#000000"
+export const LOCAL_IMAGE_BACKGROUND = { light: LOCAL_IMAGE_BACKGROUND_LIGHT, dark: LOCAL_IMAGE_BACKGROUND_DARK }
 
 // 图片查看器页面：缩放、双击放大与惯性平移交给 WebKit 原生处理
 function buildHTML(url: string, compactImage: boolean): string {
@@ -26,10 +29,11 @@ function buildHTML(url: string, compactImage: boolean): string {
     margin: 0;
     padding: 0;
     height: 100%;
-    background: ${compactImage ? LOCAL_IMAGE_BACKGROUND : "#000"};
+    background: ${compactImage ? LOCAL_IMAGE_BACKGROUND_LIGHT : "#000"};
     -webkit-user-select: none;
     user-select: none;
   }
+  ${compactImage ? `@media (prefers-color-scheme: dark) { html, body { background: ${LOCAL_IMAGE_BACKGROUND_DARK}; } }` : ""}
   .stage {
     display: flex;
     align-items: center;
