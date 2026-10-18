@@ -25,12 +25,12 @@ mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid:noop}
 const {RepoDetailPage}=load('pages/RepoDetailPage.tsx',mocks)
 async function main(){
  const h=mount(RepoDetailPage,{bookmarkName:'repo',name:'test'})
- assert.equal(h.tree.type,'VStack');assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
+ assert.equal(h.tree.type,'List');assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)
  const tab=()=>{h.render();return all(h.tree).find(n=>n.type==='RepoDetailTabContent')}
  const file={path:'file.txt',text:'draft',version:{}}
  tab().props.onOpenLocalFile(file);h.render();let cover=h.tree.props.fullScreenCover[0]
  assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'LocalFileEditor');assert.equal(cover.content.props.file,file)
- // Tab scroll containers can change while the stable VStack owns the editor session.
+ // Tabs retain the original stable List presentation owner.
  data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,true)
  await cover.content.props.onChanged('file.txt',false);assert.equal(refreshed,1)
  cover.content.props.onClose();h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,false)

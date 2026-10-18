@@ -12,7 +12,7 @@ const filesModule=load('pages/FilesTab.tsx',{
  '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
  './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
  scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
- '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
+ '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
  '../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
  '../services/localImportExecution':execution,'../services/localFileImport':{},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/gitService':{moveLocalWorktreeFile:async()=>{moves++;return 'folder/source.txt'}},

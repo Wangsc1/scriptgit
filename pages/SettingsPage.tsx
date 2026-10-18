@@ -12,7 +12,7 @@ import {
   Text,
   HStack,
   Spacer,
-  Rectangle,
+  VStack,
   Script,
   Button,
   Image,
@@ -296,6 +296,7 @@ export function SettingsPage() {
     <List
       navigationTitle=""
       navigationBarTitleDisplayMode="inline"
+      contentMargins={{ edges: "top", insets: 0, placement: "scrollContent" }}
       onAppear={() => setDiagnosticCount(getSlowOperations().length)}
       toolbar={
         <Toolbar>
@@ -330,15 +331,17 @@ export function SettingsPage() {
         ),
       }}
     >
-      {/* No public large-title trailing accessory: keep title/version together
-          in the scrollable list, below (not beside) the close toolbar. */}
-      <HStack alignment="firstTextBaseline" listRowSeparator="hidden" listRowBackground={<Rectangle fill="clear" />}>
-        <Text font="largeTitle" fontWeight="bold" foregroundStyle={COLOR_LABEL}>设置</Text>
-        <Spacer />
-        <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>{`v${scriptVersion}`}</Text>
-      </HStack>
       <Section
-        header={<Text>GitHub Token</Text>}
+        // One header, not a title row in a separate implicit List section:
+        // avoid grouped row padding + inter-section spacing before Token.
+        header={<VStack alignment="leading" spacing={12}>
+          <HStack alignment="firstTextBaseline">
+            <Text font="largeTitle" fontWeight="bold" foregroundStyle={COLOR_LABEL} textCase={null}>设置</Text>
+            <Spacer />
+            <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL} textCase={null}>{`v${scriptVersion}`}</Text>
+          </HStack>
+          <Text>GitHub Token</Text>
+        </VStack>}
         footer={
           <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
             按需授予仓库与工作流权限。提交作者自动使用已验证的 GitHub 用户名，无需填写姓名或邮箱。

@@ -1,4 +1,4 @@
-/* Wiring/ref behavior only: this cannot prove native onDrop delivery. */
+/* Original List/native-row structure and JS wiring only; not native layout/drop validation. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const {load,mount,ui,all,tick}=require('./remoteFiles.test.cjs')
 const source=fs.readFileSync(path.join(__dirname,'../pages/RepoDetailPage.tsx'),'utf8'),mocks={scripting:ui}
@@ -7,7 +7,8 @@ for(const match of source.matchAll(/import\s+\{([^}]+)\}\s+from\s+"([^"]+)"/g)){
  for(const token of names.split(',')){const name=token.trim();if(name&&!name.startsWith('type '))mocks[module][name]=name}
 }
 const hook=(module,name,value)=>mocks[module]={[name]:()=>value}
-const data={displayName:'test',changes:[],trackedFiles:['source.txt','dest/keep'],loading:false,mergeInProgress:false,branchInfo:{current:'main'},tab:0}
+const changed=[]
+const data={displayName:'test',changes:[],trackedFiles:['source.txt','dest/keep'],loading:false,mergeInProgress:false,branchInfo:{current:'main'},tab:0,handleTabChange:value=>changed.push(value)}
 hook('../hooks/useLocalEntryCreation','useLocalEntryCreation',{busy:false,open(){}})
 hook('../hooks/useToast','useToast',{})
 hook('../hooks/useRepoDetailData','useRepoDetailData',data)
@@ -18,7 +19,7 @@ for(const [module,name]of [['useRepoPendingActions','useRepoPendingActions'],['u
 mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid(){}}
 const Parent=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage
 const FilesTab=load('pages/FilesTab.tsx',{
- scripting:ui,'../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),
+ scripting:ui,'../utils/localFileDrag':load('utils/localFileDrag.ts'),
  '../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
  '../constants/colors':{},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../services/repoStore':{resolveWorkdir:()=>'/work'},
  '../services/localImportExecution':load('services/localImportExecution.ts'),'../services/localFileImport':{},'../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),'../services/gitService':{},
@@ -32,42 +33,43 @@ async function main(){
  global.UUID={string:()=>require('node:crypto').randomUUID()}
  global.ItemProvider={fromText:value=>({registeredTypes:['public.utf8-plain-text','public.url'],loadText:async()=>value})}
  const h=mount(Parent,{bookmarkName:'repo',name:'test'})
- assert.equal(h.tree.type,'VStack','stable presentation host independent of file/history tab')
- const host=h.tree
- const scroll=all(h.tree).filter(n=>n.type==='ScrollView'),lists=all(h.tree).filter(n=>n.type==='List')
- assert.equal(scroll.length,1);assert.equal(lists.length,0,'directory targets have no List ancestor')
- assert.equal(typeof scroll[0].props.refreshable,'function')
- assert.ok(all(scroll[0]).some(n=>n.type==='LazyVStack'))
- for(const type of ['RepoBranchSection','RepoRemoteSections','RepoDetailTabContent'])assert.ok(all(scroll[0]).some(n=>n.type===type),type+' shares single scroll')
- const tab=all(h.tree).find(n=>n.type==='RepoDetailTabContent')
- const content=mount(TabContent,tab.props)
- const fileNode=all(content.tree).find(n=>n.type===FilesTab)
- assert.ok(fileNode,'actual tab component forwards tracked files to actual FilesTab')
- const fileHost=mount(fileNode.type,fileNode.props,{effectUpdates:true})
- await tick();fileHost.render()
- const rendered=expand(fileHost.tree),directory=all(rendered).find(n=>n.type==='DisclosureGroup')
- assert.ok(directory.props.label.props.onDrop,'actual directory row has drop handler')
- assert.equal(all(rendered).some(n=>n.type==='List'),false)
- const sourceRow=all(rendered).find(n=>n.type==='Button'&&n.props.onDrag)
- const provider=sourceRow.props.onDrag.data();assert.equal(provider instanceof Promise,false)
- assert.equal(directory.props.label.props.onDrop.validateDrop({hasItemsConforming:()=>true}),true)
- assert.ok(all(rendered).some(n=>n.type==='Menu'))
- const picker=all(content.tree).find(n=>n.type==='Picker');assert.equal(typeof picker.props.onChanged,'function')
- assert.equal(h.tree.props.safeAreaInset,undefined);assert.equal(tab.props.dropDiagnosticBridge,undefined)
- const covers=h.tree.props.fullScreenCover,nav=h.tree.props.navigationDestination
- for(const value of [1,2]){
-  data.tab=value;h.render();assert.equal(h.tree.type,host.type)
-  assert.equal(all(h.tree).filter(n=>n.type==='ScrollView').length,0)
-  assert.equal(all(h.tree).filter(n=>n.type==='List').length,1)
-  assert.equal(typeof all(h.tree).find(n=>n.type==='List').props.refreshable,'function')
-  assert.equal(h.tree.props.fullScreenCover.length,covers.length);assert.equal(h.tree.props.navigationDestination.isPresented,nav.isPresented)
+ const covers=h.tree.props.fullScreenCover
+ for(const tab of [0,1,2]){
+  data.tab=tab;h.render()
+  assert.equal(h.tree.type,'List','all tabs keep original stable List presentation owner')
+  assert.equal(typeof h.tree.props.refreshable,'function')
+  assert.equal(h.tree.props.safeAreaInset,undefined)
+  assert.equal(h.tree.props.fullScreenCover.length,covers.length)
+  assert.deepEqual(h.tree.children.map(n=>n.type),['RepoBranchSection','RepoRemoteSections','RepoDetailTabContent'],'original section order')
+  assert.equal(all(h.tree).some(n=>['ScrollView','LazyVStack'].includes(n.type)),false)
   const props=all(h.tree).find(n=>n.type==='RepoDetailTabContent').props
-  const other=mount(TabContent,props);assert.ok(!all(other.tree).some(n=>n.type===FilesTab));other.unmount()
+  const content=mount(TabContent,props)
+  const segmentSection=content.tree.children[0]
+  assert.equal(segmentSection.type,'Section')
+  const picker=all(segmentSection).find(n=>n.type==='Picker')
+  assert.equal(picker.props.pickerStyle,'segmented');assert.equal(picker.props.value,tab)
+  assert.deepEqual(picker.children.map(n=>[n.props.tag,n.children[0]]),[[0,'文件'],[1,'Stash'],[2,'状态']])
+  picker.props.onChanged(tab)
+  if(tab===0){
+   const fileNode=all(content.tree).find(n=>n.type===FilesTab),fileHost=mount(fileNode.type,fileNode.props,{effectUpdates:true})
+   await tick();fileHost.render();assert.equal(fileHost.tree.type,'Section')
+   const nodes=all(expand(fileHost.tree)),folder=nodes.find(n=>n.type==='DisclosureGroup'),file=nodes.find(n=>n.type==='Button'&&n.props.onDrag)
+   assert.ok(folder.props.label.props.onDrop)
+   assert.equal(folder.props.label.props.background,undefined);assert.equal(folder.props.padding,undefined)
+   assert.equal(folder.props.trailingSwipeActions.allowsFullSwipe,false)
+   assert.equal(file.props.trailingSwipeActions.allowsFullSwipe,false)
+   assert.ok(nodes.every(n=>!n.props?.gesture&&!n.props?.simultaneousGesture&&!n.props?.highPriorityGesture&&!n.props?.defersSystemGestures))
+   assert.ok(nodes.every(n=>n.props?.frame?.maxHeight!=='infinity'))
+   const provider=file.props.onDrag.data();assert.equal(provider instanceof Promise,false)
+   assert.equal(folder.props.label.props.onDrop.validateDrop({hasItemsConforming:()=>true}),true)
+   folder.props.onChanged(true);fileHost.render();assert.ok(all(expand(fileHost.tree)).some(n=>n.type==='Text'&&n.children.includes('keep')))
+   fileHost.unmount();assert.equal(fileHost.lateWrites,0)
+  }else assert.ok(all(content.tree).some(n=>n.type===(tab===1?'StashTab':'HistoryTab')))
+  content.unmount()
  }
- fileHost.unmount();content.unmount();h.unmount()
- assert.equal(fileHost.lateWrites,0)
- assert.doesNotMatch(source,/DragDropTestPage|FileDropDiagnosticZone|dropDiagnosticBridge/)
- console.log('PASS file tab single ScrollView/LazyVStack including branch/sync/segment, no List ancestor; history/stash retain List; stable VStack presentation host; bottom probe removed')
- console.log('LIMIT native drag delivery and simultaneous scroll/swipe/context menu arbitration require device verification')
+ assert.deepEqual(changed,[0,1,2]);h.unmount()
+ assert.doesNotMatch(source,/ScrollView|LazyVStack|FileDropDiagnosticZone|dropDiagnosticBridge/)
+ console.log('PASS 1.4.39 stable List/native Section, original branch/sync/segment/files order, segmented values/content switching, native swipe and DisclosureGroup, refresh/cover wiring; no custom gestures/card rows/bottom probe')
+ console.log('LIMIT JS wiring is not native scrolling/layout/gesture arbitration proof; List directory drop callback delivery remains unresolved on device')
 }
 main().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>{delete global.FileManager;delete global.UUID;delete global.ItemProvider})

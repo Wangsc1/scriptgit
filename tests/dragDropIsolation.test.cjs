@@ -48,7 +48,7 @@ async function testEntry(){
   scripting:ui,'./DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
   '../services/localImportExecution':execution,'../services/gitService':new Proxy({},{get:()=>forbidden}),
   '../services/repoStore':{resolveWorkdir:()=>'/existing-list-metadata-context'},'../services/localFileImport':new Proxy({},{get:()=>forbidden}),
-  '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
+  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),'../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:String,formatDate:String},
  }).FilesTab
  const props={files:[],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged:forbidden,onOpen:forbidden,onPush:forbidden,onRestore:forbidden,onCreateEntry:forbidden}
  const h=mount(FilesTab,props,{effectUpdates:true});await flush();h.render();const buttons=all(h.tree.props.header).filter(n=>n.type==='Button')

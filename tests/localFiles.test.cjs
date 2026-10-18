@@ -44,18 +44,6 @@ const load=loader(),service=load('services/gitService.ts'),coordinator=load('ser
 let count=0
 async function test(name,fn){await fn();console.log('PASS '+name);count++}
 async function disk(name,bytes){await fs.promises.mkdir(path.dirname(dir+'/'+name),{recursive:true});await fs.promises.writeFile(dir+'/'+name,bytes)}
-// Real custom swipe path: reveal the rendered buttons, never invoke hidden native List props.
-function renderedTree(h) {
-  function expand(n){if(!n||typeof n!=="object")return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==="function")return expand(n.type({...n.props,children:n.children}));return {...n,props:{...n.props,...(n.props?.label?{label:expand(n.props.label)}:{})},children:(n.children||[]).map(expand)}}
-  h.render();return expand(h.tree)
-}
-function swipeActions(h,name) {
-  const row=()=>all(renderedTree(h)).find(n=>n.props?.simultaneousGesture&&JSON.stringify(n.children).includes('"'+name+'"'))
-  const gesture=row().props.simultaneousGesture
-  const sample=(x,time)=>({time,startLocation:{x:100,y:20},translation:{width:x,height:0}})
-  gesture.changed(sample(0,100));gesture.changed(sample(-80,150));gesture.ended(sample(-80,180))
-  return all(row()).filter(n=>n.type==='Button'&&['删除','提交','还原'].includes(n.props.title))
-}
 async function main(){
  await git.init({fs,dir,defaultBranch:'main'});await disk('a.txt','HEAD text');await disk('folder/b.txt','nested');await disk('image.bin',Buffer.from([0,255,4]));await git.add({fs,dir,filepath:'.'});await git.commit({fs,dir,author:{name:'test',email:'test@example.invalid'},message:'baseline'})
  await test('reads current worktree not HEAD; lossless UTF8/BOM/CRLF/empty saves; real Git matrix M with unchanged index/HEAD',async()=>{
@@ -123,12 +111,12 @@ async function main(){
   await disk('menu.bin',Buffer.from([0,255,1]));let updates=0,opened=null
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,props={files:['menu.bin','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen:f=>opened=f}
   const h=mount(FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
-  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.contextMenu&&JSON.stringify(n.children).includes(name))}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
   const action=(name,title)=>all(row(name).props.contextMenu.menuItems).find(n=>n.type==='Button'&&n.props.title===title)
-  const swipe=()=>swipeActions(h,'menu.bin').find(n=>n.props.title==='删除')
-  assert.equal(swipe().props.title,'删除');assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions,undefined)
-  assert.deepEqual(swipeActions(h,'folder').map(a=>a.props.title),['删除'])
+  const swipe=()=>row('menu.bin').props.trailingSwipeActions.actions[0]
+  assert.equal(swipe().props.title,'删除');assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.deepEqual(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
   confirm=false;await swipe().props.action();assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false);assert.equal(updates,0)
   let next=null;global.Dialog.prompt=async()=>next
   await action('menu.bin','复制文件').props.action();await action('menu.bin','重命名').props.action();assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(updates,0)
@@ -137,7 +125,7 @@ async function main(){
   next='menu renamed.bin';await action('menu 副本.bin','重命名').props.action();assert.ok(row('menu renamed.bin'));assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.equal(updates,2)
   // 删除确认期间更改外部内容：拒绝删除，行保留且有可见错误。
   global.Dialog.confirm=async()=>{await disk('menu.bin','changed');return true};await swipe().props.action();assert.match(text(h),/修改|变化/);assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false)
-  global.Dialog.confirm=async input=>{confirmations.push(input);return confirm};confirm=true;await swipe().props.action();assert.ok(!fs.existsSync(dir+'/menu.bin'));assert.equal(row('menu.bin').props.disabled,true);assert.equal(updates,3)
+  global.Dialog.confirm=async input=>{confirmations.push(input);return confirm};confirm=true;await swipe().props.action();assert.ok(!fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,true);assert.equal(updates,3)
   // 图片打开仅传原生显示缩略图，交由稳定父List路由LocalImagePreview。
   await disk('click.png',Buffer.from([137,80,78,71]));props.files=[...props.files,'click.png'];h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.ok(opened.previewDataUrl);assert.equal(opened.text,null);h.unmount()
  })
@@ -154,23 +142,23 @@ async function main(){
   await disk('swipe-folder/sub/a','data');let updates=0,pushes=0
   const props={files:['swipe-folder/sub/a','swipe-folder-other/b'],loading:false,bookmarkName:'repo',changes:[{filepath:'swipe-folder/sub/a',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush:()=>pushes++,onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=swipeActions(h,'swipe-folder')
-  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['删除','提交','还原']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions,undefined)
-  assert.deepEqual(swipeActions(h,'swipe-folder-other').map(n=>n.props.title),['删除'])
+  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.trailingSwipeActions.actions
+  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','提交','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
   await a[1].props.action();assert.equal(pushes,1)
-  confirm=false;await a[2].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
   confirm=false;await a[0].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
-  confirm=true;await a[0].props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
+  confirm=false;await a[2].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
+  confirm=true;await a[2].props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
  })
  await test('folder restore routes changed descendants to shared parent confirmation without changing disk',async()=>{
   await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let request
   const props={files:['folder/b.txt','a.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'folder/b.txt',status:'*modified'},{filepath:'a.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore:(...args)=>request=args,mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
-  await swipeActions(h,'folder').find(n=>n.props.title==='还原').props.action()
+  await group.props.trailingSwipeActions.actions[0].props.action()
   assert.deepEqual(request,['folder',['folder/b.txt']]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
@@ -215,7 +203,7 @@ async function main(){
  await test('real folder context menu uses declarative form, cancel/no-op no changes; copy/rename refresh paths incl untracked/empty dirs, unsafe and native errors visible',async()=>{
   await disk('form-folder/sub/a','nested');await disk('form-folder/untracked.bin',Buffer.from([0,255]));fs.mkdirSync(dir+'/form-folder/empty');let updates=0
   const props={files:['form-folder/sub/a'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function group(name){h.render();return all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
   function action(name,title){return all(group(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action()}
   function form(){h.render();assert.equal(h.tree.props.sheet.isPresented,true);return h.tree.props.sheet.content.props}
@@ -237,11 +225,11 @@ async function main(){
  await test('modified/renamed file icons orange; rename label wins over modified/added, original Git status stays true and fresh clean state clears hints',async()=>{
   for(const name of ['icon-normal','icon-mod','icon-add','icon-unstaged','icon-photo.png'])await disk(name,'data')
   const props={files:['icon-normal','icon-mod','icon-add','icon-deleted','icon-unstaged','icon-photo.png','icon-folder/a'],loading:false,bookmarkName:'repo',changes:[{filepath:'icon-mod',status:'*modified'},{filepath:'icon-add',status:'*added'},{filepath:'icon-deleted',status:'*deleted',worktreeDeleted:true},{filepath:'icon-unstaged',status:'unknown',unstaged:true}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
-  function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.contextMenu&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
   const color=name=>all(row(name)).find(n=>n.type==='Image'&&['doc.text','photo'].includes(n.props.systemName)).props.foregroundStyle
   assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');assert.equal(color('icon-add'),'systemGreen');assert.equal(color('icon-deleted'),'systemRed');for(const name of ['icon-normal','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
-  assert.equal(all(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
+  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'secondaryLabel')
   global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
   for(const status of ['*added','*modified']){props.changes=[...props.changes.filter(c=>c.filepath!=='icon-renamed.png'),{filepath:'icon-renamed.png',status}];assert.equal(color('icon-renamed.png'),'systemOrange');const text=JSON.stringify(row('icon-renamed.png').children);assert.match(text,/已重命名/);assert.doesNotMatch(text,/已修改|新增/);assert.equal(props.changes.at(-1).status,status)}
   props.changes=[];assert.equal(color('icon-renamed.png'),'secondaryLabel');assert.doesNotMatch(JSON.stringify(row('icon-renamed.png').children),/已重命名/);assert.equal(color('icon-mod'),'secondaryLabel');h.unmount()
@@ -250,10 +238,10 @@ async function main(){
   await disk('rename-parent/source/sub/a.txt','a');await disk('rename-parent/source/b.txt','b');await disk('rename-parent/ordinary/x.txt','x')
   const props={files:['rename-parent/source/sub/a.txt','rename-parent/source/b.txt','rename-parent/ordinary/x.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'rename-parent/ordinary/x.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
   function folder(name){return nodes().findLast(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
-  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.contextMenu&&!n.props.disabled&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&!n.props.disabled&&JSON.stringify(n.children).includes('"'+name+'"'))}
   const label=name=>JSON.stringify(folder(name).props.label)
   const fileLabel=name=>JSON.stringify(row(name).children)
   folder('rename-parent').props.onChanged(true);folder('source').props.onChanged(true)
@@ -285,10 +273,10 @@ async function main(){
    {filepath:'deleted.jpg',status:'*deleted',worktreeDeleted:true},
   ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
   function folder(name){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
-  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.contextMenu&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
   const icon=n=>all(n).find(n=>n.type==='Image')
   function badge(n,text,color){const labels=all(n).filter(n=>n.type==='Text'&&n.props.font==='caption2');assert.ok(labels.some(n=>n.children.includes(text)&&n.props.foregroundStyle===color),JSON.stringify(n));assert.equal(icon(n).props.foregroundStyle,color)}
   for(const name of images){assert.equal(icon(row(name)).props.systemName,'photo');assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')}
@@ -325,7 +313,7 @@ async function main(){
    {filepath:'mixed/edited',status:'*modified'}, {filepath:'index-only/file',status:'deleted',worktreeDeleted:false},
   ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
   function folder(name){return folders().find(n=>JSON.stringify(n.props.label).includes('"'+name+'"'))}
   function badge(n,label,color){assert.ok(all(n.props.label).some(n=>n.type==='Text'&&n.children.includes(label)&&n.props.foregroundStyle===color));assert.equal(all(n.props.label).find(n=>n.type==='Image').props.foregroundStyle,color)}
@@ -333,7 +321,7 @@ async function main(){
   for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).props.label),/已删除/)}
   folder('parent').props.onChanged(true)
   const nestedGone=folders().filter(n=>JSON.stringify(n.props.label).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
-  assert.deepEqual(swipeActions(h,'gone').map(n=>n.props.title),['删除','提交','还原'])
+  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['还原','提交','删除'])
   // A restored leaf makes its parent modified rather than deleted; fully clean refresh clears both.
   props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
   props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
@@ -469,7 +457,7 @@ async function main(){
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,{useLocalEntryCreation}=load('hooks/useLocalEntryCreation.ts');let creation
   function Host(){creation=useLocalEntryCreation({bookmarkName:props.bookmarkName,unavailable:props.mergeInProgress,onChanged:props.onWorktreeChanged,onError:message=>createErrors.push(message)});return FilesTab({...props,creationActive:creation.busy,onCreateEntry:creation.open})}
   const h=mount(Host,props,{effectUpdates:true})
-  function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
+  function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
   function action(title){h.render();return all(h.tree.props.header).find(n=>n.type==='Button'&&n.props.title===title)}
   async function settleImport(){for(let i=0;i<1000;i++){h.render();if(!action('导入文件').props.disabled)return;await tick()}throw Error('import did not settle')}
   async function dispatch(title){action(title).props.action();h.render();await settleImport()}
@@ -580,7 +568,7 @@ async function main(){
  await test('FilesTab actual tree dispatches current worktree to parent; directories retained, deleted leaf disabled and opening does not trigger mutation refresh',async()=>{
   const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0,opened=null
   const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++,onOpen:file=>opened=file})
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
   const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
  })
@@ -605,7 +593,7 @@ async function main(){
   await disk('drag-ui.txt','move bytes');await disk('drag-cancel.txt','cancel bytes');fs.mkdirSync(dir+'/drag-ui-target')
   const props={files:['drag-ui.txt','drag-cancel.txt','drag-ui-target/existing'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onOpen(){},onPush(){},onRestore(){},onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');updates++}}
   let updates=0;const h=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
   function file(name){return nodes().find(n=>n.type==='Button'&&n.props.onDrag&&JSON.stringify(n.children).includes(name))}
   function folder(){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('drag-ui-target'))}

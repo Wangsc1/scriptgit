@@ -65,6 +65,7 @@ async function main(){try{
   }
   let api
   mocks['../hooks/useRepoDetailData']={useRepoDetailData:props=>(api=hook(props))}
+  mocks['../hooks/useLocalEntryCreation']={useLocalEntryCreation:()=>({busy:false,open:noop})}
   mocks['../hooks/useToast']={useToast:()=>({showToast:noop})}
   mocks['../hooks/useOpBusy']={useOpBusy:()=>({})}
   mocks['../hooks/useRepoDetailNavigation']={useRepoDetailNavigation:()=>({})}

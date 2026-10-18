@@ -56,7 +56,7 @@ const ui = new Proxy({}, { get(_, name) {
   if (name === 'useColorScheme') return () => 'light'
   if (name === 'MagnifyGesture') return minScaleDelta => ({ kind: 'magnify', minScaleDelta,
     onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; return this } })
-  if (name === 'DragGesture') return options => ({ kind: 'drag', options, onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; this.onEnded = fn; return this } })
+  if (name === 'DragGesture') return options => ({ onEnded: onEnded => ({ kind: 'drag', options, onEnded }) })
   if (name === 'useObservable') return (initial) => {
     const h = active, i = h.cursor++
     if (!(i in h.slots)) {

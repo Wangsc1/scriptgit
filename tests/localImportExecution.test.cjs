@@ -29,7 +29,7 @@ async function testHelper(){
  global.Thread={isMainThread:false,runInMain(fn){deliver(fn);throw Error('late dispatch throw')}};assert.equal(await api.localImportOnMain('already-started',()=>11),11)
  delete global.Thread;assert.equal(await api.localImportOnMain('old-runtime',()=>13),13)
 }
-function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type({...n.props,children:n.children}));return {...n,children:(n.children||[]).map(expand)}}
+function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
 async function testUI(){
  deferredThread();let moves=0,refreshes=0,loads=0
  global.FileManager={stat:async()=>({size:17,modificationDate:2})}
@@ -39,7 +39,7 @@ async function testUI(){
  '../services/localImportBatchSummary':load('services/localImportBatchSummary.ts'),
  './DragDropTestPage':{DragDropTestPage:'DragDropTestPage'},
   scripting:ui,'../components/NameInputSheet':{NameInputSheet:'NameInputSheet'},'../constants/colors':{},
-  '../utils/fileRowSwipe':load('utils/fileRowSwipe.ts'),'../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
+  '../utils/localFileDrag':load('utils/localFileDrag.ts'),'../utils/fileTree':load('utils/fileTree.ts'),
   '../utils/fileListPerformance':load('utils/fileListPerformance.ts'),'../utils/format':{formatBytes:value=>'bytes:'+value,formatDate:String},
   '../services/localImportExecution':api,'../services/localFileImport':{},'../services/repoStore':{resolveWorkdir:()=>'/work'},
   '../services/gitService':{moveLocalWorktreeFile:async()=>{moves++;return 'folder/source.txt'}},
