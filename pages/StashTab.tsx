@@ -85,14 +85,12 @@ export function StashTab({
                 actions: [
                   <Button
                     title="应用"
-                    systemImage="arrow.down.to.line"
                     tint="systemBlue"
                     action={() => onApplyStash(entry)}
                     disabled={worktreeBusy || mergeInProgress}
                   />,
                   <Button
                     title="删除"
-                    systemImage="trash"
                     tint="systemRed"
                     action={() => onDropStash(entry)}
                     disabled={worktreeBusy}
