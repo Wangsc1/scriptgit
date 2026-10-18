@@ -445,6 +445,13 @@ async function main(){
   fs.mkdirSync(outside+'/special-tree');fs.writeFileSync(outside+'/special-tree/special','not plain');const isFile=FileManager.isFile;FileManager.isFile=async p=>p===outside+'/special-tree/special'?false:isFile(p)
   try{await assert.rejects(service.importLocalWorktreeDirectory('repo',outside+'/special-tree'),/非普通/)}finally{FileManager.isFile=isFile}
   assert.equal(fs.existsSync(dir+'/special-tree'),false);assert.equal(removes,removesBefore)
+  // This disposable attack fixture points back to its own ancestor. Retire the link
+  // after its rejection is verified, before later cases scan this shared Git repo.
+  // Otherwise the native Node Git walker follows it repeatedly through worktree links.
+  const cycle=outside+'/unsafe-dir-link/child'
+  assert.equal(fs.lstatSync(cycle).isSymbolicLink(),true)
+  fs.unlinkSync(cycle)
+  assert.ok(fs.existsSync(outside+'/secret'),'unlink must preserve the target')
  })
  await test('directory import detects root/source/target changes, preserves partial target and original; coordinates against active readers and writers',async()=>{
   const source=outside+'/failure-tree';fs.mkdirSync(source);fs.writeFileSync(source+'/a.bin',Buffer.from([0,255]));fs.writeFileSync(source+'/b.txt','source')

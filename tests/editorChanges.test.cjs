@@ -44,6 +44,20 @@ async function main(){
  wait=deferred();const slow=open();let tabs=find(slow,'FileChangeSwitcher');tabs.props.selection.value=1;await pause();tabs.props.selection.value=0
  assert.equal(find(slow,'LocalCodeEditor').props.controller,controllers.at(-1));const beforeResolve=diffCalls
  slow.unmount();wait.resolve();await tick();assert.equal(slow.lateWrites,0);assert.equal(diffCalls,beforeResolve);wait=null
+ // Full-screen diff edge swipe shares save-first back, and ignores ordinary scrolling.
+ const swipe=open(),swipeController=controllers.at(-1)
+ find(swipe,'FileChangeSwitcher').props.selection.value=1;await pause()
+ const gesture=find(swipe,'ScrollView').props.simultaneousGesture
+ assert.equal(gesture.kind,'drag');assert.deepEqual(gesture.options,{minDistance:20,coordinateSpace:'local'})
+ const beforeSwipe={writes:writes.length,closed,reads:swipeController.reads||0}
+ for(const [x,width,height] of [[25,100,0],[0,79,0],[0,100,100],[0,-100,0]])gesture.onEnded({startLocation:{x},translation:{width,height}})
+ await tick();assert.equal(writes.length,beforeSwipe.writes);assert.equal(closed,beforeSwipe.closed);assert.equal(swipeController.reads||0,beforeSwipe.reads)
+ swipeController.content='unsaved';swipeController.nativeError='IME unavailable'
+ gesture.onEnded({startLocation:{x:24},translation:{width:80,height:0}});await tick()
+ assert.equal(closed,beforeSwipe.closed);assert.equal(writes.length,beforeSwipe.writes);assert.equal(swipeController.content,'unsaved')
+ swipeController.nativeError=null;swipeController.latestNative='latest native draft'
+ gesture.onEnded({startLocation:{x:0},translation:{width:100,height:10}});await tick()
+ assert.equal(writes.length,beforeSwipe.writes+1);assert.equal(writes.at(-1),'latest native draft');assert.equal(closed,beforeSwipe.closed+1);swipe.unmount()
  // Opening stays immediate; after the first screen, real line counts arrive without selecting the changes tab.
  const counted=open(),countedController=controllers.at(-1),beforeStatsReads=versionCalls
  assert.equal(find(counted,'FileChangeSwitcher').props.stats,null)

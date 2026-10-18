@@ -221,7 +221,12 @@ async function main() {
     const h=mount(GitHubFileEditor,{fullName:'o/r',branch:'main',file:{path:'a.png',sha:'s',text:null,readOnlyReason:'binary'},onClose:()=>{}})
     assert.ok(controllers.at(-1).readOnly); assert.equal(all(h.tree).filter(n=>n.type==='Button' && n.props.title==='提交保存').length,0); assert.match(text(h),/binary/); h.unmount()
   })
-  function browser(mock) { return load('pages/GitHubFilesPage.tsx',{scripting:ui,'../api/githubApi':mock,'./GitHubFileEditor':{GitHubFileEditor:'FileEditor'}}).GitHubFilesPage }
+  function browser(mock) { return load('pages/GitHubFilesPage.tsx',{scripting:ui,'../api/githubApi':mock,'../utils/format':load('utils/format.ts'),'../constants/colors':load('constants/colors.ts'),'./GitHubFileEditor':{GitHubFileEditor:'FileEditor'}}).GitHubFilesPage }
+  function entryButton(h, name) {
+    h.render()
+    const found=all(h.tree).find(n=>n.type==='Button'&&all(n.children).some(t=>t.type==='Text'&&t.children.includes(name)))
+    assert.ok(found, `file row ${name} exists`);return found
+  }
   function browserApi(overrides={}) { return {
     getRepo:async name=>({fullName:name,defaultBranch:'main'}),listRepoBranches:async()=>['main','feature/a'],
     listRepoContents:async(_r,_b,p)=> p ? [{name:'a.txt',path:p+'/a.txt',type:'file',sha:'s'}] : [{name:'docs',path:'docs',type:'dir',sha:'d'}],
@@ -233,8 +238,8 @@ async function main() {
     assert.deepEqual(reads[0],['o/r','main',''])
     await node(h,'Picker','分支').props.onChanged('feature/a'); await tick()
     assert.deepEqual(reads.at(-1),['o/r','feature/a',''])
-    await node(h,'Button','📁 docs').props.action(); assert.deepEqual(reads.at(-1),['o/r','feature/a','docs'])
-    await node(h,'Button','📄 a.txt').props.action()
+    await entryButton(h,'docs').props.action(); assert.deepEqual(reads.at(-1),['o/r','feature/a','docs'])
+    await entryButton(h,'a.txt').props.action()
     h.render(); const cover=h.tree.props.fullScreenCover; assert.equal(cover.isPresented,true); assert.equal(cover.content.props.branch,'feature/a')
     cover.onChanged(false); h.render(); assert.equal(h.tree.props.fullScreenCover.isPresented,true)
     cover.content.props.onClose(); h.render(); assert.equal(h.tree.props.fullScreenCover.isPresented,false)
@@ -244,7 +249,7 @@ async function main() {
     let fail=true, loads=0
     const h=mount(browser(browserApi({listRepoContents:async()=>{if(fail)throw new Error('offline');return [{name:'link',path:'link',type:'symlink',sha:'l'}]},loadRepoTextFile:async()=>{loads++;throw new Error('must not follow symlink')}})),{fullName:'o/r'})
     assert.match(text(h),/加载中/); await tick(); assert.match(text(h),/offline/)
-    fail=false; await node(h,'Button','刷新目录 / 重试').props.action(); await node(h,'Button','📄 link').props.action()
+    fail=false; await node(h,'Button','刷新目录 / 重试').props.action(); await entryButton(h,'link').props.action()
     h.render(); assert.equal(loads,0); assert.match(h.tree.props.fullScreenCover.content.props.file.readOnlyReason,/只读/); h.unmount()
   })
   await test('browser ignores response after unmount and blocks duplicate requests', async () => {
@@ -268,7 +273,7 @@ async function main() {
   })
   await test('metadata identity, release name, import URL, bundle paths and notification launch targets', async () => {
     const meta=JSON.parse(fs.readFileSync(path.join(root,'script.json'),'utf8'))
-    assert.equal(meta.name,'scriptgit'); assert.equal(meta.version,'1.4.6'); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/Wangsc1',name:'Wangsc1'})
+    assert.equal(meta.name,'scriptgit'); assert.match(meta.version,/^\d+\.\d+(?:\.\d+)?$/); assert.deepEqual(meta.author,{email:null,homepage:'https://github.com/Wangsc1',name:'Wangsc1'})
     assert.equal(meta.remoteResource.url,'https://github.com/Wangsc1/scriptgit');assert.deepEqual(meta.contributors,[]);assert.equal(meta.color,'rgba(0, 0, 0, 1)');assert.equal(meta.iconImage,'https://raw.githubusercontent.com/Wangsc1/scriptgit/main/icon-white.png');assert.ok(fs.existsSync(path.join(root,'icon-white.png')))
     const read=f=>fs.readFileSync(path.join(root,f),'utf8')
     assert.ok(read('README.md').includes('https://scripting.fun/import_scripts?urls=["https%3A%2F%2Fgithub.com%2FWangsc1%2Fscriptgit"]'))

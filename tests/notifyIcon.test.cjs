@@ -16,7 +16,7 @@ async function main(){
  assert.equal(scheduled,0);assert.equal(permissions,0);assert.equal(storageReads,0);assert.equal(storageWrites,0);assert.equal(assetReads,0)
  console.log('PASS retired notify API has zero system/permission/storage/asset side effects, even with old enabled preferences')
 
- const scripting=new Proxy(ui,{get:(target,key)=>key==='Navigation'?{useDismiss:()=>()=>{}}:target[key]})
+ const scripting=new Proxy(ui,{get:(target,key)=>key==='Navigation'?{useDismiss:()=>()=>{}}:key==='Script'?{metadata:require('../script.json')}:target[key]})
  const Settings=load('pages/SettingsPage.tsx',{
   scripting,'../components/FormRow':{FormRow:'FormRow'},'../components/AvatarView':{AvatarView:'AvatarView'},
   '../services/authStore':{hasToken:()=>false,getVerifiedUser:()=>null},'../services/storage':legacy,
