@@ -40,8 +40,10 @@ import {
   sourceLabel,
   updateBranchLastPulledAt,
 } from "../services/repoStore"
-import { getChanges, restoreFiles, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
+import { getChanges, restoreFiles, stageAll, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
+import { CommitMessageSheet } from "../components/CommitMessageSheet"
+import { buildCommitMessage } from "../utils/format"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
 import {
@@ -68,6 +70,7 @@ export function RepoListPage() {
   const [pendingRestore, setPendingRestore] = useState<RepoMeta | null>(null)
   const [restoringName, setRestoringName] = useState<string | null>(null)
   const restoring = useRef(false)
+  const [stagingName, setStagingName] = useState<string | null>(null)
   const [alertState, setAlertState] = useState<{
     title: string
     message: string
@@ -144,6 +147,9 @@ export function RepoListPage() {
   useEffect(() => () => { alive.current = false }, [])
 
   const [pushTarget, setPushTarget] = useState<RepoMeta | null>(null)
+  // 「推送」先弹出提交说明；确认后才占用 pushGate 并开始：全部暂存 → 提交 → 先拉后推。
+  const [pushForm, setPushForm] = useState<{ repo: RepoMeta; error: string | null } | null>(null)
+  const pushMessage = useRef<string | undefined>(undefined)
   const pushGate = useRef(false)
   const [pushProgress, setPushProgress] = useState<{ title: string; message?: string; onCancel?: () => void } | null>(null)
   const sync = useRepoSyncActions({
@@ -153,7 +159,7 @@ export function RepoListPage() {
     hasRemote: false,
     resolvePushContext: async () => {
       if (!pushTarget) throw new Error("未选择仓库")
-      const status = await getRepoListStatus(pushTarget.bookmarkName, undefined, { source: "列表提交", force: true })
+      const status = await getRepoListStatus(pushTarget.bookmarkName, undefined, { source: "列表推送", force: true })
       if (status.error || !status.workdirOk) throw new Error(status.error || "无法读取仓库")
       if (status.mergeInProgress || status.conflictCount) throw new Error("仓库存在未完成合并，请进入仓库处理")
       return { branch: status.branch || null, hasRemote: status.hasRemote }
@@ -165,14 +171,27 @@ export function RepoListPage() {
     setPulledAt: (branch, timestamp) => { if (pushTarget) updateBranchLastPulledAt(pushTarget.bookmarkName, branch, timestamp) },
     refreshSyncState: async () => { if (alive.current && pushTarget) refreshRepo(pushTarget) },
     reloadRepo: async () => { if (alive.current && pushTarget) refreshRepo(pushTarget) },
-    showToast: message => { if (alive.current) showAlert("提交结果", message) },
+    showToast: message => { if (alive.current) showAlert("推送结果", message) },
     showConflictNotice: message => { if (alive.current) showAlert("合并冲突", message) },
   })
-  useEffect(() => { if (pushTarget) void sync.handlePush() }, [pushTarget])
+  useEffect(() => { if (pushTarget) { const message = pushMessage.current; pushMessage.current = undefined; void sync.handlePush(message) } }, [pushTarget])
   function pushOne(repo: RepoMeta) {
-    if (restoring.current || pushGate.current || pulling.current || singlePull.current) return
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current || pushForm) return
+    const uncommitted = statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0
+    // 有未提交改动 → 先填提交说明；只有未推送的提交（ahead）→ 直接推送。
+    if (uncommitted > 0) { setPushForm({ repo, error: null }); return }
     pushGate.current = true
     setPushTarget(repo)
+  }
+  function confirmPushForm(title: string, description: string) {
+    const form = pushForm
+    if (!form) return
+    if (!title.trim()) { setPushForm({ ...form, error: "请填写提交信息（标题）" }); return }
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current) { setPushForm({ ...form, error: "有其他操作正在进行，请稍后再试" }); return }
+    pushGate.current = true
+    pushMessage.current = buildCommitMessage(title, description)
+    setPushForm(null)
+    setPushTarget(form.repo)
   }
 
   function pullOne(repo: RepoMeta): Promise<void> {
@@ -263,6 +282,25 @@ export function RepoListPage() {
     }
   }
 
+  /** 左滑「暂存」：暂存该仓库全部改动，不提交、不推送；与还原共用忙态互斥。 */
+  async function stageOne(repo: RepoMeta) {
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current) return
+    restoring.current = true
+    setStagingName(repo.name)
+    try {
+      const status = await getRepoListStatus(repo.bookmarkName, undefined, { source: "列表暂存", force: true })
+      if (status.error || !status.workdirOk) throw new Error(status.error || "无法读取仓库")
+      if (status.mergeInProgress || status.conflictCount) throw new Error("仓库存在未完成合并，请进入仓库处理")
+      await stageAll(repo.bookmarkName)
+      if (alive.current) showAlert("暂存完成", repo.name)
+    } catch (e: any) {
+      if (alive.current) showAlert("暂存失败", String(e?.message || e))
+    } finally {
+      restoring.current = false
+      if (alive.current) { setStagingName(null); refreshRepo(repo) }
+    }
+  }
+
   const activeAlert =
     pendingRestore != null
       ? { ...getRepoPendingAlert({ type: "restore", filepath: pendingRestore.name }), isConfirm: true as const }
@@ -299,6 +337,8 @@ export function RepoListPage() {
       overlay={
         restoringName
           ? { alignment: "center", content: <BusyOverlay title="正在还原改动" message={restoringName} /> }
+          : stagingName
+          ? { alignment: "center", content: <BusyOverlay title="正在暂存改动" message={stagingName} /> }
           : pushProgress
           ? { alignment: "center", content: <BusyOverlay title={pushProgress.title} message={pushProgress.message} onCancel={pushProgress.onCancel} /> }
           : showRemovingOverlay
@@ -327,6 +367,23 @@ export function RepoListPage() {
             }}
           />
         ),
+      }}
+      sheet={{
+        isPresented: pushForm !== null,
+        onChanged: (presented: boolean) => { if (!presented) setPushForm(null) },
+        content: pushForm ? (
+          <CommitMessageSheet
+            key={`push-${pushForm.repo.bookmarkName}`}
+            navigationTitle="提交并推送"
+            confirmTitle="推送"
+            footer={`将暂存「${pushForm.repo.name}」的全部改动并提交，再推送到远端。`}
+            initialTitle={`更新 ${statusMap[pushForm.repo.bookmarkName]?.uncommitted ?? snapshotMap[pushForm.repo.bookmarkName]?.uncommitted ?? 0} 个文件`}
+            initialDescription=""
+            error={pushForm.error}
+            onCancel={() => setPushForm(null)}
+            onConfirm={confirmPushForm}
+          />
+        ) : <Text>加载中…</Text>,
       }}
       alert={{
         title: activeAlert?.title ?? "",
@@ -400,21 +457,23 @@ export function RepoListPage() {
                 allowsFullSwipe: false,
                 actions: [
                   ...((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
-                    ? [<Button title="还原" tint="systemOrange" disabled={pullBusy || pushTarget !== null || restoringName !== null}
+                    ? [<Button title="还原" tint="systemOrange" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null}
                         action={() => { if (!restoring.current && !pushGate.current && !pulling.current && !singlePull.current) setPendingRestore(repo) }} />] : []),
+                  ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0)
+                    ? [<Button title="暂存" tint="systemPurple" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null} action={() => void stageOne(repo)} />] : []),
                   <Button
                     title="拉取"
                     tint="systemBlue"
-                    disabled={pullBusy || pushTarget !== null || restoringName !== null}
+                    disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null}
                     action={() => pullOne(repo)}
                   />,
                   ...(((statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0) > 0
                     || (statusMap[repo.bookmarkName]?.ahead ?? snapshotMap[repo.bookmarkName]?.ahead ?? 0) > 0)
-                    ? [<Button title="提交" tint="systemGreen" disabled={pullBusy || pushTarget !== null || restoringName !== null} action={() => pushOne(repo)} />] : []),
+                    ? [<Button title="推送" tint="systemGreen" disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null} action={() => pushOne(repo)} />] : []),
                   <Button
                     title="删除"
                     tint="systemRed"
-                    disabled={pullBusy || pushTarget !== null || restoringName !== null}
+                    disabled={pullBusy || pushTarget !== null || restoringName !== null || stagingName !== null}
                     action={() => setPendingDelete(repo)}
                   />,
                 ],

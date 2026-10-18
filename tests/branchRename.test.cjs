@@ -65,7 +65,7 @@ async function main(){
  const picker=all(section()).find(n=>n.type==='Picker');assert.equal(picker.props.title,'更改分支')
  let switched;const direct=Section({...all(h.tree).find(n=>n.type==='RepoBranchSection').props,onSwitch:ref=>switched=ref});all(direct).find(n=>n.type==='Picker').props.onChanged('topic');assert.equal(switched,'topic')
  const remote=all(h.tree.props.toolbar.topBarTrailing).find(n=>n.type==='Button'&&n.props.title==='Edit Remote Files');assert.ok(remote);remote.props.action();assert.deepEqual(calls.at(-1),['remote',3])
- const content=fs.readFileSync(path.join(__dirname,'../components/RepoDetailContent.tsx'),'utf8');assert.match(content,/<Text tag=\{2\}>状态<\/Text>/);assert.match(content,/<HistoryTab/)
+ const content=fs.readFileSync(path.join(__dirname,'../components/RepoDetailContent.tsx'),'utf8');assert.match(content,/\{ value: 2, title: "状态" \}/);assert.match(content,/<HistoryTab/)
  h.unmount();console.log('PASS actual branch header click opens centered Dialog.prompt; cancellation/no-op/invalid/stale/failure/retry/duplicate guards; unchanged picker and remote navigation with requested labels')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

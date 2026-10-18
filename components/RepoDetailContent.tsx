@@ -57,6 +57,7 @@ export function RepoDetailTabContent({
   stagingBusy,
   stashBusy,
   onPush,
+  onStage,
   onRestore,
   onCreateStash,
   onApplyStash,
@@ -91,6 +92,7 @@ export function RepoDetailTabContent({
   stagingBusy: boolean
   stashBusy: boolean
   onPush: () => void | Promise<void>
+  onStage: (filepaths: string[]) => void | Promise<void>
   onRestore: (filepath: string) => void
   onCreateStash: () => void | Promise<void>
   onApplyStash: (entry: StashEntry) => void | Promise<void>
@@ -120,7 +122,7 @@ export function RepoDetailTabContent({
           onChanged={(value: number) => onTabChange(value as RepoDetailTab)} />
       </Section>
       {tab === 0 ? (
-        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />
+        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}

@@ -56,7 +56,7 @@ export function useRepoWorktreeActions({
   const [committing, setCommitting] = useState(false)
   const [stagingBusy, setStagingBusy] = useState(false)
   const [stashBusy, setStashBusy] = useState(false)
-  const [commitSheetMode, setCommitSheetMode] = useState<"commit" | "amend" | null>(
+  const [commitSheetMode, setCommitSheetMode] = useState<"commit" | "amend" | "push" | null>(
     null
   )
   // 提交表单内的校验提示：弹窗打开时不能用父页 toast（会被 sheet 遮住）
@@ -85,6 +85,11 @@ export function useRepoWorktreeActions({
 
   function handleStage(filepath: string) {
     return runStaging("暂存", () => addFiles(bookmarkName, filepath).then(() => {}))
+  }
+
+  /** 文件夹暂存：逐个暂存其下有改动的路径（addFiles 对已删除路径会执行 remove）。 */
+  function handleStagePaths(filepaths: string[]) {
+    return runStaging("暂存", async () => { for (const path of filepaths) await addFiles(bookmarkName, path) })
   }
 
   function handleUnstage(filepath: string) {
@@ -199,6 +204,7 @@ export function useRepoWorktreeActions({
       setCommitSheetMode(null)
     },
     handleStage,
+    handleStagePaths,
     handleUnstage,
     handleStageAll,
     handleUnstageAll,

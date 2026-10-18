@@ -35,7 +35,7 @@ import { useRepoPendingActions } from "../hooks/useRepoPendingActions"
 import { useRepoBranchActions } from "../hooks/useRepoBranchActions"
 import { useRepoSyncActions } from "../hooks/useRepoSyncActions"
 import { updateBranchLastPulledAt } from "../services/repoStore"
-import { shortOid, suggestCommitTitle } from "../utils/format"
+import { buildCommitMessage, shortOid, suggestCommitTitle } from "../utils/format"
 import { getRepoPendingAlert } from "../utils/repoDetailAlerts"
 
 type AlertState = {
@@ -196,6 +196,20 @@ export function RepoDetailPage({
     if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
     await performPush()
   }
+  /** 左滑/文件夹的「推送」：有改动 → 弹出提交说明，确认后全部暂存、提交并推送；无改动 → 只推送已有提交。 */
+  function requestCommitAndPush() {
+    if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
+    if (mutating || data.mergeInProgress) return
+    if (data.changes.length === 0) { void performPush(); return }
+    worktree.setCommitSheetMode("push")
+  }
+  async function confirmCommitAndPush(title: string, description: string) {
+    const message = buildCommitMessage(title, description)
+    if (!title.trim()) { setPushSheetError("请填写提交信息（标题）"); return }
+    setPushSheetError(null)
+    worktree.closeCommitSheet()
+    await performPush(message)
+  }
   async function handlePull() {
     if (branchUnavailable) { showToast("分支信息未确认，请下拉重试", "warning"); return }
     await performPull()
@@ -223,6 +237,7 @@ export function RepoDetailPage({
           }
         : null
 
+  const [pushSheetError, setPushSheetError] = useState<string | null>(null)
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
   return (
@@ -357,7 +372,19 @@ export function RepoDetailPage({
         onChanged: (presented: boolean) => {
           if (!presented) worktree.closeCommitSheet()
         },
-        content: worktree.commitSheetMode === "amend" ? (
+        content: worktree.commitSheetMode === "push" ? (
+          <CommitMessageSheet
+            key="push"
+            navigationTitle="提交并推送"
+            confirmTitle="推送"
+            footer="将暂存全部改动并提交，再推送到远端。"
+            initialTitle={`更新 ${data.changes.length} 个文件`}
+            initialDescription=""
+            error={pushSheetError}
+            onCancel={() => { setPushSheetError(null); worktree.closeCommitSheet() }}
+            onConfirm={confirmCommitAndPush}
+          />
+        ) : worktree.commitSheetMode === "amend" ? (
           <CommitMessageSheet
             key={`amend-${pendingActions.amendDraft.title}`}
             navigationTitle="重编提交"
@@ -474,7 +501,8 @@ export function RepoDetailPage({
         onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}
         loading={data.loading}
         mergeInProgress={data.mergeInProgress}
-        onPush={handlePush}
+        onPush={requestCommitAndPush}
+        onStage={worktree.handleStagePaths}
         onRestore={worktree.handleRestore}
         committing={worktree.committing}
         stagingBusy={worktree.stagingBusy}

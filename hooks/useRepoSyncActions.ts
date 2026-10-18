@@ -1,9 +1,11 @@
 import {
+  commit,
   hasRemoteBranch,
   isRemoteOperationCancelled,
   pull,
   push,
   RemoteCancelToken,
+  stageAll,
 } from "../services/gitService"
 import { notifySync, notifyError } from "../services/notifyService"
 import { formatPullSuccessAlert } from "../utils/branchMerge"
@@ -48,7 +50,8 @@ export function useRepoSyncActions({
   showToast,
   showConflictNotice,
 }: UseRepoSyncActionsProps) {
-  async function handlePush() {
+  /** commitMessage 非空：先全部暂存并提交，再拉取最新并推送；为空则只推送已有提交。 */
+  async function handlePush(commitMessage?: string) {
     const token = new RemoteCancelToken()
     // 组装请求体阶段（Uploading）达到该字节数时提示一次，避免用户误判卡住
     const LARGE_UPLOAD_THRESHOLD = 20 * 1024 * 1024
@@ -72,6 +75,11 @@ export function useRepoSyncActions({
       const context = resolvePushContext ? await resolvePushContext() : { branch: currentBranch, hasRemote }
       const branch = context.branch
       if (!branch) throw new Error("当前没有可推送的分支")
+      if (commitMessage && commitMessage.trim()) {
+        await updateOpBusy("正在推送", "正在提交改动…")
+        await stageAll(bookmarkName)
+        await commit(bookmarkName, commitMessage.trim())
+      }
       if (context.hasRemote && (await hasRemoteBranch(bookmarkName, branch, "origin"))) {
         try {
           await updateOpBusy("正在推送", "先拉取最新…")

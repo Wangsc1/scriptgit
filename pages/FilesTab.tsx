@@ -5,7 +5,7 @@ import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from ".
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFiles, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
-import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE } from "../constants/colors"
+import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE, COLOR_PURPLE } from "../constants/colors"
 import { localImportStep, localImportOnMain } from "../services/localImportExecution"
 import { pickLocalDirectory, pickLocalDocuments, pickLocalPhotos, type PickedLocalFile } from "../services/localFileImport"
 import { localImportBatchSummary } from "../services/localImportBatchSummary"
@@ -27,7 +27,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onRestore, mergeInProgress }: { node: FileTreeNode; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onStage, onRestore, mergeInProgress }: { node: FileTreeNode; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onStage: (filepaths: string[]) => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[]) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -47,8 +47,15 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
         disabled={busy || mergeInProgress}
       />)
       swipeActions.push(<Button
+        key="stage"
+        title="暂存"
+        tint={COLOR_PURPLE}
+        action={() => onStage([node.path])}
+        disabled={busy || mergeInProgress}
+      />)
+      swipeActions.push(<Button
         key="push"
-        title="提交"
+        title="推送"
         tint="systemGreen"
         action={() => onPush()}
         disabled={busy || mergeInProgress}
@@ -72,6 +79,8 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
       </Button>
     )
   }
+  // 文件夹「暂存」：其下所有有改动的路径（含已删除的，addFiles 对其执行 remove）。
+  const changesUnder = (directory: string) => [...changesByPath.keys()].filter(path => path.startsWith(directory + "/"))
   const hasChanges = changedDirectories.has(node.path)
   const folderBadge = renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE }
     : deletedDirectories.has(node.path) ? { text: "已删除", color: "systemRed" }
@@ -80,7 +89,8 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
   const folderActions: any[] = []
   if (hasChanges) {
     folderActions.push(<Button title="还原" tint="systemOrange" disabled={busy || mergeInProgress} action={() => onRestore(node.path)} />)
-    folderActions.push(<Button title="提交" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
+    folderActions.push(<Button title="暂存" tint={COLOR_PURPLE} disabled={busy || mergeInProgress} action={() => onStage(changesUnder(node.path))} />)
+    folderActions.push(<Button title="推送" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
   }
   folderActions.push(<Button title="删除" tint="systemRed" disabled={busy} action={() => remove(node.path, true)} />)
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
@@ -92,15 +102,16 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
+export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onStage, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
   onPush: () => void | Promise<void>
+  onStage: (filepaths: string[]) => void | Promise<void>
   onRestore: (filepath: string, filepaths?: string[]) => void
   mergeInProgress: boolean
   creationActive?: boolean
@@ -336,7 +347,9 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
         if (!state.current.alive) return
         setAdded(previous => [...previous.filter(value => value !== path), target])
         setDeleted(previous => [...previous.filter(value => value !== target), path])
-        setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, before: changes }])
+        // 标签全部来自真实 Git 状态：新位置 *added → 绿色「新增」，源位置 → 红色「已删除」，目标文件夹 → 橙色「已修改」。
+        // 不再写入「重命名/复制」提示，否则会盖住真实状态。
+        setRenamedFiles(previous => previous.filter(entry => entry.path !== path && entry.path !== target))
         setCopied(previous => previous.filter(entry => entry.path !== path && entry.path !== target))
       })
       await localImportStep("移动后刷新改动", () => onWorktreeChanged())
@@ -466,6 +479,6 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

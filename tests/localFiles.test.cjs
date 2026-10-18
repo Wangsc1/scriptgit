@@ -140,17 +140,19 @@ async function main(){
  })
  await test('folder swipe: nested changes show three text buttons, boundary excludes siblings, cancel and confirm recursive delete',async()=>{
   await disk('swipe-folder/sub/a','data');let updates=0,pushes=0
-  const props={files:['swipe-folder/sub/a','swipe-folder-other/b'],loading:false,bookmarkName:'repo',changes:[{filepath:'swipe-folder/sub/a',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush:()=>pushes++,onRestore(){},mergeInProgress:false}
+  const staged=[];const props={files:['swipe-folder/sub/a','swipe-folder-other/b'],loading:false,bookmarkName:'repo',changes:[{filepath:'swipe-folder/sub/a',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush:()=>pushes++,onStage:paths=>staged.push(paths),onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
   let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.trailingSwipeActions.actions
-  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','提交','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['还原','暂存','推送','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
   assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
-  await a[1].props.action();assert.equal(pushes,1)
-  confirm=false;await a[0].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
-  confirm=false;await a[2].props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
-  confirm=true;await a[2].props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
+  const by=t=>a.find(n=>n.props.title===t)
+  assert.equal(by('暂存').props.tint,'systemPurple','folder 暂存 is purple');await by('暂存').props.action();assert.deepEqual(staged,[['swipe-folder/sub/a']],'folder 暂存 stages exactly the changed paths under it')
+  await by('推送').props.action();assert.equal(pushes,1)
+  confirm=false;await by('还原').props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
+  confirm=false;await by('删除').props.action();assert.ok(fs.existsSync(dir+'/swipe-folder/sub/a'))
+  confirm=true;await by('删除').props.action();assert.ok(!fs.existsSync(dir+'/swipe-folder'));assert.ok(updates>0);h.unmount()
  })
  await test('folder restore routes changed descendants to shared parent confirmation without changing disk',async()=>{
   await disk('folder/b.txt','changed inside');await disk('a.txt','changed outside');let request
@@ -321,7 +323,7 @@ async function main(){
   for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).props.label),/已删除/)}
   folder('parent').props.onChanged(true)
   const nestedGone=folders().filter(n=>JSON.stringify(n.props.label).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
-  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['还原','提交','删除'])
+  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['还原','暂存','推送','删除'])
   // A restored leaf makes its parent modified rather than deleted; fully clean refresh clears both.
   props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
   props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
@@ -588,8 +590,26 @@ async function main(){
   assert.equal(fs.readFileSync(dir+'/drag-conflict','utf8'),'source');assert.equal(fs.existsSync(dir+'/folder/drag-conflict'),false);assert.equal(removes,removedBefore)
   const gate=deferred();let began=false;const lock=coordinator.mutate(ctx.gitdir,async()=>{began=true;await gate.promise});while(!began)await tick();await assert.rejects(service.moveLocalWorktreeFile('repo','drag-conflict','folder',dir),/其它写操作/);gate.resolve();await lock;fs.unlinkSync(dir+'/drag-link');fs.unlinkSync(dir+'/drag-link-dir')
  })
+ await test('暂存 (purple swipe): real addFiles stages exactly the chosen paths in the index; HEAD unchanged, nothing committed or pushed',async()=>{
+  await disk('stage-a.txt','a');await disk('stage-dir/b.txt','b');await disk('stage-dir/c.txt','c')
+  const head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  const staged=async()=>(await git.statusMatrix({fs,dir})).filter(r=>r[0].startsWith('stage-')).map(r=>[r[0],r[2],r[3]]).sort()
+  assert.deepEqual(await staged(),[['stage-a.txt',2,0],['stage-dir/b.txt',2,0],['stage-dir/c.txt',2,0]],'untracked before staging')
+  // Production fs wrapper has promise exists(); the test fixture uses Node's fs, so shim only that call.
+  const realFs=ctx.fs;ctx.fs=Object.assign({},realFs,{exists:async p=>fs.existsSync(dir+'/'+p)});try{
+  await service.addFiles('repo','stage-a.txt')
+  assert.deepEqual(await staged(),[['stage-a.txt',2,2],['stage-dir/b.txt',2,0],['stage-dir/c.txt',2,0]],'only the chosen file is staged')
+  for(const p of ['stage-dir/b.txt','stage-dir/c.txt'])await service.addFiles('repo',p)
+  assert.deepEqual(await staged(),[['stage-a.txt',2,2],['stage-dir/b.txt',2,2],['stage-dir/c.txt',2,2]],'folder stages every changed path under it')
+  assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head,'no commit was created')
+  const changes=await service.getChanges('repo');assert.ok(changes.filter(c=>c.filepath.startsWith('stage-')).every(c=>c.staged),'app reports them staged')
+  for(const p of ['stage-a.txt','stage-dir/b.txt','stage-dir/c.txt'])await service.unstageFiles('repo',p)
+  }finally{ctx.fs=realFs}
+ })
  await test('long-press 移动到…: real FilesTab menu, folder list, native move, Git D/A only, cancel/busy/merge guards, no drag wiring',async()=>{
   await disk('mv-ui.txt','move bytes');await disk('mv-cancel.txt','cancel bytes');fs.mkdirSync(dir+'/mv-target');fs.mkdirSync(dir+'/mv-other')
+  // 源文件必须是已被 Git 跟踪的文件，移动后才有「已删除」可显示。
+  await git.add({fs,dir,filepath:'mv-ui.txt'});await git.commit({fs,dir,message:'track mv-ui',author:{name:'t',email:'t@t'}})
   const props={files:['mv-ui.txt','mv-cancel.txt','mv-target/existing','mv-other/x'],changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onCreateEntry(){},onOpen(){},onPush(){},onRestore(){},onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');updates++}}
   let updates=0;const h=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
@@ -604,10 +624,22 @@ async function main(){
   assert.equal(fs.existsSync(dir+'/mv-cancel.txt'),true);assert.equal(updates,0)
   // The sheet lists existing folders (not the file's own parent) and a pick moves the file natively.
   let offered=null;global.Dialog.actionSheet=async o=>{offered=o.actions.map(a=>a.label);return offered.indexOf('mv-target')}
-  await moveItem('mv-ui.txt').props.action()
+  const ORANGE=load('constants/colors.ts').COLOR_ORANGE;await moveItem('mv-ui.txt').props.action()
   for(let i=0;i<3000&&updates===0;i++){await new Promise(resolve=>setTimeout(resolve,1));await tick();h.render()}
   assert.ok(offered.includes('mv-target')&&offered.includes('mv-other'),'existing folders offered');assert.equal(fs.existsSync(dir+'/mv-ui.txt'),false);assert.equal(fs.readFileSync(dir+'/mv-target/mv-ui.txt','utf8'),'move bytes')
   assert.ok(props.changes.some(c=>c.filepath==='mv-target/mv-ui.txt'),'refresh reports the moved file')
+  // 移动后的三处显示：①源位置显示红色「已删除」 ②目标文件夹橙色「已修改」 ③移入的文件绿色「新增」，图标同色。
+  {const folderNode=name=>nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes(name))
+   const labelOf=n=>all(n).filter(x=>x.type==='Text').map(x=>[x.children.join(''),x.props.foregroundStyle])
+   const iconOf=n=>all(n).find(x=>x.type==='Image').props.foregroundStyle
+   folderNode('mv-target').props.onChanged(true);h.render()
+   const rows=nodes().filter(n=>n.type==='Button'&&n.props.contextMenu&&JSON.stringify(n.children).includes('mv-ui.txt'))
+   const info=rows.map(r=>({texts:labelOf(r),icon:iconOf(r),disabled:r.props.disabled}))
+   const added=info.find(r=>r.texts.some(([t])=>t==='新增')),gone=info.find(r=>r.texts.some(([t])=>t==='已删除'))
+   assert.ok(added,'③ moved-in file shows 新增: '+JSON.stringify(info));assert.ok(added.texts.some(([t,c])=>t==='新增'&&c==='systemGreen'));assert.equal(added.icon,'systemGreen')
+   assert.ok(gone,'① source location shows 已删除: '+JSON.stringify(info));assert.ok(gone.texts.some(([t,c])=>t==='已删除'&&c==='systemRed'));assert.equal(gone.icon,'systemRed')
+   const fl=labelOf(folderNode('mv-target').props.label)
+   assert.ok(fl.some(([t,c])=>t==='已修改'&&c==='systemOrange'),'② destination folder shows 已修改 in orange: '+JSON.stringify(fl));assert.equal(iconOf(folderNode('mv-target').props.label),'systemOrange')}
   // Name collision: destination already has the name, source must stay untouched and error is visible.
   await disk('mv-other/mv-cancel.txt','other');updates=0
   global.Dialog.actionSheet=async o=>o.actions.map(a=>a.label).indexOf('mv-other');await moveItem('mv-cancel.txt').props.action()

@@ -7,7 +7,7 @@ function page(rows, pull, refresh, refreshOne = () => {}, overrides = {}) {
     scripting,
     '../services/repoStore': { listRepos: () => rows, sourceLabel: () => '' },
     '../services/gitService': { autoPullFastForward: pull },
-    '../components/BusyOverlay': {}, './RepoDetailPage': {}, './ClonePage': {},
+    '../components/BusyOverlay': {}, '../components/CommitMessageSheet': { CommitMessageSheet: 'CommitMessageSheet' }, '../utils/format': { buildCommitMessage: (title, description) => { const head = title.trim(), body = (description || '').trim(); return body ? `${head}\n\n${body}` : head } }, './RepoDetailPage': {}, './ClonePage': {},
     '../constants/colors': {}, '../utils/mergeConflict': {},
     '../utils/github': { githubRepoFromRemoteUrl: () => null },
     '../utils/remoteProgress': { yieldForUi: async () => {} },
