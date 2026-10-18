@@ -107,7 +107,8 @@ function FileTreeNodeView({ node, moveTo, open, removed, busy, remove, manage, r
   </DisclosureGroup>
 }
 
-export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onStage, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
+export function FilesTab({ files, worktreeEntries, loading, bookmarkName, changes, onWorktreeChanged, onOpen, onPush, onStage, onRestore, mergeInProgress, creationActive = false, onCreateEntry }: {
+  worktreeEntries?: import("../services/gitService").WorktreeEntries
   files: string[]; loading: boolean; bookmarkName: string; changes: FileChange[]
   onOpen: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
@@ -154,13 +155,24 @@ export function FilesTab({ files, loading, bookmarkName, changes, onWorktreeChan
     const other = changedDirectoryPaths(changes.filter(c => c.worktreeDeleted || (c.status !== "added" && c.status !== "*added")).map(c => c.filepath))
     for (const entry of activeCopies) if (entry.directory) added.add(entry.path)
     for (const path of sessionCreatedDirectories) added.add(path)
+    for (const path of worktreeEntries?.untrackedDirectories || []) added.add(path)
     return new Set([...added].filter(path => !existing.has(path) && !other.has(path)))
-  }, [files, changes, activeCopies, sessionCreatedDirectories])
+  }, [files, changes, activeCopies, sessionCreatedDirectories, worktreeEntries])
   const [added, setAdded] = useState<string[]>([])
-  const fileSignature = [...new Set([...files, ...changes.map(c => c.filepath), ...added])].join("\0")
+  const fileSignature = [...new Set([...files, ...(worktreeEntries?.files || []), ...changes.map(c => c.filepath), ...added])].join("\0")
   const visibleFiles = useMemo(() => fileSignature ? fileSignature.split("\0") : [], [fileSignature])
   const [directories, setDirectories] = useState<string[]>([])
-  const tree = useMemo(() => buildFileTree(visibleFiles, { directories }), [visibleFiles, directories])
+  // Disk inventory is refreshed on entry/refresh, while local results fill the brief
+  // gap before that refresh. No Git placeholder files or persistent hint store.
+  const tree = useMemo(() => buildFileTree(visibleFiles, { directories: [...new Set([...(worktreeEntries?.directories || []), ...directories])] }), [visibleFiles, directories, worktreeEntries])
+  useEffect(() => {
+    if (!worktreeEntries) return
+    const present = new Set(worktreeEntries.directories)
+    setDirectories(previous => previous.filter(path => present.has(path)))
+    setSessionCreatedDirectories(previous => previous.filter(path => present.has(path)))
+    const presentFiles = new Set([...worktreeEntries.files, ...files, ...changes.map(change => change.filepath)])
+    setAdded(previous => previous.filter(path => presentFiles.has(path)))
+  }, [worktreeEntries])
   const metadataPaths = useMemo(() => expandedFilePaths(tree, expanded), [tree, expanded])
   const [deleted, setDeleted] = useState<string[]>([])
   const removed = useMemo(() => new Set([...deleted, ...changes.filter(c => c.worktreeDeleted === true).map(c => c.filepath)]), [deleted, changes])

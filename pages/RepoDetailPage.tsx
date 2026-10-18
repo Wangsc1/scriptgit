@@ -517,6 +517,7 @@ export function RepoDetailPage({
         stashes={data.stashes}
         log={data.log}
         trackedFiles={data.trackedFiles}
+        worktreeEntries={data.worktreeEntries}
         onOpenLocalFile={openLocalFile}
         creationActive={localCreation.busy}
         onCreateLocalEntry={localCreation.open}

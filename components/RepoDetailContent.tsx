@@ -51,6 +51,7 @@ export function RepoDetailTabContent({
   stashes,
   log,
   trackedFiles,
+  worktreeEntries,
   loading,
   mergeInProgress,
   committing,
@@ -86,6 +87,7 @@ export function RepoDetailTabContent({
   stashes: StashEntry[]
   log: CommitEntry[]
   trackedFiles: string[]
+  worktreeEntries?: import("../services/gitService").WorktreeEntries
   loading: boolean
   mergeInProgress: boolean
   committing: boolean
@@ -122,7 +124,7 @@ export function RepoDetailTabContent({
           onChanged={(value: number) => onTabChange(value as RepoDetailTab)} />
       </Section>
       {tab === 0 ? (
-        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />
+        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} worktreeEntries={worktreeEntries} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}

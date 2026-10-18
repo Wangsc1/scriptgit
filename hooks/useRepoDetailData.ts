@@ -21,6 +21,7 @@ import {
   getMergeConflictState,
   getRepoListStatus,
   getTrackedFiles,
+  getWorktreeEntries,
   hasHeadCommit,
   initRepo,
   isInitialized,
@@ -69,6 +70,7 @@ export function useRepoDetailData({
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyLimited, setHistoryLimited] = useState(false)
   const [trackedFiles, setTrackedFiles] = useState<string[]>([])
+  const [worktreeEntries, setWorktreeEntries] = useState({ files: [] as string[], directories: [] as string[], untrackedDirectories: [] as string[] })
   const [branchInfo, setBranchInfo] = useState<BranchInfo>({
     branches: [],
     current: null,
@@ -109,6 +111,7 @@ export function useRepoDetailData({
 
   async function refreshChangesAndSnapshot(): Promise<FileChange[]> {
     const currentChanges = await loadChanges()
+    if (tab === 0) await loadTrackedFiles()
     await getRepoListStatus(bookmarkName, currentChanges.length, { source: "详情改动摘要" })
     return currentChanges
   }
@@ -120,8 +123,9 @@ export function useRepoDetailData({
   }
 
   async function loadTrackedFiles() {
-    const files = await getTrackedFiles(bookmarkName)
+    const [files, entries] = await Promise.all([getTrackedFiles(bookmarkName), getWorktreeEntries(bookmarkName)])
     setTrackedFiles(files)
+    setWorktreeEntries(entries)
     setFilesLoaded(true)
   }
 
@@ -286,7 +290,7 @@ export function useRepoDetailData({
   async function handleTabChange(next: number) {
     const target = next as RepoDetailTabIndex
     setTab(target)
-    if (target === 0 && !filesLoaded) {
+    if (target === 0) {
       setLoading(true)
       try {
         await loadTrackedFiles()
@@ -383,6 +387,7 @@ export function useRepoDetailData({
     historyLoading,
     historyLimited,
     trackedFiles,
+    worktreeEntries,
     branchInfo,
     branchesLoaded, branchLoading, branchError,
     branchStateKnown: branchesLoaded && !branchLoading && branchError === null,

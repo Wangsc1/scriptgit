@@ -37,6 +37,7 @@ import { runStatusMutation, runStatusRead } from "./git/statusScanService"
 import { importLocalFilesInternal, moveLocalFileInternal, importLocalDirectoryInternal, createLocalEntryInternal, importLocalFileInternal, copyLocalDirectoryInternal, renameLocalDirectoryInternal, deleteLocalDirectoryInternal, readLocalFileForOpenInternal, copyLocalFileInternal, renameLocalFileInternal, readLocalFileInternal, saveLocalFileInternal, deleteLocalFileInternal, type LocalWorktreeFile } from "./git/localFileService"
 export type { LocalWorktreeFile } from "./git/localFileService"
 export { getRepoListStatus }
+export { getWorktreeEntries, type WorktreeEntries } from "./git/worktreeTreeService"
 export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
 import {
   amendHeadCommitInternal,
