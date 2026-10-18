@@ -81,9 +81,13 @@ export function RepoRemoteSections({
           </HStack>
         }
         footer={
-          <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
-            {branchUnavailable ? "分支信息未确认，读取成功后再操作" : `${pullActionFooterHint(branchInfo.current, upstream)}　　拉取：${pulledLabel}`}
-          </Text>
+          <HStack alignment="center">
+            <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>
+              {branchUnavailable ? "分支信息未确认，读取成功后再操作" : pullActionFooterHint(branchInfo.current, upstream)}
+            </Text>
+            <Spacer />
+            {branchUnavailable ? null : <Text font="footnote" foregroundStyle={COLOR_SECONDARY_LABEL}>{pulledLabel}</Text>}
+          </HStack>
         }
       >
         <HStack alignment="center">

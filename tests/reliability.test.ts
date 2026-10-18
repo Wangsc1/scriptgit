@@ -1664,18 +1664,18 @@ function testBranchMergeHelpers(): void {
   )
 
   assert(
-    pullActionFooterHint("main") === "远端：main ← origin/main",
+    pullActionFooterHint("main") === "main ← origin/main",
     "无 upstream 时 footer 默认 origin/同名"
   )
   assert(
     pullActionFooterHint("main", {
       remote: "upstream",
       merge: "refs/heads/main",
-    }) === "远端：main ← upstream/main",
+    }) === "main ← upstream/main",
     "有 upstream 时 footer 应展示实际跟踪"
   )
   assert(
-    pullActionFooterHint("").includes("远端"),
+    pullActionFooterHint("").includes("origin"),
     "无当前分支时 footer 仍应给出说明"
   )
 }

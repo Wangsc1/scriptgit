@@ -202,8 +202,8 @@ export function pullActionFooterHint(
       remote: "origin",
       upstream: upstream ?? null,
     })
-    return `远端：${t.localBranch} ← ${t.track}`
+    return `${t.localBranch} ← ${t.track}`
   } catch (_e) {
-    return "远端：当前分支 ← Upstream / origin 同名"
+    return "当前分支 ← Upstream / origin 同名"
   }
 }
