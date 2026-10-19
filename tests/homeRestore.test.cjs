@@ -16,7 +16,7 @@ async function main(){
  assert.equal(restore.props.tint,'systemOrange');assert.equal(restore.props.systemImage,undefined)
  assert.ok(swipes().slice(1).every(s=>!s.actions.some(n=>n.props.title==='还原')))
  restore.props.action();await tick();h.render();assert.equal(h.tree.props.alert.title,'还原文件并删除新增空目录？')
- assert.match(JSON.stringify(h.tree.props.alert.message),/还原 2 个文件到 HEAD/)
+ assert.deepEqual(h.tree.props.alert.message.children,["当前文件改动将丢失，不可撤销。"])
  let actions=all(h.tree.props.alert.actions).filter(n=>n.type==='Button')
  assert.equal(actions[1].props.title,'还原');assert.equal(actions[1].props.role,'destructive')
  assert.deepEqual(calls,[]);actions[0].props.action();h.render();assert.equal(h.tree.props.alert.isPresented,false);assert.deepEqual(calls,[])

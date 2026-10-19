@@ -8,7 +8,7 @@ for (const action of [file, folder]) {
   const alert = getRepoPendingAlert(action)
   assert.equal(alert.title, '还原改动？')
   assert.equal(alert.confirmButton, '还原')
-  assert.match(alert.message, /当前改动将丢失，此操作不可撤销/)
+  assert.equal(alert.message, "当前文件改动将丢失，不可撤销。")
 }
 assert.equal(getRepoPendingAlert({ ...folder, filepath: 'same' }).message, getRepoPendingAlert({ ...file, filepath: 'same' }).message)
 const page = fs.readFileSync(require('node:path').join(__dirname, '../pages/RepoDetailPage.tsx'), 'utf8')
