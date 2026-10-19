@@ -64,8 +64,8 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
     swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
       <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
-        <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
+        <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="复制链接" disabled={busy || deleted || !copyLink} action={() => copyLink?.(node.path)} />
         <Button title="移动到…" disabled={busy || deleted} action={() => moveTo(node.path)} />
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
