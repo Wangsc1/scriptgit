@@ -24,6 +24,8 @@ export interface RepoMeta {
   workdir?: string
   /** 克隆仓库相对于访问书签目录的子路径 */
   workdirRelative?: string
+  /** App 自有本地克隆：相对于当前 documentsDirectory，避免保存沙盒 UUID。 */
+  workdirDocumentsRelative?: string
   /** 安全范围书签名：解析真实路径必须优先走它 */
   accessBookmarkName?: string
   /** 远端地址（可选，clone/push/pull 使用） */

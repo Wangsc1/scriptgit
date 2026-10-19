@@ -233,12 +233,16 @@ export async function registerRepoByPath(
     ? relativePathFromRoot(path, bookmarkRoot)
     : null
 
+  const documentsRelative = !accessBookmarkName && FileManager.documentsDirectory
+    ? relativePathFromRoot(path, FileManager.documentsDirectory)
+    : null
   const repo: RepoMeta = {
     name,
     bookmarkName: repoId,
     repoId,
     workdir: path,
     workdirRelative: workdirRelative ?? undefined,
+    ...(documentsRelative ? { workdirDocumentsRelative: documentsRelative } : {}),
     accessBookmarkName,
     remoteUrl,
     ...(githubUpdatedPatch(remoteUrl, githubUpdatedAt) || {}),
@@ -432,8 +436,40 @@ export async function removeRepo(bookmarkName: string): Promise<void> {
   writeSnapshots(snaps)
 }
 
-/** 解析已保存工作目录：先激活书签安全范围，再返回实际 workdir */
+/** App 自有本地克隆的稳定位置；兼容旧默认目录的沙盒 UUID 变化。 */
+function documentsRelativeWorkdir(repo: RepoMeta): string | null {
+  if (repo.workdirDocumentsRelative !== undefined) {
+    const relative = repo.workdirDocumentsRelative
+    if (!relative || relative.split("/").some(part => !part || part === "." || part === ".." || /[\\\\\x00-\x1f\x7f]/.test(part))) {
+      throw new Error("已保存的本地仓库相对路径无效")
+    }
+    return relative
+  }
+  // Legacy default local clones had no bookmark and stored the app sandbox UUID.
+  // Only recognize the exact old default shape, never rebind external/bookmarked
+  // directories, manually added repos, iCloud, or arbitrary absolute paths.
+  if (repo.source !== "clone" || repo.accessBookmarkName || repo.workdirRelative !== undefined) return null
+  const localRoot = FileManager.documentsDirectory
+  const sandbox = /^\/(?:private\/)?var\/mobile\/Containers\/Data\/Application\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/Documents$/i
+  if (!localRoot || !sandbox.test(normalizePath(localRoot))) return null
+  const stored = repo.workdir || ""
+  const match = stored.match(/^(\/(?:private\/)?var\/mobile\/Containers\/Data\/Application\/[0-9a-f-]{36}\/Documents)\/(git\/[^/]+)$/i)
+  if (!match || !sandbox.test(match[1]) || /[\\\\\x00-\x1f\x7f]/.test(match[2]) || [".", ".."].includes(match[2].slice(4))) return null
+  return match[2]
+}
+
+function resolveDocumentsWorkdir(repo: RepoMeta): string | null {
+  const relative = documentsRelativeWorkdir(repo)
+  if (relative === null) return null
+  const root = FileManager.documentsDirectory
+  if (!root) throw new Error("无法访问当前本地文稿目录")
+  return normalizePath(root) + "/" + relative
+}
+
+/** App 自有相对位置优先；外部目录仍先激活已有书签安全范围。 */
 function resolveStoredWorkdir(repo: RepoMeta): string | null {
+  const local = resolveDocumentsWorkdir(repo)
+  if (local) return local
   // 1) 稳定访问书签（跨会话安全访问；必须先解析以激活 scope）
   const fromAccess = pathFromAccessBookmark(repo.accessBookmarkName)
   if (fromAccess) {
@@ -497,8 +533,9 @@ export function resolveWorkdir(bookmarkName: string): string {
   }
 
   // 回写最新解析路径，减少陈旧 workdir
-  if (repo.workdir !== dir) {
-    updateRepo(bookmarkName, { workdir: dir })
+  const documentsRelative = documentsRelativeWorkdir(repo)
+  if (repo.workdir !== dir || (documentsRelative !== null && repo.workdirDocumentsRelative !== documentsRelative)) {
+    updateRepo(bookmarkName, { workdir: dir, ...(documentsRelative !== null ? { workdirDocumentsRelative: documentsRelative } : {}) })
   }
 
   return dir
@@ -515,6 +552,8 @@ export function resolveRepoPathsReadOnly(bookmarkName: string): {
   const repo = findRepo(bookmarkName)
   if (!repo) throw new Error("REPO_NOT_FOUND")
   const bookmarkChecks: string[] = []
+  const local = resolveDocumentsWorkdir(repo)
+  if (local) return { workdir: local, storedWorkdir: repo.workdir || null, gitdir: getGitdirPath(repo), source: "appDocuments", bookmarkChecks }
   for (const [label, name] of [["accessBookmark", repo.accessBookmarkName], ["legacyBookmark", repo.bookmarkName]]) {
     if (!name) { bookmarkChecks.push(label + ": 未保存"); continue }
     try {
