@@ -265,12 +265,13 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
   const [directoryError, setDirectoryError] = useState("")
   function cancelDirectoryForm() { if (!state.current.busy) setDirectoryForm(null) }
-  async function confirmDirectory(next: string) {
-    if (!directoryForm || state.current.busy || mergeInProgress) return
-    const { path, kind } = directoryForm
+  async function confirmDirectory(next: string, request = directoryForm) {
+    if (!request || !state.current.alive || state.current.busy || mergeInProgress) return
+    const { path, kind } = request
     if (kind === "rename" && next === path.split("/").pop()) { setDirectoryForm(null); return }
     state.current.busy = true; setBusy(true); setDirectoryError("")
     try {
+      checkQueuedWrite()
       const result = await (kind === "copy" ? copyLocalWorktreeDirectory : renameLocalWorktreeDirectory)(bookmarkName, path, next)
       if (state.current.alive) {
         setAdded(previous => [...previous.filter(p => kind !== "rename" || !p.startsWith(path + "/")), ...result.files])
@@ -300,8 +301,22 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   }
   async function manage(path: string, kind: "copy" | "rename", directory = false) {
     if (directory) {
-      if (state.current.busy || mergeInProgress) return
-      setDirectoryError(""); setDirectoryForm({ path, kind }); return
+      if (!state.current.alive || state.current.busy || loading || mergeInProgress || creationActive) return
+      if (kind === "copy") { setDirectoryError(""); setDirectoryForm({ path, kind }); return }
+      // Rename matches file rename: a centered system prompt, never a sheet
+      // presented by an expandable/replaceable Section subtree.
+      state.current.busy = true; setBusy(true); setError("")
+      try {
+        const root = resolveWorkdir(bookmarkName)
+        const next = await Dialog.prompt({ title: "重命名文件夹", message: "包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。", defaultValue: path.split("/").pop() || "", confirmLabel: "确认", cancelLabel: "取消" })
+        if (next == null || !state.current.alive) return
+        checkQueuedWrite()
+        if (resolveWorkdir(bookmarkName) !== root) throw new Error("工作区路径已变化，未重命名文件夹")
+        state.current.busy = false
+        await confirmDirectory(next, { path, kind })
+      } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
+      finally { state.current.busy = false; if (state.current.alive) setBusy(false) }
+      return
     }
     if (state.current.busy || removed.has(path)) return
     state.current.busy = true; setBusy(true); setError("")
