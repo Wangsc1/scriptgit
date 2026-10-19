@@ -200,8 +200,7 @@ export function useRepoPendingActions({
         await beginOpBusy("正在还原改动", action.filepath)
         try {
           if (action.restorePlan) {
-            const result = await restoreWorktreeScope(bookmarkName, action.restorePlan)
-            showAlert("还原完成", result)
+            await restoreWorktreeScope(bookmarkName, action.restorePlan)
           } else for (const filepath of action.filepaths ?? [action.filepath]) await restoreFile(bookmarkName, filepath)
         } finally {
           await reloadRepo()

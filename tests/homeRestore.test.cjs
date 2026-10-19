@@ -23,7 +23,7 @@ async function main(){
  restore.props.action();await tick();h.render();actions=all(h.tree.props.alert.actions).filter(n=>n.type==='Button')
  const pending=actions[1].props.action();await tick();assert.deepEqual(calls,[['dirty',['a.txt','sub/b.txt']]])
  assert.ok(swipes().every(s=>s.actions.every(n=>n.props.disabled)))
- gate.resolve();await pending;h.render();assert.equal(h.tree.props.alert.title,'还原完成');assert.equal(refreshes,1)
+ gate.resolve();await pending;h.render();assert.equal(h.tree.props.alert.isPresented,false);assert.equal(refreshes,1)
  merged=true;restore.props.action();await tick();h.render()
  assert.equal(h.tree.props.alert.title,'还原检查失败');assert.equal(calls.length,1)
  h.unmount();console.log('PASS 橙色还原仅对未提交改动显示、统一红色确认、取消零写入、仅操作目标仓库、合并保护和刷新')

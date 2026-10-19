@@ -294,8 +294,7 @@ export function RepoListPage() {
     restoring.current = true
     setRestoringName(repo.name)
     try {
-      const result = await restoreWorktreeScope(repo.bookmarkName, request!.plan)
-      if (alive.current) showAlert("还原完成", `${repo.name}\n${result}`)
+      await restoreWorktreeScope(repo.bookmarkName, request!.plan)
     } catch (e: any) {
       if (alive.current) showAlert("还原失败", String(e?.message || e))
     } finally {
