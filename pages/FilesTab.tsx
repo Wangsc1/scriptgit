@@ -97,8 +97,8 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
   return <DisclosureGroup contextMenu={{ menuItems: <>
-    <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
+    <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
   </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} label={<HStack trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}

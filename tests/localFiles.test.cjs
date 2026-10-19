@@ -138,7 +138,7 @@ async function main(){
   const original=fs.readFileSync(dir+'/a.txt'),index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
   assert.deepEqual(all(row('a.txt').props.contextMenu.menuItems).filter(n=>n.type==='Button').map(n=>n.props.title),['重命名','复制文件','复制链接','移动到…'])
   assert.equal(action('a.txt').props.systemImage,undefined);assert.equal(action('a.txt').props.disabled,false);await action('a.txt').props.action()
-  const folder=nodes().find(n=>n.type==='DisclosureGroup');assert.ok(!all(folder.props.contextMenu.menuItems).some(n=>n.props.title==='复制链接'));folder.props.onChanged(true)
+  const folder=nodes().find(n=>n.type==='DisclosureGroup');assert.deepEqual(all(folder.props.contextMenu.menuItems).filter(n=>n.type==='Button').map(n=>n.props.title),['重命名','复制文件夹']);folder.props.onChanged(true)
   await action('b.txt').props.action();assert.deepEqual(copied,['a.txt','folder/b.txt'])
   props.changes=[{filepath:'a.txt',status:'*deleted',worktreeDeleted:true}];assert.equal(action('a.txt').props.disabled,true)
   props.loading=true;assert.equal(action('b.txt').props.disabled,true)
