@@ -1,3 +1,4 @@
+import { validatedLocalRenames } from "./localRenameHistory"
 import type {
   CommitEntry,
   FileChange,
@@ -115,6 +116,7 @@ export function getChanges(
 async function readChanges(bookmarkName: string, source: string): Promise<FileChange[]> {
   const revision = statusRevision(bookmarkName)
   const ctx = await getCtx(bookmarkName)
+  await validatedLocalRenames(bookmarkName, ctx)
   const { dir, gitdir } = ctx
   if (!(await FileManager.exists(gitdir + "/HEAD"))) {
     rememberChangesCount(bookmarkName, 0, revision)

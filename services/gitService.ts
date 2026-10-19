@@ -1,3 +1,5 @@
+import { trackLocalRename } from "./git/localRenameHistory"
+export { knownLocalRenameHints } from "./git/localRenameHistory"
 /**
  * services/gitService.ts - 高层 Git 操作封装
  *
@@ -152,7 +154,7 @@ export function copyLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeF
   return runRepoMutation(bookmarkName, () => copyLocalFileInternal(bookmarkName, file, name), false)
 }
 export function renameLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeFile, name: string): Promise<string> {
-  return runRepoMutation(bookmarkName, () => renameLocalFileInternal(bookmarkName, file, name), false)
+  return runRepoMutation(bookmarkName, () => trackLocalRename(bookmarkName, file.path, false, () => renameLocalFileInternal(bookmarkName, file, name), result => result), false)
 }
 export function saveLocalWorktreeFile(bookmarkName: string, file: LocalWorktreeFile, text: string): Promise<LocalWorktreeFile> {
   return runRepoMutation(bookmarkName, () => saveLocalFileInternal(bookmarkName, file, text), false)
@@ -165,7 +167,7 @@ export function copyLocalWorktreeDirectory(bookmarkName: string, path: string, n
   return runRepoMutation(bookmarkName, () => copyLocalDirectoryInternal(bookmarkName, path, name), false)
 }
 export function renameLocalWorktreeDirectory(bookmarkName: string, path: string, name: string) {
-  return runRepoMutation(bookmarkName, () => renameLocalDirectoryInternal(bookmarkName, path, name), false)
+  return runRepoMutation(bookmarkName, () => trackLocalRename(bookmarkName, path, true, () => renameLocalDirectoryInternal(bookmarkName, path, name), result => result.path), false)
 }
 
 export function deleteLocalWorktreeDirectory(bookmarkName: string, path: string): Promise<void> {
@@ -329,10 +331,10 @@ export async function restoreFile(
 }
 
 /** Confirmed repository/folder restore. File-level restore retains its original scope. */
-export function prepareRestoreScope(bookmarkName: string, scope = "", renameSources: string[] = []): Promise<RestoreScopePlan> {
+export function prepareRestoreScope(bookmarkName: string, scope = "", renameSources: string[] = [], directory = true): Promise<RestoreScopePlan> {
   return runStatusRead(bookmarkName, async () => {
     if (await getMergeConflictState(bookmarkName)) throw new Error("仓库存在未完成合并，请进入仓库处理")
-    return prepareRestoreScopeInternal(bookmarkName, scope, renameSources)
+    return prepareRestoreScopeInternal(bookmarkName, scope, renameSources, directory)
   })
 }
 export function restoreWorktreeScope(bookmarkName: string, plan: RestoreScopePlan): Promise<string> {

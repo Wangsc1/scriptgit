@@ -202,7 +202,10 @@ export async function restoreFileInternal(
   let hasHead = true
   try {
     await git.resolveRef({ fs, dir, gitdir, ref: "HEAD" })
-  } catch (_e) {
+  } catch (error: any) {
+    // Only an unborn HEAD is a deletion restore. I/O/permission/corruption errors
+    // must fail closed, never turn an uncertain baseline into file removal.
+    if (error?.code !== "NotFoundError") throw error
     hasHead = false
   }
   if (!hasHead) {

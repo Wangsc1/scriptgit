@@ -1,3 +1,4 @@
+import { expandRenameSelection, forwardRenameSelection, validatedLocalRenames, consumeRestoredRenames, type RestoreSelection } from "./localRenameHistory"
 import { resolveRepoPathsReadOnly } from "../repoStore"
 import { createFS, loadGitEngine } from "../gitCore"
 import { readWorktreeEntries } from "./worktreeTreeService"
@@ -7,7 +8,7 @@ import { inspectEmptyDirectories, type EmptyDirectoryPlan } from "./emptyDirecto
 import { restoreFileInternal } from "./worktreeService"
 
 export type RestoreScopePlan = {
-  scope: string; renameSources?: string[]; root: string; gitdir: string; filepaths: string[]; empty: EmptyDirectoryPlan
+  scope: string; directory?: boolean; selections?: RestoreSelection[]; missingScopes?: string[]; head?: string | null; restoreFirst?: string[]; renameSources?: string[]; root: string; gitdir: string; filepaths: string[]; empty: EmptyDirectoryPlan
 }
 const within = (path: string, scope: string) => !scope || path === scope || path.startsWith(scope + "/")
 function validateScope(scope: string) {
@@ -23,7 +24,7 @@ async function context(bookmarkName: string) {
   return { git, fs: createFS(gitdir, dir), dir, gitdir }
 }
 /** Internal, caller holds a read/mutation barrier; no writes, including on cancel. */
-export async function prepareRestoreScopeInternal(bookmarkName: string, scope = "", renameSources: string[] = []): Promise<RestoreScopePlan> {
+export async function prepareRestoreScopeInternal(bookmarkName: string, scope = "", renameSources: string[] = [], directory = true): Promise<RestoreScopePlan> {
   validateScope(scope)
   const sources = [...new Set(renameSources)].filter(source => source !== scope)
   if (sources.length && !scope) throw new Error("重命名还原必须明确新目录范围")
@@ -31,11 +32,20 @@ export async function prepareRestoreScopeInternal(bookmarkName: string, scope = 
     validateScope(source)
     if (!source) throw new Error("不安全的重命名原目录范围")
   }
-  const scopes = [scope, ...sources]
-  const inScope = (path: string) => scopes.some(scope => within(path, scope))
   const ctx = await context(bookmarkName)
+  const events = await validatedLocalRenames(bookmarkName, ctx)
+  let head: string | null = null
+  try { head = await ctx.git.resolveRef({ fs: ctx.fs, dir: ctx.dir, gitdir: ctx.gitdir, ref: "HEAD" }) }
+  catch (error: any) { if (error?.code !== "NotFoundError") throw error }
+  const requested = [{ path: scope, directory }, ...sources.map(path => ({ path, directory, related: true }))]
+  const selection = scope && !await FileManager.exists(ctx.dir + "/" + scope) ? forwardRenameSelection(requested, events) : requested
+  const scopes = expandRenameSelection(selection, events)
+  for (const selected of scopes) validateScope(selected.path)
+  const inScope = (path: string, work: number) => scopes.some(selected => (!selected.related || work === 0) && (selected.directory ? within(path, selected.path) : path === selected.path))
   let primaryMissing = false
-  for (const range of scopes) if (range) {
+  const missingScopes: string[] = []
+  for (const selected of scopes) if (selected.path) {
+    const range = selected.path
     let absolute = ctx.dir
     for (const part of range.split("/")) {
       absolute += "/" + part
@@ -45,16 +55,19 @@ export async function prepareRestoreScopeInternal(bookmarkName: string, scope = 
       // Preview/cancel never creates directories.
       if (!await FileManager.exists(absolute)) {
         if (range === scope) primaryMissing = true
+        missingScopes.push(range)
         break
       }
-      if (!await FileManager.isDirectory(absolute)) throw new Error("还原范围不是安全目录")
+      if (absolute === ctx.dir + "/" + range && !selected.directory) {
+        if (!await FileManager.isFile(absolute)) throw new Error("还原范围不是安全文件")
+      } else if (!await FileManager.isDirectory(absolute)) throw new Error("还原范围不是安全目录")
     }
   }
   const entries = await readWorktreeEntries(bookmarkName)
-  const paths = entries.untrackedDirectories.filter(inScope)
+  const paths = entries.untrackedDirectories.filter(path => scopes.some(selected => !selected.related && selected.directory && within(path, selected.path)))
   const matrix = await scanMutationMatrix(ctx, "还原范围新鲜检查")
-  if (primaryMissing && !matrix.some(([path, head, work]) => path.startsWith(scope + "/") && head === 1 && work === 0)) throw new Error("还原范围不是安全目录，也没有可恢复的已跟踪文件")
-  const filepaths = matrix.filter(([path, head, work, stage]) => inScope(path) && matrixToStatus(head, work, stage) !== "unmodified").map(row => row[0]).sort()
+  if (primaryMissing && !matrix.some(([path, head, work]) => (directory ? path.startsWith(scope + "/") : path === scope) && head === 1 && work === 0)) throw new Error("还原范围不是安全目录，也没有可恢复的已跟踪文件")
+  const filepaths = matrix.filter(([path, head, work, stage]) => inScope(path, work) && matrixToStatus(head, work, stage) !== "unmodified").map(row => row[0]).sort()
   // Preview only permits files already in this explicit restore scope to become
   // absent; hidden/ignored/symlink payloads still make a directory ineligible.
   for (const filepath of filepaths) {
@@ -62,14 +75,15 @@ export async function prepareRestoreScopeInternal(bookmarkName: string, scope = 
     const absolute = ctx.dir + "/" + filepath, metadata = ctx.gitdir.replace(/\/+$/, "")
     if (absolute === metadata || absolute.startsWith(metadata + "/")) throw new Error("改动范围包含 Git 元数据，已拒绝还原")
   }
+  const restoreFirst = matrix.filter(([path, head, work]) => inScope(path, work) && head === 1 && work === 0).map(row => row[0]).sort()
   const empty = await inspectEmptyDirectories(ctx.dir, paths, "preview", undefined, filepaths)
-  return { scope, ...(sources.length ? { renameSources: sources } : {}), root: ctx.dir, gitdir: ctx.gitdir, filepaths, empty }
+  return { scope, directory, selections: scopes, missingScopes, head, restoreFirst, ...(sources.length ? { renameSources: sources } : {}), root: ctx.dir, gitdir: ctx.gitdir, filepaths, empty }
 }
 
 /** Internal, one mutation barrier for the entire confirmed scope. */
 export async function restoreScopeInternal(bookmarkName: string, approved: RestoreScopePlan): Promise<string> {
-  const fresh = await prepareRestoreScopeInternal(bookmarkName, approved.scope, approved.renameSources)
-  if (fresh.root !== approved.root || fresh.gitdir !== approved.gitdir || JSON.stringify(fresh.filepaths) !== JSON.stringify(approved.filepaths)) throw new Error("还原范围或文件列表已变化，请刷新后重新确认")
+  const fresh = await prepareRestoreScopeInternal(bookmarkName, approved.scope, approved.renameSources, approved.directory ?? true)
+  if (("head" in approved && fresh.head !== approved.head) || fresh.root !== approved.root || fresh.gitdir !== approved.gitdir || (approved.missingScopes && JSON.stringify(fresh.missingScopes) !== JSON.stringify(approved.missingScopes)) || (approved.selections && JSON.stringify(fresh.selections) !== JSON.stringify(approved.selections)) || JSON.stringify(fresh.filepaths) !== JSON.stringify(approved.filepaths)) throw new Error("还原范围或文件列表已变化，请刷新后重新确认")
   const expected = approved.empty
   const paths = expected?.directories.map(d => d.path) || []
   const candidates = new Set(fresh.empty?.directories.map(d => d.path) || [])
@@ -85,14 +99,18 @@ export async function restoreScopeInternal(bookmarkName: string, approved: Resto
     for (const part of filepath.split("/")) {
       current += "/" + part
       if (part.toLowerCase() === ".git" || await FileManager.isLink(current)) throw new Error("文件路径变为符号链接或元数据，已停止还原")
-      if (await FileManager.exists(current) && !await FileManager.isDirectory(current) && current !== fresh.root + "/" + filepath && !await FileManager.isFile(current)) throw new Error("文件父路径异常")
+      if (await FileManager.exists(current) && !await FileManager.isDirectory(current) && current !== fresh.root + "/" + filepath) throw new Error("文件父路径异常")
     }
     if (await FileManager.isDirectory(fresh.root + "/" + filepath)) throw new Error("待还原文件变为目录，已保留，请重新确认")
-    await restoreFileInternal(bookmarkName, filepath, true)
   }
+  // Restore missing HEAD originals BEFORE overwriting/deleting any destination.
+  // Failure here leaves all destination bytes intact; the write barrier is not a transaction.
+  const first = new Set(fresh.restoreFirst || [])
+  for (const filepath of [...first, ...fresh.filepaths.filter(path => !first.has(path))]) await restoreFileInternal(bookmarkName, filepath, true)
   const stillUntracked = new Set((await readWorktreeEntries(bookmarkName)).untrackedDirectories)
   const removable = paths.filter(path => stillUntracked.has(path))
   const removed = removable.length ? await inspectEmptyDirectories(fresh.root, removable, "delete", expected!) : null
+  consumeRestoredRenames(fresh.root, fresh.gitdir, fresh.selections || [])
   return `已还原 ${fresh.filepaths.length} 个文件，删除 ${removed?.directories.length || 0} 个新增空目录。` +
     (newlyEmpty ? `\n确认后另出现 ${newlyEmpty} 个空目录，未纳入本次确认，已保留。` : "") +
     (removable.length < paths.length ? `\n另有 ${paths.length - removable.length} 个目录状态已变化，已保留，请刷新检查。` : "") +

@@ -4,7 +4,7 @@ import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
-import { moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFiles, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
+import { knownLocalRenameHints, moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFiles, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL, COLOR_ORANGE, COLOR_PURPLE } from "../constants/colors"
 import { localImportStep, localImportOnMain } from "../services/localImportExecution"
 import { pickLocalDirectory, pickLocalDocuments, pickLocalPhotos, type PickedLocalFile } from "../services/localFileImport"
@@ -132,7 +132,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [renamedFiles, setRenamedFiles] = useState<{ path: string; sources?: string[]; inventoryBefore?: typeof worktreeEntries; before: FileChange[]; directory?: boolean }[]>([])
+  const [renamedFiles, setRenamedFiles] = useState<{ path: string; sources?: string[]; inventoryBefore?: typeof worktreeEntries; before: FileChange[]; originalChanges?: FileChange[]; directory?: boolean }[]>(() => (knownLocalRenameHints?.(bookmarkName) || []).map(entry => ({ ...entry, before: [] })))
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
   // 即时提示仅覆盖尚未刷新或仍有真实工作区改动的新目标；不伪造 Git rename 状态。
@@ -148,7 +148,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   const displayChanges = useMemo(() => new Map<string, FileChange>(changes.flatMap(change => {
     const entry = activeRenames.find(entry => entry.directory && change.filepath.startsWith(entry.path + "/"))
     if (!entry || (change.status !== "added" && change.status !== "*added")) return [[change.filepath, change] as [string, FileChange]]
-    const previous = entry.before.find(c => entry.sources?.some(source => c.filepath === source + change.filepath.slice(entry.path.length)))
+    const previous = (entry.originalChanges || entry.before).find(c => entry.sources?.some(source => c.filepath === source + change.filepath.slice(entry.path.length)))
     return previous ? [[change.filepath, { ...previous, filepath: change.filepath }] as [string, FileChange]] : []
   })), [changes, activeRenames])
   const changedDirectories = useMemo(() => changedDirectoryPaths([...displayChanges.keys()]), [displayChanges])
@@ -278,11 +278,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     if (state.current.busy || mergeInProgress) return
     const targets = changes.filter(change => change.filepath.startsWith(path + "/"))
     // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
-    const renameSources = directory ? activeRenames.flatMap(entry => entry.directory &&
-      (path === entry.path || path.startsWith(entry.path + "/"))
-      ? (entry.sources || []).map(source => source + path.slice(entry.path.length)) : []) : []
-    if (renameSources.length) onRestore(path, targets.map(change => change.filepath), directory, renameSources)
-    else onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
+    onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
   }
   const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
   const [directoryError, setDirectoryError] = useState("")
@@ -298,11 +294,11 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
       if (state.current.alive) {
         if (kind === "rename") {
           setSessionCreatedDirectories(previous => previous.map(p => p === path || p.startsWith(path + "/") ? result.path + p.slice(path.length) : p))
-          const targets = new Set([result.path, ...result.directories, ...result.files])
-          setRenamedFiles(previous => [
-            ...previous.filter(entry => entry.path !== path && !entry.path.startsWith(path + "/") && !targets.has(entry.path)),
-            { path: result.path, sources: [path, ...(renamedFiles.find(entry => entry.path === path)?.sources || [])], inventoryBefore: worktreeEntries, before: changes, directory: true },
-          ])
+          setRenamedFiles(previous => (knownLocalRenameHints(bookmarkName)).map(entry => ({ ...entry,
+            before: changes,
+            originalChanges: previous.find(old => old.path === entry.path || entry.sources.includes(old.path))?.originalChanges || previous.find(old => old.path === entry.path || entry.sources.includes(old.path))?.before || changes,
+            inventoryBefore: worktreeEntries,
+          })))
         }
         setAdded(previous => [...previous.filter(p => kind !== "rename" || !p.startsWith(path + "/")), ...result.files])
         setDirectories(previous => [...previous.filter(p => kind !== "rename" || (p !== path && !p.startsWith(path + "/"))), ...result.directories])
@@ -350,7 +346,11 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
       if (next == null || !state.current.alive || (kind === "rename" && next === name)) return
       const target = await (kind === "copy" ? copyLocalWorktreeFile : renameLocalWorktreeFile)(bookmarkName, file, next)
       if (state.current.alive) {
-        if (kind === "rename") setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, sources: [path, ...(renamedFiles.find(entry => entry.path === path)?.sources || [])], inventoryBefore: worktreeEntries, before: changes }])
+        if (kind === "rename") setRenamedFiles(previous => knownLocalRenameHints(bookmarkName).map(entry => ({ ...entry,
+          before: changes,
+            originalChanges: previous.find(old => old.path === entry.path || entry.sources.includes(old.path))?.originalChanges || previous.find(old => old.path === entry.path || entry.sources.includes(old.path))?.before || changes,
+          inventoryBefore: worktreeEntries,
+        })))
         setAdded(previous => [...previous.filter(p => kind !== "rename" || p !== path), target])
         if (kind === "copy") setCopied(previous => [...previous, { path: target, before: changes }])
       }

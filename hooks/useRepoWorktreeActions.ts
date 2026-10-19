@@ -119,11 +119,10 @@ export function useRepoWorktreeActions({
 
   async function handleRestore(filepath: string, filepaths?: string[], directory = false, renameSources?: string[]) {
     if (restorePreview.current.busy || !restorePreview.current.alive || stagingBusy || stashBusy || guardMergeBusy()) return
-    if (!directory) { setPending({ type: "restore", filepath, filepaths }); return }
     restorePreview.current.busy = true
     setStagingBusy(true)
     try {
-      const restorePlan = await prepareRestoreScope(bookmarkName, filepath, renameSources)
+      const restorePlan = await prepareRestoreScope(bookmarkName, filepath, renameSources, directory)
       if (restorePreview.current.alive) setPending({ type: "restore", filepath, restorePlan })
     } catch (e: any) { if (restorePreview.current.alive) showToast("还原检查失败：" + String(e?.message || e), "error") }
     finally { restorePreview.current.busy = false; if (restorePreview.current.alive) setStagingBusy(false) }
