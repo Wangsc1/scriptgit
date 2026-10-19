@@ -66,8 +66,8 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
       <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
-        <Button title="移动到…" disabled={busy || deleted} action={() => moveTo(node.path)} />
         <Button title="复制链接" disabled={busy || deleted || !copyLink} action={() => copyLink?.(node.path)} />
+        <Button title="移动到…" disabled={busy || deleted} action={() => moveTo(node.path)} />
       </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: swipeActions }}>
         <VStack alignment="leading" spacing={4} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
