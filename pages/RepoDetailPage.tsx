@@ -13,6 +13,7 @@
 import { List, Text, TextField, Button, Menu, useState, useRef, useEffect } from "scripting"
 import { LocalImagePreview } from "../components/LocalImagePreview"
 import { LocalFileEditor } from "./LocalFileEditor"
+import { rawFileUrl } from "../utils/rawFileUrl"
 import type { LocalWorktreeFile } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { toastContent } from "../components/Toast"
@@ -519,6 +520,14 @@ export function RepoDetailPage({
         trackedFiles={data.trackedFiles}
         worktreeEntries={data.worktreeEntries}
         onOpenLocalFile={openLocalFile}
+        onCopyFileLink={async (path) => {
+          try {
+            await Pasteboard.setString(rawFileUrl(data.githubFullName, data.branchInfo.current, path))
+            showToast("已复制 Raw 链接（远端当前分支，不含未推送修改）", "success")
+          } catch (e: any) {
+            showToast("复制链接失败：" + String(e?.message || e), "error")
+          }
+        }}
         creationActive={localCreation.busy}
         onCreateLocalEntry={localCreation.open}
         onWorktreeChanged={async () => { await data.refreshChangesAndSnapshot() }}

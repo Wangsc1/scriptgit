@@ -13,6 +13,7 @@ const content=load('components/RepoDetailContent.tsx',{'./FilledSegmentedControl
 const data={displayName:'Repo',branchInfo:{current:'main'},branchStateKnown:true,changes:[],tab:0,trackedFiles:[],mergeInProgress:false,loadAll:noop,refreshChangesAndSnapshot:async()=>{refreshes++;if(refreshGate)await refreshGate.promise}}
 const worktree={commitSheetMode:null,closeCommitSheet:noop}
 const {RepoDetailPage}=load('pages/RepoDetailPage.tsx',{
+ '../utils/rawFileUrl':load('utils/rawFileUrl.ts'),
  scripting:ui,'../components/LocalImagePreview':{LocalImagePreview:'LocalImagePreview'},'./LocalFileEditor':{LocalFileEditor:'LocalFileEditor'},
  '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/Toast':{toastContent:noop},
  '../hooks/useToast':{useToast:()=>({showToast:message=>errors.push(message)})},
@@ -31,6 +32,8 @@ async function main(){
  const prompts=[];let input=null,promptGate=null
  global.Dialog={prompt:async options=>{prompts.push(options);return promptGate?promptGate.promise:input}}
  const h=mount(RepoDetailPage,{bookmarkName:'repo',name:'Repo'},{effectUpdates:true})
+ const copied=[];global.Pasteboard={setString:async value=>copied.push(value)};data.githubFullName='o/r'
+ await tabProps(h).onCopyLink('folder/a.txt');assert.deepEqual(copied,['https://raw.githubusercontent.com/o/r/refs/heads/main/folder/a.txt']);assert.match(errors.pop(),/已复制 Raw 链接/)
  for(const directory of [false,true]){
   input=null;await tabProps(h).onCreateEntry(directory,path=>created.push(path));h.render()
   assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(prompts.at(-1).title,directory?'创建目录':'创建文件');assert.equal(prompts.at(-1).defaultValue,'');assert.equal(prompts.at(-1).confirmLabel,'创建');assert.equal(calls.length,0);assert.equal(refreshes,0)

@@ -129,6 +129,20 @@ async function main(){
   // 图片打开仅传原生显示缩略图，交由稳定父List路由LocalImagePreview。
   await disk('click.png',Buffer.from([137,80,78,71]));props.files=[...props.files,'click.png'];h.render();const pic=all(expand(h.tree)).find(n=>n.type==='Button'&&!n.props.title&&JSON.stringify(n.children).includes('click.png'));await pic.props.action();assert.ok(opened.previewDataUrl);assert.equal(opened.text,null);h.unmount()
  })
+ await test('copy link is a file-only context action, propagates through nested folders and leaves worktree/HEAD/index untouched',async()=>{
+  const copied=[],props={files:['a.txt','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onCopyLink:path=>copied.push(path)}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
+  const row=name=>nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))
+  const action=name=>all(row(name).props.contextMenu.menuItems).find(n=>n.props.title==='复制链接')
+  const original=fs.readFileSync(dir+'/a.txt'),index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  assert.equal(action('a.txt').props.disabled,false);await action('a.txt').props.action()
+  const folder=nodes().find(n=>n.type==='DisclosureGroup');assert.ok(!all(folder.props.contextMenu.menuItems).some(n=>n.props.title==='复制链接'));folder.props.onChanged(true)
+  await action('b.txt').props.action();assert.deepEqual(copied,['a.txt','folder/b.txt'])
+  props.changes=[{filepath:'a.txt',status:'*deleted',worktreeDeleted:true}];assert.equal(action('a.txt').props.disabled,true)
+  props.loading=true;assert.equal(action('b.txt').props.disabled,true)
+  assert.deepEqual(fs.readFileSync(dir+'/a.txt'),original);assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head);h.unmount()
+ })
  await test('folder deletion: recursive content, root/traversal/symlink and nested Git protection; index/HEAD unchanged',async()=>{
   const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
   await disk('delete-folder/sub/untracked','data');await disk('delete-folder/a','data')

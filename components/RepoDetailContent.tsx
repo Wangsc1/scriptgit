@@ -78,6 +78,7 @@ export function RepoDetailTabContent({
   githubFullName,
   onWorktreeChanged,
   onOpenLocalFile,
+  onCopyFileLink,
   creationActive, onCreateLocalEntry,
 }: {
   tab: RepoDetailTab
@@ -112,6 +113,7 @@ export function RepoDetailTabContent({
   historyLoading: boolean
   historyLimited: boolean
   githubFullName: string | null
+  onCopyFileLink?: (path: string) => void | Promise<void>
   onOpenLocalFile: (file: LocalWorktreeFile) => void
   onWorktreeChanged: () => void | Promise<void>
   creationActive: boolean
@@ -124,7 +126,7 @@ export function RepoDetailTabContent({
           onChanged={(value: number) => onTabChange(value as RepoDetailTab)} />
       </Section>
       {tab === 0 ? (
-        <FilesTab creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} worktreeEntries={worktreeEntries} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />
+        <FilesTab onCopyLink={onCopyFileLink} creationActive={creationActive} onCreateEntry={onCreateLocalEntry} files={trackedFiles} worktreeEntries={worktreeEntries} loading={loading} bookmarkName={bookmarkName} changes={changes} onWorktreeChanged={onWorktreeChanged} onOpen={onOpenLocalFile} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />
       ) : tab === 1 ? (
         <StashTab
           bookmarkName={bookmarkName}

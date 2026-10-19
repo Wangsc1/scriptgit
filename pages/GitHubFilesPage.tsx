@@ -6,6 +6,7 @@ import type { RemoteTextFile } from "../services/githubFileSession"
 import { formatBytes, formatISODate } from "../utils/format"
 import { COLOR_LABEL, COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { GitHubFileEditor } from "./GitHubFileEditor"
+import { rawFileUrl } from "../utils/rawFileUrl"
 
 export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: string }) {
   const [input, setInput] = useState(initialRepo)
@@ -19,6 +20,7 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
   const [moreRepos, setMoreRepos] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const [copyStatus, setCopyStatus] = useState("")
   const [file, setFile] = useState<RemoteTextFile | null>(null)
   const request = useRef(0)
   const busyRef = useRef(false)
@@ -33,6 +35,7 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
     const id = ++request.current
     busyRef.current = true
     setBusy(true)
+    setCopyStatus("")
     setError("")
     try { await work(id) }
     catch (e: any) { if (id === request.current) setError(String(e?.message || e)) }
@@ -74,6 +77,18 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
     })
   }
 
+  async function copyLink(entry: GitHubContentEntry) {
+    if (busyRef.current || entry.type !== "file") return
+    const id = request.current
+    setCopyStatus("")
+    try {
+      await Pasteboard.setString(rawFileUrl(repo, branch, entry.path))
+      if (id === request.current) setCopyStatus("已复制 Raw 链接")
+    } catch (e: any) {
+      if (id === request.current) setCopyStatus("复制链接失败：" + String(e?.message || e))
+    }
+  }
+
   async function loadMyRepos() {
     if (busyRef.current) return
     await run(async (id) => {
@@ -99,6 +114,7 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
     </Section>
     {busy ? <Section><Text>加载中…</Text></Section> : null}
     {error ? <Section><Text foregroundStyle="red">{error}</Text></Section> : null}
+    {copyStatus ? <Section><Text>{copyStatus}</Text></Section> : null}
     {repo && branches.length ? <Section header={<Text>{repo}</Text>}>
       <Picker title="分支" value={branch} onChanged={(value: string) => { if (value !== branch) loadDirectory("", value) }} disabled={busy}>
         {branches.map((name) => <Text key={name} tag={name}>{name}</Text>)}
@@ -113,7 +129,8 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
         if (!isDir && entry.size > 0) metaParts.push(formatBytes(entry.size))
         if (!isDir && entry.lastModified) metaParts.push(formatISODate(entry.lastModified))
         return (
-          <Button key={entry.path} action={() => isDir ? loadDirectory(entry.path) : openFile(entry)} disabled={busy}>
+          <Button key={entry.path} action={() => isDir ? loadDirectory(entry.path) : openFile(entry)} disabled={busy}
+            contextMenu={entry.type === "file" ? { menuItems: <Button title="复制链接" systemImage="link" action={() => copyLink(entry)} disabled={busy} /> } : undefined}>
             <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
               <Text font="body">{isDir ? "📁" : "📄"}</Text>
               <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0, alignment: "leading" }}>

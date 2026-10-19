@@ -221,7 +221,7 @@ async function main() {
     const h=mount(GitHubFileEditor,{fullName:'o/r',branch:'main',file:{path:'a.png',sha:'s',text:null,readOnlyReason:'binary'},onClose:()=>{}})
     assert.ok(controllers.at(-1).readOnly); assert.equal(all(h.tree).filter(n=>n.type==='Button' && n.props.title==='提交保存').length,0); assert.match(text(h),/binary/); h.unmount()
   })
-  function browser(mock) { return load('pages/GitHubFilesPage.tsx',{scripting:ui,'../api/githubApi':mock,'../utils/format':load('utils/format.ts'),'../constants/colors':load('constants/colors.ts'),'./GitHubFileEditor':{GitHubFileEditor:'FileEditor'}}).GitHubFilesPage }
+  function browser(mock) { return load('pages/GitHubFilesPage.tsx',{scripting:ui,'../api/githubApi':mock,'../utils/rawFileUrl':load('utils/rawFileUrl.ts'),'../utils/format':load('utils/format.ts'),'../constants/colors':load('constants/colors.ts'),'./GitHubFileEditor':{GitHubFileEditor:'FileEditor'}}).GitHubFilesPage }
   function entryButton(h, name) {
     h.render()
     const found=all(h.tree).find(n=>n.type==='Button'&&all(n.children).some(t=>t.type==='Text'&&t.children.includes(name)))
@@ -251,6 +251,31 @@ async function main() {
     assert.match(text(h),/加载中/); await tick(); assert.match(text(h),/offline/)
     fail=false; await node(h,'Button','刷新目录 / 重试').props.action(); await entryButton(h,'link').props.action()
     h.render(); assert.equal(loads,0); assert.match(h.tree.props.fullScreenCover.content.props.file.readOnlyReason,/只读/); h.unmount()
+  })
+  await test('Raw URL encodes branch/path and refuses missing GitHub context or unsafe file paths', async () => {
+    const {rawFileUrl}=load('utils/rawFileUrl.ts')
+    assert.equal(rawFileUrl('owner/repo','功能/test','空 格/#100%.txt'),'https://raw.githubusercontent.com/owner/repo/refs/heads/%E5%8A%9F%E8%83%BD%2Ftest/%E7%A9%BA%20%E6%A0%BC/%23100%25.txt')
+    for(const repo of [null,'','https://github.com/o/r','user:token@github.com/o/r','../repo'])assert.throws(()=>rawFileUrl(repo,'main','a.txt'),/GitHub/)
+    for(const branch of [null,'','\n'])assert.throws(()=>rawFileUrl('o/r',branch,'a.txt'),/分支/)
+    for(const path of ['', '/a','../a','dir/../a','dir//a','dir/./a','a\\\\b','a\u0000b'])assert.throws(()=>rawFileUrl('o/r','main',path),/路径/)
+  })
+  await test('Raw link context menu copies selected branch/path without loading file or making API writes; errors and unmount remain safe', async () => {
+    const copied=[];let loads=0,clipboardFail=false,wait=null
+    global.Pasteboard={setString:async value=>{if(wait)await wait.promise;if(clipboardFail)throw Error('clipboard denied');copied.push(value)}}
+    const h=mount(browser(browserApi({listRepoContents:async()=>[
+      {name:'文 #%.txt',path:'dir/文 #%.txt',type:'file',sha:'s'},
+      {name:'folder',path:'folder',type:'dir',sha:'d'},
+      {name:'link',path:'link',type:'symlink',sha:'l'},
+      {name:'module',path:'module',type:'submodule',sha:'m'}],
+      loadRepoTextFile:async()=>{loads++;throw Error('must not load')}})),{fullName:'o/r'});await tick()
+    const copy=()=>entryButton(h,'文 #%.txt').props.contextMenu.menuItems
+    assert.equal(copy().props.title,'复制链接');assert.equal(copy().props.systemImage,'link')
+    for(const name of ['folder','link','module'])assert.equal(entryButton(h,name).props.contextMenu,undefined)
+    await copy().props.action();assert.equal(copied.at(-1),'https://raw.githubusercontent.com/o/r/refs/heads/main/dir/%E6%96%87%20%23%25.txt');assert.match(text(h),/已复制 Raw 链接/)
+    await node(h,'Picker','分支').props.onChanged('feature/a');await tick();await copy().props.action()
+    assert.equal(copied.at(-1),'https://raw.githubusercontent.com/o/r/refs/heads/feature%2Fa/dir/%E6%96%87%20%23%25.txt');assert.equal(loads,0)
+    clipboardFail=true;await copy().props.action();assert.match(text(h),/复制链接失败.*clipboard denied/);assert.equal(copied.length,2)
+    clipboardFail=false;wait=deferred();const pending=copy().props.action();h.unmount();wait.resolve();await pending;assert.equal(h.lateWrites,0)
   })
   await test('browser ignores response after unmount and blocks duplicate requests', async () => {
     const wait=deferred(); let calls=0

@@ -18,6 +18,7 @@ function fixture(){
  }
  let pendingApi,worktreeApi
  Object.assign(mocks,{
+  '../utils/rawFileUrl':load('utils/rawFileUrl.ts'),
   '../utils/format':format,'../utils/repoDetailAlerts':{getRepoPendingAlert:()=>({title:'确认还原',message:'原有确认',confirmButton:'还原'})},
   '../services/repoStore':{updateBranchLastPulledAt:(...args)=>times.push(args)},
   '../hooks/useToast':{useToast:()=>({showToast:(...args)=>toasts.push(args)})},
@@ -80,6 +81,20 @@ async function main(){
   e.worktree.setCommitSheetMode('amend');e.render();assert.equal(e.h.tree.props.sheet.content.props.navigationTitle,'重编提交');assert.equal(e.h.tree.props.sheet.content.props.initialTitle,'old title');assert.equal(e.h.tree.props.sheet.content.props.onConfirm,e.pending.handleAmendFormConfirm);e.worktree.closeCommitSheet();e.render()
   await e.worktree.handleStagePaths(['folder']);assert.deepEqual(e.calls,['stash']);assert.equal(e.calls.includes('stageAll'),false)
   e.calls.length=0;await e.worktree.handleCommit('独立提交','只提交已暂存内容');assert.deepEqual(e.calls,['commit:独立提交\n\n只提交已暂存内容']);assert.deepEqual(e.data.changes,[]);e.h.unmount()
+ })
+ await test('local file Raw link uses current GitHub repository/branch; missing context and clipboard failure show errors, no Git operations',async()=>{
+  const e=fixture(),copied=[];let fail=false
+  global.Pasteboard={setString:async value=>{if(fail)throw Error('clipboard denied');copied.push(value)}}
+  e.data.githubFullName='o/r';await e.find('RepoDetailTabContent').props.onCopyFileLink('dir/a #.txt')
+  assert.deepEqual(copied,['https://raw.githubusercontent.com/o/r/refs/heads/master/dir/a%20%23.txt'])
+  assert.ok(e.toasts.at(-1)[0].includes('不含未推送修改'));assert.equal(e.toasts.at(-1)[1],'success')
+  e.data.branchInfo.current='feature/a';e.data.githubFullName='new/repo'
+  await e.find('RepoDetailTabContent').props.onCopyFileLink('file.txt');assert.equal(copied.at(-1),'https://raw.githubusercontent.com/new/repo/refs/heads/feature%2Fa/file.txt')
+  for(const mode of ['no remote','detached','clipboard']){
+   e.data.githubFullName=mode==='no remote'?null:'o/r';e.data.branchInfo.current=mode==='detached'?null:'main';fail=mode==='clipboard'
+   await e.find('RepoDetailTabContent').props.onCopyFileLink('file.txt');assert.equal(copied.length,2);assert.equal(e.toasts.at(-1)[1],'error')
+  }
+  assert.deepEqual(e.calls,[]);e.h.unmount()
  })
  console.log(groups+' detail push groups passed; production page + sync/worktree hooks, mocked Git I/O.')
 }
