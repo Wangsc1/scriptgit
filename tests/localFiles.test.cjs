@@ -294,10 +294,38 @@ async function main(){
   assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');assert.equal(color('icon-add'),'systemGreen');assert.equal(color('icon-deleted'),'systemRed');for(const name of ['icon-normal','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
   assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'secondaryLabel')
   global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
+  assert.equal(row('icon-photo.png'),undefined)
   for(const status of ['*added','*modified']){props.changes=[...props.changes.filter(c=>c.filepath!=='icon-renamed.png'),{filepath:'icon-renamed.png',status}];assert.equal(color('icon-renamed.png'),'systemOrange');const text=JSON.stringify(row('icon-renamed.png').children);assert.match(text,/已重命名/);assert.doesNotMatch(text,/已修改|新增/);assert.equal(props.changes.at(-1).status,status)}
+  props.changes=[...props.changes,{filepath:'icon-photo.png',status:'*deleted',worktreeDeleted:true}]
+  assert.equal(row('icon-photo.png'),undefined);assert.ok(row('icon-deleted'))
+  global.Dialog.prompt=async()=> 'icon-twice.png';await all(row('icon-renamed.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+  assert.equal(row('icon-photo.png'),undefined);assert.equal(row('icon-renamed.png'),undefined);assert.match(JSON.stringify(row('icon-twice.png').children),/已重命名/)
+  global.Dialog.prompt=async()=> 'icon-photo.png';await all(row('icon-twice.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+  // A later status refresh reflects a rename back to the original path.
+  props.changes=[];assert.ok(row('icon-photo.png'));h.unmount()
+ })
+ await test('rename folding preserves recreated sources and unrelated deletions with live inventory',async()=>{
+  await disk('fold-original.txt','bytes');const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
+  const props={files:['fold-original.txt','unrelated-deleted.txt'],loading:false,bookmarkName:'repo',changes:[],worktreeEntries:{files:['fold-original.txt'],directories:[],untrackedDirectories:[]},onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
+  const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function rows(){h.render();return all(h.tree).filter(n=>typeof n.type==='function'&&n.props.node?.type==='file')}
+  const original=rows().find(n=>n.props.node.path==='fold-original.txt');global.Dialog.prompt=async()=> 'fold-new.txt'
+  await all(original.type(original.props).props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+  assert.equal(rows().some(n=>n.props.node.path==='fold-original.txt'),false)
+  props.worktreeEntries={files:['fold-new.txt'],directories:[],untrackedDirectories:[]}
+  props.changes=[{filepath:'fold-original.txt',status:'*deleted',worktreeDeleted:true},{filepath:'fold-new.txt',status:'*added'},{filepath:'unrelated-deleted.txt',status:'*deleted',worktreeDeleted:true}]
+  assert.deepEqual(rows().map(n=>n.props.node.path).sort(),['fold-new.txt','unrelated-deleted.txt'])
+  await disk('fold-original.txt','recreated');props.worktreeEntries={...props.worktreeEntries,files:['fold-new.txt','fold-original.txt']};props.changes=[...props.changes.filter(c=>c.filepath!=='fold-original.txt'),{filepath:'fold-original.txt',status:'*modified'}]
+  assert.ok(rows().find(n=>n.props.node.path==='fold-original.txt'))
+  assert.equal(fs.readFileSync(dir+'/fold-new.txt','utf8'),'bytes');assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head);h.unmount()
+ })
+ await test('clean file presentation after ordinary status refresh',async()=>{
+  await disk('icon-renamed.png','bytes');const props={files:['icon-renamed.png','icon-mod'],changes:[],bookmarkName:'repo',loading:false};const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  function row(name){h.render();const n=all(h.tree).find(n=>typeof n.type==='function'&&n.props.node?.path===name);return n.type(n.props)}
+  const color=name=>all(row(name)).find(n=>n.type==='Image').props.foregroundStyle
   props.changes=[];assert.equal(color('icon-renamed.png'),'secondaryLabel');assert.doesNotMatch(JSON.stringify(row('icon-renamed.png').children),/已重命名/);assert.equal(color('icon-mod'),'secondaryLabel');h.unmount()
  })
- await test('folder rename marks only relocated folders/files; ordinary parent modifications and clean refresh remain correct',async()=>{
+ await test('folder rename collapses old tree and marks only renamed root; children and real Git changes preserved',async()=>{
   await disk('rename-parent/source/sub/a.txt','a');await disk('rename-parent/source/b.txt','b');await disk('rename-parent/ordinary/x.txt','x')
   const props={files:['rename-parent/source/sub/a.txt','rename-parent/source/b.txt','rename-parent/ordinary/x.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'rename-parent/ordinary/x.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
@@ -312,13 +340,16 @@ async function main(){
   global.Dialog.prompt=async()=> 'target';await all(folder('source').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false)
   assert.match(label('target'),/已重命名/);assert.doesNotMatch(label('target'),/已修改/)
   folder('target').props.onChanged(true);folder('sub').props.onChanged(true)
-  assert.match(label('sub'),/已重命名/)
-  for(const name of ['a.txt','b.txt']){assert.match(fileLabel(name),/已重命名/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'systemOrange')}
+  assert.doesNotMatch(label('sub'),/已重命名|新增/)
+  for(const name of ['a.txt','b.txt']){assert.doesNotMatch(fileLabel(name),/已重命名|新增/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')}
+  assert.equal(folder('source'),undefined)
   assert.match(label('ordinary'),/已修改/);assert.doesNotMatch(label('ordinary'),/已重命名/)
   assert.match(label('rename-parent'),/已修改/);assert.doesNotMatch(label('rename-parent'),/已重命名/)
   props.changes=[{filepath:'rename-parent/target/sub/a.txt',status:'*added'},{filepath:'rename-parent/target/b.txt',status:'*modified'},{filepath:'rename-parent/source/sub/a.txt',status:'*deleted',worktreeDeleted:true}]
-  assert.match(label('target'),/已重命名/);assert.match(label('sub'),/已重命名/)
-  for(const name of ['a.txt','b.txt'])assert.match(fileLabel(name),/已重命名/)
+  props.worktreeEntries={files:['rename-parent/target/sub/a.txt','rename-parent/target/b.txt'],directories:['rename-parent','rename-parent/target','rename-parent/target/sub'],untrackedDirectories:['rename-parent/target','rename-parent/target/sub']}
+  assert.match(label('target'),/已重命名/);assert.doesNotMatch(label('sub'),/已重命名|新增/)
+  for(const name of ['a.txt','b.txt'])assert.doesNotMatch(fileLabel(name),/已重命名|新增/)
+  assert.match(fileLabel('b.txt'),/已修改/);assert.equal(folder('source'),undefined)
   // Commit/restore refresh contains no target changes: neither folder nor files retain hints.
   props.changes=[]
   for(const name of ['target','sub','rename-parent'])assert.doesNotMatch(label(name),/已重命名|已修改/)

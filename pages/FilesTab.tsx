@@ -27,11 +27,12 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove, manage, renameHints, addedHints, addedDirectories, directoryRestorePaths, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onStage, onRestore, mergeInProgress }: { node: FileTreeNode; copyLink?: (path: string) => void | Promise<void>; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; directoryRestorePaths: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onStage: (filepaths: string[]) => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove, manage, displayChanges, renameHints, addedHints, addedDirectories, directoryRestorePaths, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onStage, onRestore, mergeInProgress }: { node: FileTreeNode; copyLink?: (path: string) => void | Promise<void>; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; displayChanges: Map<string, FileChange>; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; directoryRestorePaths: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onStage: (filepaths: string[]) => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
-    const badge = deleted ? { text: "已删除", color: "systemRed" } : renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE } : addedHints.has(node.path) ? { text: "新增", color: "systemGreen" } : change ? statusBadge(change.status, change.unstaged) : null
+    const displayChange = displayChanges.get(node.path)
+    const badge = deleted ? { text: "已删除", color: "systemRed" } : renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE } : addedHints.has(node.path) ? { text: "新增", color: "systemGreen" } : displayChange ? statusBadge(displayChange.status, displayChange.unstaged) : null
     const meta = metadata.get(node.path)
     const metaParts: string[] = []
     if (meta && meta.size != null) metaParts.push(formatBytes(meta.size))
@@ -82,11 +83,11 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
   }
   // 文件夹「暂存」：将其下所有改动路径保存到 Stash。
   const changesUnder = (directory: string) => [...changesByPath.keys()].filter(path => path.startsWith(directory + "/"))
-  const hasChanges = changedDirectories.has(node.path)
+  const hasChanges = [...changesByPath.keys()].some(path => path.startsWith(node.path + "/"))
   const folderBadge = renameHints.has(node.path) ? { text: "已重命名", color: COLOR_ORANGE }
     : deletedDirectories.has(node.path) ? { text: "已删除", color: "systemRed" }
     : addedDirectories.has(node.path) ? { text: "新增", color: "systemGreen" }
-    : hasChanges ? { text: "已修改", color: COLOR_ORANGE } : null
+    : changedDirectories.has(node.path) ? { text: "已修改", color: COLOR_ORANGE } : null
   const folderActions: any[] = []
   const hasNewDirectories = directoryRestorePaths.has(node.path)
   if (hasChanges) folderActions.push(<Button title="推送" tint="systemGreen" disabled={busy || mergeInProgress} action={() => onPush()} />)
@@ -103,7 +104,7 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
-    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} copyLink={copyLink} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} copyLink={copyLink} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
   </DisclosureGroup>
 }
 
@@ -129,14 +130,28 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
       return next
     })
   }
-  const changedDirectories = useMemo(() => changedDirectoryPaths(changes.map(change => change.filepath)), [changes])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [renamedFiles, setRenamedFiles] = useState<{ path: string; before: FileChange[]; directory?: boolean }[]>([])
+  const [renamedFiles, setRenamedFiles] = useState<{ path: string; sources?: string[]; before: FileChange[]; directory?: boolean }[]>([])
   const hasRenameChange = (entry: { path: string; directory?: boolean }) => changes.some(c =>
     !c.worktreeDeleted && (entry.directory ? c.filepath.startsWith(entry.path + "/") : c.filepath === entry.path))
   // 即时提示仅覆盖尚未刷新或仍有真实工作区改动的新目标；不伪造 Git rename 状态。
-  const renameHints = useMemo(() => new Set(renamedFiles.filter(entry => entry.before === changes || hasRenameChange(entry)).map(entry => entry.path)), [renamedFiles, changes])
+  const activeRenames = useMemo(() => renamedFiles.filter(entry => entry.before === changes || hasRenameChange(entry)), [renamedFiles, changes])
+  const renameHints = useMemo(() => new Set(activeRenames.map(entry => entry.path)), [activeRenames])
+  // Collapse only known local rename sources, never unrelated real deletions or recreated sources.
+  const hiddenRenameSource = (path: string) => activeRenames.some(entry => path !== entry.path && !(entry.directory && path.startsWith(entry.path + "/")) && entry.sources?.some(source =>
+    (path === source || (entry.directory && path.startsWith(source + "/"))) &&
+    (entry.before === changes || (!worktreeEntries?.files.includes(path) && !worktreeEntries?.directories.includes(path) &&
+    !changes.some(c => c.filepath === path && !c.worktreeDeleted)))))
+  // Descendants changed location, not name. Keep their pre-existing edits visible,
+  // without treating Git's destination additions as newly named/added children.
+  const displayChanges = useMemo(() => new Map<string, FileChange>(changes.flatMap(change => {
+    const entry = activeRenames.find(entry => entry.directory && change.filepath.startsWith(entry.path + "/"))
+    if (!entry || (change.status !== "added" && change.status !== "*added")) return [[change.filepath, change] as [string, FileChange]]
+    const previous = entry.before.find(c => entry.sources?.some(source => c.filepath === source + change.filepath.slice(entry.path.length)))
+    return previous ? [[change.filepath, { ...previous, filepath: change.filepath }] as [string, FileChange]] : []
+  })), [changes, activeRenames])
+  const changedDirectories = useMemo(() => changedDirectoryPaths([...displayChanges.keys()]), [displayChanges])
   useEffect(() => {
     setRenamedFiles(previous => previous.filter(hasRenameChange))
   }, [changes])
@@ -152,21 +167,21 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   const addedDirectories = useMemo(() => {
     // files is the existing HEAD list from getTrackedFiles: no additional Git/disk scan.
     const existing = changedDirectoryPaths(files)
-    const added = changedDirectoryPaths(changes.filter(c => !c.worktreeDeleted && (c.status === "added" || c.status === "*added")).map(c => c.filepath))
+    const added = changedDirectoryPaths([...displayChanges.values()].filter(c => !c.worktreeDeleted && (c.status === "added" || c.status === "*added")).map(c => c.filepath))
     const other = changedDirectoryPaths(changes.filter(c => c.worktreeDeleted || (c.status !== "added" && c.status !== "*added")).map(c => c.filepath))
     for (const entry of activeCopies) if (entry.directory) added.add(entry.path)
     for (const path of sessionCreatedDirectories) added.add(path)
     for (const path of worktreeEntries?.untrackedDirectories || []) added.add(path)
-    return new Set([...added].filter(path => !existing.has(path) && !other.has(path)))
-  }, [files, changes, activeCopies, sessionCreatedDirectories, worktreeEntries])
+    return new Set([...added].filter(path => !existing.has(path) && !other.has(path) && !activeRenames.some(entry => entry.directory && path.startsWith(entry.path + "/"))))
+  }, [files, changes, displayChanges, activeCopies, sessionCreatedDirectories, worktreeEntries, activeRenames])
   const directoryRestorePaths = useMemo(() => new Set([...addedDirectories, ...changedDirectoryPaths([...addedDirectories])]), [addedDirectories])
   const [added, setAdded] = useState<string[]>([])
-  const fileSignature = [...new Set([...files, ...(worktreeEntries?.files || []), ...changes.map(c => c.filepath), ...added])].join("\0")
+  const fileSignature = [...new Set([...files, ...(worktreeEntries?.files || []), ...changes.map(c => c.filepath), ...added])].filter(path => !hiddenRenameSource(path)).join("\0")
   const visibleFiles = useMemo(() => fileSignature ? fileSignature.split("\0") : [], [fileSignature])
   const [directories, setDirectories] = useState<string[]>([])
   // Disk inventory is refreshed on entry/refresh, while local results fill the brief
   // gap before that refresh. No Git placeholder files or persistent hint store.
-  const tree = useMemo(() => buildFileTree(visibleFiles, { directories: [...new Set([...(worktreeEntries?.directories || []), ...directories])] }), [visibleFiles, directories, worktreeEntries])
+  const tree = useMemo(() => buildFileTree(visibleFiles, { directories: [...new Set([...(worktreeEntries?.directories || []), ...directories])].filter(path => !hiddenRenameSource(path)) }), [visibleFiles, directories, worktreeEntries, activeRenames, changes])
   useEffect(() => {
     if (!worktreeEntries) return
     const present = new Set(worktreeEntries.directories)
@@ -282,8 +297,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
           const targets = new Set([result.path, ...result.directories, ...result.files])
           setRenamedFiles(previous => [
             ...previous.filter(entry => entry.path !== path && !entry.path.startsWith(path + "/") && !targets.has(entry.path)),
-            ...[...new Set([result.path, ...result.directories])].map(target => ({ path: target, before: changes, directory: true })),
-            ...result.files.map(target => ({ path: target, before: changes })),
+            { path: result.path, sources: [path, ...(renamedFiles.find(entry => entry.path === path)?.sources || [])], before: changes, directory: true },
           ])
         }
         if (kind === "copy") setCopied(previous => [...previous,
@@ -327,12 +341,12 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
       const dot = name.lastIndexOf(".")
       const defaultValue = kind === "rename" ? name : dot > 0 ? name.slice(0, dot) + " 副本" + name.slice(dot) : name + " 副本"
       const next = await Dialog.prompt({ title: kind === "copy" ? "复制文件到当前目录" : "重命名文件", message: "只修改本地工作区，不覆盖已有文件，不会暂存、提交或推送。", defaultValue, confirmLabel: "确认", cancelLabel: "取消" })
-      if (next == null || !state.current.alive) return
+      if (next == null || !state.current.alive || (kind === "rename" && next === name)) return
       const target = await (kind === "copy" ? copyLocalWorktreeFile : renameLocalWorktreeFile)(bookmarkName, file, next)
       if (state.current.alive) {
         setAdded(previous => [...previous.filter(p => kind !== "rename" || p !== path), target])
         if (kind === "copy") setCopied(previous => [...previous, { path: target, before: changes }])
-        if (kind === "rename") setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, before: changes }])
+        if (kind === "rename") setRenamedFiles(previous => [...previous.filter(entry => entry.path !== path && entry.path !== target), { path: target, sources: [path, ...(renamedFiles.find(entry => entry.path === path)?.sources || [])], before: changes }])
       }
       await changed(path, kind === "rename")
     } catch (e: any) { if (state.current.alive) setError(String(e?.message || e)) }
@@ -513,6 +527,6 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
     {loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>加载中…</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} copyLink={onCopyLink} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} copyLink={onCopyLink} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }
