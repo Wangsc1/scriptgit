@@ -136,7 +136,7 @@ async function main(){
   const row=name=>nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))
   const action=name=>all(row(name).props.contextMenu.menuItems).find(n=>n.props.title==='复制链接')
   const original=fs.readFileSync(dir+'/a.txt'),index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
-  assert.equal(action('a.txt').props.disabled,false);await action('a.txt').props.action()
+  assert.equal(action('a.txt').props.systemImage,undefined);assert.equal(action('a.txt').props.disabled,false);await action('a.txt').props.action()
   const folder=nodes().find(n=>n.type==='DisclosureGroup');assert.ok(!all(folder.props.contextMenu.menuItems).some(n=>n.props.title==='复制链接'));folder.props.onChanged(true)
   await action('b.txt').props.action();assert.deepEqual(copied,['a.txt','folder/b.txt'])
   props.changes=[{filepath:'a.txt',status:'*deleted',worktreeDeleted:true}];assert.equal(action('a.txt').props.disabled,true)

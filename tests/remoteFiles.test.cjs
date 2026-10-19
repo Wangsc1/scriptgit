@@ -269,7 +269,7 @@ async function main() {
       {name:'module',path:'module',type:'submodule',sha:'m'}],
       loadRepoTextFile:async()=>{loads++;throw Error('must not load')}})),{fullName:'o/r'});await tick()
     const copy=()=>entryButton(h,'文 #%.txt').props.contextMenu.menuItems
-    assert.equal(copy().props.title,'复制链接');assert.equal(copy().props.systemImage,'link')
+    assert.equal(copy().props.title,'复制链接');assert.equal(copy().props.systemImage,undefined)
     for(const name of ['folder','link','module'])assert.equal(entryButton(h,name).props.contextMenu,undefined)
     await copy().props.action();assert.equal(copied.at(-1),'https://raw.githubusercontent.com/o/r/refs/heads/main/dir/%E6%96%87%20%23%25.txt');assert.match(text(h),/已复制 Raw 链接/)
     await node(h,'Picker','分支').props.onChanged('feature/a');await tick();await copy().props.action()

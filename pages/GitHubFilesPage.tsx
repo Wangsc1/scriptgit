@@ -130,7 +130,7 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
         if (!isDir && entry.lastModified) metaParts.push(formatISODate(entry.lastModified))
         return (
           <Button key={entry.path} action={() => isDir ? loadDirectory(entry.path) : openFile(entry)} disabled={busy}
-            contextMenu={entry.type === "file" ? { menuItems: <Button title="复制链接" systemImage="link" action={() => copyLink(entry)} disabled={busy} /> } : undefined}>
+            contextMenu={entry.type === "file" ? { menuItems: <Button title="复制链接" action={() => copyLink(entry)} disabled={busy} /> } : undefined}>
             <HStack alignment="center" spacing={10} frame={{ maxWidth: Infinity, alignment: "leading" }}>
               <Text font="body">{isDir ? "📁" : "📄"}</Text>
               <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, minWidth: 0, alignment: "leading" }}>
