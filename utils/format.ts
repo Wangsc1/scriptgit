@@ -95,6 +95,11 @@ export function suggestCommitTitle(changes: FileChange[]): string {
   return `${action} ${change.filepath}`
 }
 
+/** 推送会提交全部改动：按改动顺序取第一项的文件名或顶层文件夹名。 */
+export function suggestPushTitle(changes: FileChange[]): string {
+  return changes[0]?.filepath.split("/").filter(Boolean)[0] || ""
+}
+
 /** 组装 GitHub 风格提交信息：标题 + 可选描述 */
 export function buildCommitMessage(title: string, description?: string): string {
   const head = title.trim()

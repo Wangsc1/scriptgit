@@ -5,6 +5,7 @@ global.self=globalThis
 const project=path.resolve(__dirname,'..'),git=require('../vendor/index.umd.min.js')
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'scriptgit-local-test-')),dir=tmp+'/work',outside=tmp+'/outside'
 fs.mkdirSync(dir);fs.mkdirSync(outside)
+let observeState=null
 let writes=0,removes=0,confirm=true,confirmations=[],controllers=[],root=dir
 // Native FileManager semantics on a disposable directory; never touches user repositories.
 global.FileManager={temporaryDirectory:tmp,scriptsDirectory:tmp,appGroupDocumentsDirectory:tmp,documentsDirectory:tmp,
@@ -29,7 +30,7 @@ function loader(overrides={}){
  function read(file){file=path.resolve(file);if(cache.has(file))return cache.get(file).exports
   const m={exports:{}};cache.set(file,m)
   const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx',jsxFragmentFactory:'__fragment'},fileName:file}).outputText
-  const req=name=>{if(name==='scripting')return new Proxy(ui,{get:(target,key)=>key==='Widget'?{reloadAll(){}}:target[key]});let dest=path.resolve(path.dirname(file),name);dest=['.ts','.tsx'].map(ext=>dest+ext).find(fs.existsSync)||dest
+  const req=name=>{if(name==='scripting')return new Proxy(ui,{get:(target,key)=>key==='Widget'?{reloadAll(){}}:key==='useState'?initial=>{const [value,set]=target.useState(initial);return [value,next=>{set(next);observeState?.()}]}:target[key]});let dest=path.resolve(path.dirname(file),name);dest=['.ts','.tsx'].map(ext=>dest+ext).find(fs.existsSync)||dest
    if(dest.replace(/\.tsx?$/,'')===project+'/components/LocalCodeEditor')return {LocalCodeEditor:'LocalCodeEditor'}
    if(dest.replace(/\.tsx?$/,'')===project+'/services/localCodeEditor')return {createLocalCodeEditorController:options=>{const c=new global.EditorController(options);c.getContent=async()=>c.content;return c}}
    if(dest===project+'/services/repoStore.ts')return store
@@ -276,6 +277,29 @@ async function main(){
   props.mergeInProgress=true;global.Dialog.prompt=async()=>{throw Error('must not open')};await action();props.mergeInProgress=false
   const detached=deferred();global.Dialog.prompt=async()=>detached.promise;const late=action();await tick();h.unmount();detached.resolve('not-renamed');await late;assert.equal(h.lateWrites,0)
   assert.equal(fs.readFileSync(dir+'/prompt-folder/sub/a','utf8'),'draft');assert.equal(fs.readFileSync(dir+'/prompt-collision/a','utf8'),'other');assert.deepEqual(fs.readFileSync(dir+'/.git/index'),index);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),head)
+ })
+ await test('rename and restore never render deleted badges in any intermediate setter or changes-before-inventory frame; real delete clears immediately on restored status',async()=>{
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  for(const directory of [false,true]){
+   const source=directory?'transition-source-dir':'transition-source.txt',target=directory?'transition-target-dir':'transition-target.txt',suffix=directory?'/child.txt':'';await disk(source+suffix,'bytes')
+   const frames=[],beforeEntries={files:[source+suffix],directories:directory?[source]:[],untrackedDirectories:[]}
+   const props={files:[source+suffix],worktreeEntries:beforeEntries,changes:[],bookmarkName:'repo',loading:false,mergeInProgress:false,onOpen(){},onPush(){},onStage(){},onRestore(){},onWorktreeChanged:async()=>{
+    props.changes=[{filepath:source+suffix,status:'*deleted',worktreeDeleted:true},{filepath:target+suffix,status:'*added'}]
+    capture('new status with OLD inventory');props.worktreeEntries={files:[target+suffix],directories:directory?[target]:[],untrackedDirectories:directory?[target]:[]};capture('matching new inventory')
+   }}
+   const h=mount(load('pages/FilesTab.tsx').FilesTab,props);let capturing=false
+   function capture(label){if(capturing)return;capturing=true;try{h.render();frames.push([label,JSON.stringify(expand(h.tree))])}finally{capturing=false}}
+   observeState=()=>capture('setter');global.Dialog.prompt=async()=>target
+   try{
+    h.render();const n=all(h.tree).find(n=>typeof n.type==='function'&&n.props.node?.path===source);const row=n.type(n.props)
+    await all(row.props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+    props.changes=[];capture('restored status before inventory');props.worktreeEntries=beforeEntries;capture('restored inventory')
+    for(const [label,frame]of frames)assert.doesNotMatch(frame,/已删除/,label+' '+(directory?'folder':'file'))
+   }finally{observeState=null;h.unmount()}
+  }
+  await disk('transition-delete.txt','bytes');const props={files:['transition-delete.txt'],changes:[],bookmarkName:'repo',loading:false,onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
+  h.render();const n=all(h.tree).find(n=>typeof n.type==='function'&&n.props.node?.path==='transition-delete.txt');await n.type(n.props).props.trailingSwipeActions.actions.find(n=>n.props.title==='删除').props.action();h.render();assert.match(JSON.stringify(expand(h.tree)),/已删除/)
+  props.changes=[];h.render();assert.doesNotMatch(JSON.stringify(expand(h.tree)),/已删除/);h.unmount()
  })
  await test('real facade unpublished branch rename preserves HEAD/index; duplicate and native failure leave branch intact',async()=>{
   const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})

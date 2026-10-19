@@ -41,10 +41,18 @@ function fixture(){
 }
 let groups=0;async function test(name,fn){await fn();groups++;console.log('PASS '+name)}
 async function main(){
+ await test('push default is first changed filename or folder, without action/count prefixes; all changes count regardless of staging and input order is retained',async()=>{
+  for(const [paths,expected] of [[['one.ts'],'one.ts'],[['目录/子目录/a.ts'],'目录'],[['first.txt','later/b.ts'],'first.txt'],[['first-folder/a.ts','second-folder/b.ts'],'first-folder']]){
+   const e=fixture();e.data.changes=paths.map((filepath,i)=>({filepath,status:'*modified',staged:i>0}));e.top();assert.equal(e.inputs()[0].props.value,expected);assert.deepEqual(e.calls,[]);e.button('取消').props.action();e.h.unmount()
+  }
+  assert.equal(format.suggestPushTitle([]),'')
+  // Independent staged-only commit suggestions keep the existing behavior.
+  assert.equal(format.suggestCommitTitle([{filepath:'one.ts',status:'modified',staged:true}]),'更新 one.ts')
+ })
  await test('top and file/folder swipe use the identical native two-field alert; defaults, edits stable on rerender, cancellation/blank title write nothing',async()=>{
   const e=fixture();e.render();assert.equal(all(e.h.tree).find(n=>n.type==='RepoRemoteSections').props.onPush,all(e.h.tree).find(n=>n.type==='RepoDetailTabContent').props.onPush)
   for(const open of [e.top,e.swipe]){
-   open();open();e.render();assert.equal(e.h.tree.props.sheet.isPresented,false);assert.equal(e.alert().title,'提交并推送');assert.equal(e.inputs().length,2);assert.equal(e.inputs()[0].props.value,'更新 2 个文件');assert.equal(e.inputs()[1].props.value,'');assert.deepEqual(e.calls,[])
+   open();open();e.render();assert.equal(e.h.tree.props.sheet.isPresented,false);assert.equal(e.alert().title,'提交并推送');assert.equal(e.inputs().length,2);assert.equal(e.inputs()[0].props.value,'a');assert.equal(e.inputs()[1].props.value,'');assert.deepEqual(e.calls,[])
    e.edit('自定义标题','描述');e.data.changes.push({filepath:'extra',status:'modified'});e.render();assert.equal(e.inputs()[0].props.value,'自定义标题');assert.equal(e.inputs()[1].props.value,'描述')
    e.edit('  ','描述');assert.equal(e.button('推送').props.disabled,true);await e.button('推送').props.action();assert.match(JSON.stringify(e.alert().message),/请填写提交信息/);assert.deepEqual(e.calls,[])
    const dismiss=e.alert().onChanged;e.button('取消').props.action();dismiss(false);e.render();assert.equal(e.alert().isPresented,false);assert.deepEqual(e.calls,[]);assert.equal(e.clears,0);e.data.changes.pop()
@@ -62,7 +70,7 @@ async function main(){
   e.button('去处理').props.action();await new Promise(r=>setTimeout(r,380));assert.deepEqual(e.navigations,['conflicts']);e.h.unmount()
  })
  await test('stage, commit or pull failure never pushes; no changes skips form/stage/commit and only synchronizes existing commits',async()=>{
-  for(const failure of ['stageAll','commit:更新 2 个文件','pull']){
+  for(const failure of ['stageAll','commit:a','pull']){
    const e=fixture();e.setFail(failure);e.swipe();await e.button('推送').props.action();assert.ok(!e.calls.includes('push'));assert.ok(e.toasts.some(([msg])=>msg.includes('推送失败')));if(failure==='stageAll')assert.ok(!e.calls.some(v=>v.startsWith('commit:')));e.h.unmount()
   }
   for(const entry of ['top','swipe']){const e=fixture();e.data.changes=[];await e[entry]();assert.deepEqual(e.calls,['pull','push','refresh']);assert.equal(e.alert().isPresented,false);assert.equal(e.h.tree.props.sheet.isPresented,false);e.h.unmount()}

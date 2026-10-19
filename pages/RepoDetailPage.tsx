@@ -36,7 +36,7 @@ import { useRepoPendingActions } from "../hooks/useRepoPendingActions"
 import { useRepoBranchActions } from "../hooks/useRepoBranchActions"
 import { useRepoSyncActions } from "../hooks/useRepoSyncActions"
 import { updateBranchLastPulledAt } from "../services/repoStore"
-import { buildCommitMessage, shortOid, suggestCommitTitle } from "../utils/format"
+import { buildCommitMessage, shortOid, suggestCommitTitle, suggestPushTitle } from "../utils/format"
 import { getRepoPendingAlert } from "../utils/repoDetailAlerts"
 
 type AlertState = {
@@ -221,7 +221,7 @@ export function RepoDetailPage({
     if (data.changes.length === 0) return runPush()
     pushFormOpen.current = true
     pushDismissPending.current = true
-    setPushTitle(`更新 ${data.changes.length} 个文件`)
+    setPushTitle(suggestPushTitle(data.changes))
     setPushDescription("")
     setPushForm({ error: null })
   }

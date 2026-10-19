@@ -43,7 +43,7 @@ import {
 } from "../services/repoStore"
 import { getChanges, prepareRestoreScope, restoreWorktreeScope, type RestoreScopePlan, createStash, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
 import { BusyOverlay } from "../components/BusyOverlay"
-import { buildCommitMessage } from "../utils/format"
+import { buildCommitMessage, suggestPushTitle } from "../utils/format"
 import { RepoDetailPage } from "./RepoDetailPage"
 import { ClonePage } from "./ClonePage"
 import {
@@ -177,11 +177,23 @@ export function RepoListPage() {
     showConflictNotice: message => { if (alive.current) showAlert("合并冲突", message) },
   })
   useEffect(() => { if (pushTarget) { const message = pushMessage.current; pushMessage.current = undefined; void sync.handlePush(message) } }, [pushTarget])
-  function pushOne(repo: RepoMeta) {
+  async function pushOne(repo: RepoMeta) {
     if (restoring.current || pushGate.current || pulling.current || singlePull.current || pushForm) return
     const uncommitted = statusMap[repo.bookmarkName]?.uncommitted ?? snapshotMap[repo.bookmarkName]?.uncommitted ?? 0
     // 有未提交改动 → 先填提交说明；只有未推送的提交（ahead）→ 直接推送。
-    if (uncommitted > 0) { setPushTitle(`更新 ${uncommitted} 个文件`); setPushDescription(""); setPushForm({ repo, error: null }); return }
+    if (uncommitted > 0) {
+      // Summary counts do not contain names. Read actual changes, without staging,
+      // and guard duplicate taps/unmount before opening the editable prompt.
+      pushGate.current = true
+      try {
+        const changes = await getChanges(repo.bookmarkName)
+        if (!alive.current || !listRepos().some(item => item.bookmarkName === repo.bookmarkName)) return
+        setPushTitle(suggestPushTitle(changes)); setPushDescription(""); setPushForm({ repo, error: null })
+      } catch (e: any) {
+        if (alive.current) showAlert("推送检查失败", String(e?.message || e))
+      } finally { pushGate.current = false }
+      return
+    }
     pushGate.current = true
     setPushTarget(repo)
   }
