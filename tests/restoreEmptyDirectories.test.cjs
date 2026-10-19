@@ -12,7 +12,7 @@ const ctx={git,fs,dir,gitdir:dir+'/.git'},runtime={getCtx:async()=>ctx,resolveGi
 const store={listRepos:()=>[repo],findRepo:()=>repo,getGitdirPath:()=>ctx.gitdir,resolveWorkdir:()=>root,resolveRepoPathsReadOnly:()=>({workdir:root,gitdir:ctx.gitdir}),sourceLabel:()=>'',writeSnapshot:async(key,s)=>{snapshots[key]=s}}
 const cache=new Map();function load(relative){let file=path.resolve(project,relative);if(!/\.tsx?$/.test(file))file=['.ts','.tsx'].map(ext=>file+ext).find(fs.existsSync)||file;if(cache.has(file))return cache.get(file).exports;const m={exports:{}};cache.set(file,m);const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{fileName:file,compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx',jsxFragmentFactory:'__fragment'}}).outputText;new Function('require','module','exports',code)(name=>{if(name==='scripting')return new Proxy(ui,{get:(t,k)=>k==='Widget'?{reloadAll(){}}:k==='Navigation'?{useDismiss:()=>()=>{}}:t[k]});const dest=path.relative(project,path.resolve(path.dirname(file),name));if(dest==='services/repoStore')return store;if(dest==='services/git/runtime')return runtime;if(dest==='services/gitCore')return {createFS:()=>fs,loadGitEngine:async()=>({git})};return load(dest)},m,m.exports);return m.exports}
 const service=load('services/gitService.ts'),scan=load('services/git/statusScanService.ts'),coordinator=load('services/git/matrixScanService.ts').statusCoordinator
-const cmd=(...args)=>cp.execFileSync('git',['-C',dir,...args],{encoding:'utf8'});cmd('init','-qb','main');cmd('config','user.name','T');cmd('config','user.email','t@example.invalid');fs.mkdirSync(dir+'/tracked');fs.writeFileSync(dir+'/tracked/base','HEAD');fs.writeFileSync(dir+'/.gitignore','ignored/\n*.hidden\n');cmd('add','.');cmd('commit','-qm','base')
+const cmd=(...args)=>cp.execFileSync('git',['-C',dir,...args],{encoding:'utf8'});cmd('init','-qb','main');cmd('config','user.name','T');cmd('config','user.email','t@example.invalid');fs.mkdirSync(dir+'/tracked');fs.writeFileSync(dir+'/tracked/base','HEAD');fs.writeFileSync(dir+'/.gitignore','ignored/\n*.hidden\n');fs.mkdirSync(dir+'/rename-fixture/nested',{recursive:true});fs.writeFileSync(dir+'/rename-fixture/main','original');fs.writeFileSync(dir+'/rename-fixture/nested/binary',Buffer.from([0,255,3]));cmd('add','.');cmd('commit','-qm','base')
 const originalHead=fs.readFileSync(ctx.gitdir+'/HEAD','utf8'),oid=cmd('rev-parse','HEAD').trim()
 function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
 function write(p,v='new'){fs.mkdirSync(path.dirname(dir+'/'+p),{recursive:true});fs.writeFileSync(dir+'/'+p,v)}
@@ -63,6 +63,44 @@ async function main(){
   write('tracked/base','staged');cmd('add','tracked/base');mkdir('tracked/sibling-empty');await service.restoreFile('repo','tracked/base');assert.equal(fs.readFileSync(dir+'/tracked/base','utf8'),'HEAD');assert.ok(exists(dir+'/tracked/sibling-empty'));assert.ok(!cmd('diff','--cached','--name-only').includes('tracked/base'));sameHead()
   write('tracked/untracked','new');const plan=await service.prepareRestoreScope('repo','tracked');await service.restoreWorktreeScope('repo',plan);assert.ok(!exists(dir+'/tracked/untracked'));sameHead()
   write('file-container/sub/new','new');mkdir('file-container/empty');const container=await service.prepareRestoreScope('repo','file-container');assert.equal(container.filepaths.length,1);assert.equal(container.empty.directories.length,3);await service.restoreWorktreeScope('repo',container);assert.ok(!exists(dir+'/file-container'));assert.ok(pythonCalls.includes('unlink'));sameHead()
+ })
+ await test('renamed folder swipe restore confirms both names, cancel preserves rename; real executor restores original bytes and clears destination/deleted ghosts only within paired scopes',async()=>{
+  FileManager.rename=async(a,b)=>fs.renameSync(a,b)
+  const beforeStage=cmd('ls-files','--stage');write('tracked/base','OUTSIDE KEEP')
+  let pending=null,refresh=0;const shown=[]
+  const req=mount(load('hooks/useRepoWorktreeActions.ts').useRepoWorktreeActions,{bookmarkName:'repo',changes:await service.getChanges('repo'),mergeInProgress:false,setPending:a=>pending=a,showToast:(...a)=>shown.push(a)})
+  const props={files:await service.getTrackedFiles('repo'),worktreeEntries:await service.getWorktreeEntries('repo'),loading:false,bookmarkName:'repo',changes:await service.getChanges('repo'),onOpen(){},onPush(){},onStage(){},mergeInProgress:false,onRestore:(...args)=>req.tree.handleRestore(...args),onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');props.worktreeEntries=await service.getWorktreeEntries('repo')}}
+  const files=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
+  function folder(name){files.render();return all(expand(files.tree)).find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))}
+  global.Dialog={prompt:async()=> 'renamed-fixture'}
+  await all(folder('rename-fixture').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
+  assert.ok(!exists(dir+'/rename-fixture'));assert.ok(exists(dir+'/renamed-fixture/nested/binary'))
+  assert.equal(folder('rename-fixture'),undefined)
+  await folder('renamed-fixture').props.label.props.trailingSwipeActions.actions.find(a=>a.props.title==='还原').props.action()
+  for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10))
+  assert.ok(pending?.restorePlan,JSON.stringify(shown));assert.deepEqual(new Set(pending.restorePlan.filepaths),new Set(['rename-fixture/main','rename-fixture/nested/binary','renamed-fixture/main','renamed-fixture/nested/binary']))
+  assert.match(alerts.getRepoPendingAlert(pending).message,/rename-fixture/)
+  const exec=mount(load('hooks/useRepoPendingActions.ts').useRepoPendingActions,{bookmarkName:'repo',beginOpBusy:async()=>{},endOpBusy(){},reloadRepo:async()=>{refresh++;await props.onWorktreeChanged()},showAlert:(...a)=>shown.push(a),showToast:(...a)=>shown.push(a)})
+  exec.tree.setPending(pending);exec.render();exec.tree.clearPending();exec.render();await exec.tree.runPending();assert.equal(refresh,0);assert.ok(exists(dir+'/renamed-fixture/main'));assert.ok(!exists(dir+'/rename-fixture'))
+  exec.tree.setPending(pending);exec.render();await exec.tree.runPending();assert.equal(refresh,1)
+  assert.equal(fs.readFileSync(dir+'/rename-fixture/main','utf8'),'original');assert.deepEqual(fs.readFileSync(dir+'/rename-fixture/nested/binary'),Buffer.from([0,255,3]));assert.ok(!exists(dir+'/renamed-fixture'))
+  assert.ok(folder('rename-fixture'));assert.equal(folder('renamed-fixture'),undefined);assert.doesNotMatch(JSON.stringify(folder('rename-fixture').props.label),/已删除|已重命名/)
+  folder('rename-fixture').props.onChanged(true);folder('nested').props.onChanged(true);files.render();assert.doesNotMatch(JSON.stringify(expand(files.tree)),/已删除/)
+  assert.equal(fs.readFileSync(dir+'/tracked/base','utf8'),'OUTSIDE KEEP');assert.equal(cmd('ls-files','--stage'),beforeStage);sameHead();files.unmount();req.unmount();exec.unmount()
+ })
+ await test('old-version deleted-folder outcome can be recovered from HEAD through the original folder row, with cancel still read-only',async()=>{
+  fs.renameSync(dir+'/rename-fixture',dir+'/recovery-temporary');fs.rmSync(dir+'/recovery-temporary',{recursive:true})
+  const plan=await service.prepareRestoreScope('repo','rename-fixture');assert.deepEqual(plan.filepaths,['rename-fixture/main','rename-fixture/nested/binary']);assert.ok(!exists(dir+'/rename-fixture'))
+  await service.restoreWorktreeScope('repo',plan);assert.equal(fs.readFileSync(dir+'/rename-fixture/main','utf8'),'original');assert.deepEqual(fs.readFileSync(dir+'/rename-fixture/nested/binary'),Buffer.from([0,255,3]));sameHead()
+  await assert.rejects(service.prepareRestoreScope('repo','not-a-real-deleted-folder'),/没有可恢复/)
+ })
+ await test('paired restore scopes reject unsafe/moved old paths and changed source contents before mutating either side',async()=>{
+  write('paired-target/new','NEW KEEP')
+  for(const source of ['', '..', '.git', '../outside', '/root'])await assert.rejects(service.prepareRestoreScope('repo','paired-target',[source]),/不安全|范围/)
+  fs.symlinkSync(outside,dir+'/paired-old-link');await assert.rejects(service.prepareRestoreScope('repo','paired-target',['paired-old-link']),/安全目录/);fs.unlinkSync(dir+'/paired-old-link')
+  const plan=await service.prepareRestoreScope('repo','paired-target',['paired-absent-old']);assert.ok(!exists(dir+'/paired-absent-old'));assert.deepEqual(plan.renameSources,['paired-absent-old'])
+  write('paired-absent-old/late','OLD KEEP');await assert.rejects(service.restoreWorktreeScope('repo',plan),/文件列表已变化/)
+  assert.equal(fs.readFileSync(dir+'/paired-target/new','utf8'),'NEW KEEP');assert.equal(fs.readFileSync(dir+'/paired-absent-old/late','utf8'),'OLD KEEP');sameHead()
  })
  await test('real coordinator preserves lock until confirmed restore completes; duplicate writers rejected and root relocation invalidates consent',async()=>{
   mkdir('lock');const plan=await service.prepareRestoreScope('repo','lock'),gate=deferred();const read=coordinator.read(ctx.gitdir,()=>gate.promise);let done=false;const restoring=service.restoreWorktreeScope('repo',plan).then(()=>done=true);await tick();assert.equal(done,false);await assert.rejects(service.restoreWorktreeScope('repo',plan),/写|操作/);gate.resolve();await read;await restoring;assert.ok(!exists(dir+'/lock'))

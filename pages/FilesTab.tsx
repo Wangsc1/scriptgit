@@ -116,7 +116,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   onWorktreeChanged: () => void | Promise<void>
   onPush: () => void | Promise<void>
   onStage: (filepaths: string[]) => void | Promise<void>
-  onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void
+  onRestore: (filepath: string, filepaths?: string[], directory?: boolean, renameSources?: string[]) => void
   mergeInProgress: boolean
   creationActive?: boolean
   onCreateEntry: (directory: boolean, onCreated: (path: string) => void) => void
@@ -275,7 +275,11 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     if (state.current.busy || mergeInProgress) return
     const targets = changes.filter(change => change.filepath.startsWith(path + "/"))
     // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
-    onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
+    const renameSources = directory ? activeRenames.flatMap(entry => entry.directory &&
+      (path === entry.path || path.startsWith(entry.path + "/"))
+      ? (entry.sources || []).map(source => source + path.slice(entry.path.length)) : []) : []
+    if (renameSources.length) onRestore(path, targets.map(change => change.filepath), directory, renameSources)
+    else onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
   }
   const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
   const [directoryError, setDirectoryError] = useState("")

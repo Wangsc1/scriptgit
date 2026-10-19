@@ -329,10 +329,10 @@ export async function restoreFile(
 }
 
 /** Confirmed repository/folder restore. File-level restore retains its original scope. */
-export function prepareRestoreScope(bookmarkName: string, scope = ""): Promise<RestoreScopePlan> {
+export function prepareRestoreScope(bookmarkName: string, scope = "", renameSources: string[] = []): Promise<RestoreScopePlan> {
   return runStatusRead(bookmarkName, async () => {
     if (await getMergeConflictState(bookmarkName)) throw new Error("仓库存在未完成合并，请进入仓库处理")
-    return prepareRestoreScopeInternal(bookmarkName, scope)
+    return prepareRestoreScopeInternal(bookmarkName, scope, renameSources)
   })
 }
 export function restoreWorktreeScope(bookmarkName: string, plan: RestoreScopePlan): Promise<string> {
