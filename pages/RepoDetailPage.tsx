@@ -318,7 +318,7 @@ export function RepoDetailPage({
       refreshable={handleRefresh}
       toolbar={{
         topBarTrailing: data.githubFullName ? (
-          <Menu title="GitHub" systemImage="rectangle.stack">
+          <Menu title="GitHub" systemImage="gearshape">
             <Button title="Edit Remote Files" systemImage="doc.text" action={() => nav.openGitHubWorkPage(3)} />
             <Button
               title="Issues"
