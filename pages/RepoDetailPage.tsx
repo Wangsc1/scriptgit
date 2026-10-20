@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 import { fullScreenPage } from "../components/FullScreenNavigation"
 /**
  * pages/RepoDetailPage.tsx - 仓库详情页
@@ -154,6 +155,8 @@ export function RepoDetailPage({
     onChanged: data.refreshChangesAndSnapshot,
     onError: message => showToast(message, "error"),
   })
+
+  useModalBackGuard(mutating || localCreation.busy)
 
   const {
     handleMergeIntoCurrent,

@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
@@ -280,6 +281,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
     onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
   }
+  useModalBackGuard(busy || creationActive)
   const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
   const [directoryError, setDirectoryError] = useState("")
   function cancelDirectoryForm() { if (!state.current.busy) setDirectoryForm(null) }

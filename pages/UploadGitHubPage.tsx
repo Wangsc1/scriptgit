@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 /**
  * pages/UploadGitHubPage.tsx - 本地仓库上传到 GitHub
  *
@@ -68,6 +69,8 @@ export function UploadGitHubPage({
   const [uploadCancelling, setUploadCancelling] = useState(false)
   const [cancelToken, setCancelToken] = useState<RemoteCancelToken | null>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
+
+  useModalBackGuard(uploading)
 
   useEffect(() => {
     if (hasToken()) {

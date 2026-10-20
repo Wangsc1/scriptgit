@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 import { fullScreenPage } from "../components/FullScreenNavigation"
 /**
  * pages/ActionRunDetailPage.tsx - 工作流运行详情页
@@ -128,6 +129,8 @@ export function ActionRunDetailPage({
   } | null>(null)
   // 是否正在发起重跑（防重复提交）
   const [rerunning, setRerunning] = useState(false)
+
+  useModalBackGuard(rerunning || downloadingId !== null)
 
   async function load() {
     setError(null)

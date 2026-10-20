@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 import { fullScreenPage } from "../components/FullScreenNavigation"
 import {
   Button,
@@ -198,6 +199,8 @@ export function GitHubWorkPage({
   }
 
   const visibleItems = items
+  useModalBackGuard(creating)
+
   const sectionTitle = kind === 1 ? "Pull Requests" : "Issues"
 
   return (

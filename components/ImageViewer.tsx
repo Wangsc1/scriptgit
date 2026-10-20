@@ -6,8 +6,10 @@ import {
   ZStack,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "scripting"
+import { useEdgeBack } from "../hooks/useEdgeBack"
 
 // Local-only canvas follows the system appearance: slightly gray off-white by
 // day, dark gray (page background) by night. Native layers use the dynamic pair; the WebView page
@@ -141,48 +143,52 @@ function buildHTML(url: string, compactImage: boolean): string {
   var startY = 0
   var multiTouch = false
   var pullClosed = false
+  var zoomedDuringTouch = false
   document.addEventListener("touchstart", function (event) {
     var touch = event.touches[0]
     multiTouch = event.touches.length > 1
     pullClosed = false
+    zoomedDuringTouch = !!window.visualViewport && window.visualViewport.scale > 1.01
     startX = touch.clientX
     startY = touch.clientY
   }, { passive: true })
-  ${compactImage ? `// 本地图片：未缩放时支持左边缘右滑返回，保留原有下拉关闭；多指/放大平移不关闭。
+  // All image covers: edge back is handled inside WebKit, never by an outer
+  // native drag recognizer that cannot inspect viewport zoom or finger count.
   document.addEventListener("touchmove", function (event) {
     if (event.touches.length > 1) { multiTouch = true; return }
-    if (multiTouch || pullClosed) return
+    if (!window.visualViewport || window.visualViewport.scale > 1.01) zoomedDuringTouch = true
+    if (multiTouch || pullClosed || zoomedDuringTouch) return
     var touch = event.touches[0]
     var dx = touch.clientX - startX
     var dy = touch.clientY - startY
-    var scale = window.visualViewport ? window.visualViewport.scale : 1
-    var edgeBack = startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5
-    var pullDown = dy > 120 && Math.abs(dx) < dy * 0.5
+    var scale = window.visualViewport ? window.visualViewport.scale : Infinity
+    var edgeBack = startX >= 0 && startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5
+    var pullDown = ${compactImage} && dy > 120 && Math.abs(dx) < dy * 0.5
     if (scale <= 1.01 && (edgeBack || pullDown)) {
       pullClosed = true
       window.webkit.messageHandlers.closeViewer.postMessage(null)
     }
   }, { passive: true })
-  document.addEventListener("touchcancel", function () { multiTouch = true }, { passive: true })` : ""}
+  document.addEventListener("touchcancel", function () { multiTouch = true }, { passive: true })
 
   document.addEventListener("touchend", function (event) {
     if (event.touches.length > 0) {
       return
     }
     var touch = event.changedTouches[0]
-    ${compactImage ? `// Fast swipes may cross the threshold only in the final touchend sample.
+    // Fast swipes may cross the threshold only in the final touchend sample.
     var dx = touch.clientX - startX
     var dy = touch.clientY - startY
-    var scale = window.visualViewport ? window.visualViewport.scale : 1
-    if (!pullClosed && !multiTouch && scale <= 1.01 &&
-      ((startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5) || (dy > 120 && Math.abs(dx) < dy * 0.5))) {
+    var scale = window.visualViewport ? window.visualViewport.scale : Infinity
+    if (!pullClosed && !multiTouch && !zoomedDuringTouch && scale <= 1.01 &&
+      ((startX >= 0 && startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5) || (${compactImage} && dy > 120 && Math.abs(dx) < dy * 0.5))) {
       pullClosed = true
       window.webkit.messageHandlers.closeViewer.postMessage(null)
       return
-    }` : ""}
+    }
     var moved = Math.abs(touch.clientX - startX) > 8 || Math.abs(touch.clientY - startY) > 8
     var zoomed = window.visualViewport && window.visualViewport.scale > 1.01
-    if (pullClosed || multiTouch || moved || zoomed) {
+    if (pullClosed || multiTouch || zoomedDuringTouch || moved || zoomed) {
       return
     }
     window.webkit.messageHandlers.closeViewer.postMessage(null)
@@ -207,17 +213,24 @@ export function ImageViewer({
   // 控制器随图片地址重建，避免复用已 dispose 的实例
   const controller = useMemo(() => new WebViewController(), [url, compactImage, sessionId])
   const [webViewReady, setWebViewReady] = useState(false)
+  const closing = useRef(false)
+  function close() {
+    if (closing.current) return
+    closing.current = true
+    onClose()
+  }
+  // Only the loading mask has a native gesture. Once WebKit is interactive,
+  // exclusively its scale-aware passive touch handlers own image edge back.
+  const loadingBackGesture = useEdgeBack(close, !webViewReady)
 
   useEffect(() => {
     let disposed = false
     setWebViewReady(false)
+    closing.current = false
 
     async function setup() {
-      let closing = false
       await controller.addScriptMessageHandler("closeViewer", () => {
-        if (disposed || closing) return
-        closing = true
-        onClose()
+        if (!disposed) close()
       })
       if (compactImage && !disposed) {
         await controller.addScriptMessageHandler("imageReady", () => {
@@ -236,6 +249,7 @@ export function ImageViewer({
 
     return () => {
       disposed = true
+      closing.current = true
       controller.dispose()
     }
     // url 变化时必须重新加载，否则多张图片只会显示首次打开的那张
@@ -257,7 +271,7 @@ export function ImageViewer({
           matches the one-frame white flash in the recording. An opaque sibling
           drawn ABOVE the WebView cannot be bypassed by the WebView's own surface;
           it is removed only on imageReady. Local mode only. */}
-      {compactImage && !webViewReady ? <Rectangle fill={LOCAL_IMAGE_BACKGROUND} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} /> : null}
+      {!webViewReady ? <Rectangle fill={compactImage ? LOCAL_IMAGE_BACKGROUND : "clear"} simultaneousGesture={loadingBackGesture} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} /> : null}
       {webViewReady ? null : <ProgressView progressViewStyle="circular" tint="white" />}
     </ZStack>
   )

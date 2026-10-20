@@ -5,6 +5,7 @@ const path = require('node:path')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '..')
 let count = 0
+let edgeBackModule
 async function test(name, fn) { await fn(); console.log('PASS ' + name); count++ }
 function load(relative, mocks = {}) {
   const filename = path.join(root, relative)
@@ -14,6 +15,7 @@ function load(relative, mocks = {}) {
   }, fileName: filename, reportDiagnostics: true })
   const mod = { exports: {} }
   const req = (name) => {
+    if (name.endsWith('/useEdgeBack')) return edgeBackModule ||= load('hooks/useEdgeBack.ts', { scripting: ui })
     // Exercise production modal wiring even in page fixtures that stub UI dependencies.
     if (name.endsWith('/FullScreenNavigation')) return load('components/FullScreenNavigation.tsx', {
       scripting: ui, '../constants/colors': load('constants/colors.ts'),
@@ -60,7 +62,10 @@ const ui = new Proxy({}, { get(_, name) {
   if (name === 'useColorScheme') return () => 'light'
   if (name === 'MagnifyGesture') return minScaleDelta => ({ kind: 'magnify', minScaleDelta,
     onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; return this } })
-  if (name === 'DragGesture') return options => ({ onEnded: onEnded => ({ kind: 'drag', options, onEnded }) })
+  if (name === 'createContext') return () => ({ Provider: 'ContextProvider', testValue: undefined })
+  if (name === 'useContext') return context => context.testValue
+  if (name === 'DragGesture') return options => ({ kind: 'drag', options,
+    onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.onEnded = fn; return this } })
   if (name === 'useObservable') return (initial) => {
     const h = active, i = h.cursor++
     if (!(i in h.slots)) {
@@ -313,5 +318,9 @@ async function main() {
   })
   console.log(`\n${count} test groups passed; all GitHub writes mocked; no iOS device validation.`)
 }
-module.exports = { load, mount, node, text, all, ui, tick, deferred, http, MockData }
+function mountModal(cover) {
+  const content = cover.content.children[0]
+  return mount(content.type, content.props)
+}
+module.exports = { load, mount, mountModal, node, text, all, ui, tick, deferred, http, MockData }
 if (require.main === module) main().catch(e=>{console.error(e);process.exitCode=1})

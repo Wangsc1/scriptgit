@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 import { FullScreenLink } from "../components/FullScreenNavigation"
 /**
  * pages/ConflictsPage.tsx - 合并冲突列表与解决
@@ -59,6 +60,8 @@ export function ConflictsPage({
   const [busyOverlay, setBusyOverlay] = useState<string | null>(null)
   const [pendingAbort, setPendingAbort] = useState(false)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
+
+  useModalBackGuard(busy || busyOverlay !== null)
 
   async function loadState() {
     setLoading(true)

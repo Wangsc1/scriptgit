@@ -1,4 +1,4 @@
-import { Button, DragGesture, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
+import { Button, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
@@ -8,6 +8,7 @@ import { FileChangeSwitcher } from "../components/FileChangeSwitcher"
 import { LocalCodeEditor } from "../components/LocalCodeEditor"
 import { createLocalCodeEditorController } from "../services/localCodeEditor"
 import { editorDiff } from "../utils/editorDiff"
+import { useEdgeBack } from "../hooks/useEdgeBack"
 
 /** 全屏本地工作区编辑：不暂存、不提交、不推送；退出始终核对控制器当前草稿。 */
 export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false, onClose, onReload, onChanged }: {
@@ -17,6 +18,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
 }) {
   const baseline = useRef(file)
   const lock = useRef(false)
+  const exiting = useRef(false)
   const alive = useRef(true)
   const editor = useMemo(() => {
     // 二进制/超限文件不创建不使用的原生编辑器；构造失败留在页面报告，不逃逸 render。
@@ -99,7 +101,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     return !dirty() || await Dialog.confirm({ title, message: "尚未保存的本地草稿将丢失。可取消后复制草稿。", confirmLabel: "放弃草稿" }) === true
   }
   async function back() {
-    if (lock.current) return
+    if (!alive.current || lock.current || exiting.current) return
     lock.current = true; setBusy(true); setStatus("")
     try {
       // 返回默认保存：无修改直接返回；保存失败/外部冲突留在本页并保留草稿。
@@ -109,7 +111,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
         baseline.current = await saveLocalWorktreeFile(bookmarkName, baseline.current, controller.content)
         saved = true
       }
-      if (alive.current) onClose()
+      if (alive.current) { exiting.current = true; onClose() }
       // 保存成功才关闭；状态扫描等全屏退场后执行，避免阻塞右滑返回。
       // 此任务有意跨编辑器卸载保留，由稳定父详情页接收刷新结果。
       if (saved) setTimeout(() => void notifyChanged(), 350)
@@ -136,8 +138,11 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   const added = diff?.lines.filter(line => line.type === "add").length ?? 0
   const deleted = diff?.lines.filter(line => line.type === "del").length ?? 0
 
+  // CodeMirror already owns a WebKit edge recognizer (including IME/selection
+  // guards) via onBack. Do not layer a second native recognizer over that WebView.
+  const backGesture = useEdgeBack(back, !busy)
   return <NavigationStack background={{ light: "white", dark: "#242424" }}>
-    <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} foregroundStyle="label" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
+    <VStack simultaneousGesture={viewKind === 1 || controller === null ? backGesture : undefined} spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} foregroundStyle="label" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
       toolbarBackground={{ style: { light: "white", dark: "#242424" }, bars: ["navigationBar"] }}
       toolbarBackgroundVisibility={{ visibility: "visible", bars: ["navigationBar"] }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
       toolbar={{
@@ -150,10 +155,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
         content={<LocalCodeEditor controller={controller} onBack={back} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-          background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}
-          simultaneousGesture={DragGesture({ minDistance: 20, coordinateSpace: "local" }).onEnded(details => {
-            if (details.startLocation.x <= 24 && details.translation.width >= 80 && details.translation.width > Math.abs(details.translation.height) * 1.5) void back()
-          })}>
+          background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}>
           <VStack spacing={0} padding={{ horizontal: 5, top: 10, bottom: 110 }}>
             {versionsError ? <VStack spacing={6}><Text font="caption" foregroundStyle="red">{versionsError}</Text>
               <Button title="重试读取改动" action={() => loadDiff()} disabled={busy || diffBusy} /></VStack> :

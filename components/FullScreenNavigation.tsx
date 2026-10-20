@@ -1,5 +1,6 @@
 import { Button, HStack, Image, NavigationStack, Spacer, VStack, useEffect, useRef, useState, type VirtualNode } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
+import { ModalBackContext, useEdgeBack } from "../hooks/useEdgeBack"
 
 type Presentation = {
   isPresented: boolean
@@ -12,19 +13,45 @@ type Presentation = {
  * Existing editor/viewer/form covers already own their stack and close policy.
  */
 export function fullScreenPage(presentation: Presentation, ownClose = false, backArrow = false): Presentation {
+  let dismissed = false
+  const controlled = { ...presentation, onChanged: (presented: boolean) => {
+    if (!presented) {
+      if (dismissed || !presentation.isPresented) return
+      dismissed = true
+    }
+    presentation.onChanged(presented)
+  } }
   return {
-    ...presentation,
+    ...controlled,
     content: <NavigationStack>
-      <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
-        toolbar={ownClose ? undefined : {
-          topBarLeading: backArrow
-            ? <Button action={() => presentation.onChanged(false)}><Image systemName="chevron.left" /></Button>
-            : <Button title="返回" action={() => presentation.onChanged(false)} />,
-        }}>
-        {presentation.content}
-      </VStack>
+      <ModalBackContent presentation={controlled} ownClose={ownClose} backArrow={backArrow} />
     </NavigationStack>,
   }
+}
+
+function ModalBackContent({ presentation, ownClose, backArrow }: {
+  presentation: Presentation; ownClose: boolean; backArrow: boolean
+}) {
+  const scope = useRef({ guards: new Set<() => boolean>() })
+  const closed = useRef(false)
+  const current = useRef(presentation)
+  if (current.current.isPresented !== presentation.isPresented) closed.current = false
+  current.current = presentation
+  function back() {
+    if (!current.current.isPresented || closed.current || [...scope.current.guards].some(blocked => blocked())) return
+    closed.current = true
+    current.current.onChanged(false)
+  }
+  const gesture = useEdgeBack(back, !ownClose)
+  return <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
+    simultaneousGesture={ownClose ? undefined : gesture}
+    toolbar={ownClose ? undefined : {
+      topBarLeading: backArrow
+        ? <Button action={back}><Image systemName="chevron.left" /></Button>
+        : <Button title="返回" action={back} />,
+    }}>
+    <ModalBackContext.Provider value={scope.current}>{presentation.content}</ModalBackContext.Provider>
+  </VStack>
 }
 
 /** Row equivalent of a NavigationLink, but with native full-screen modal motion. */

@@ -1,6 +1,6 @@
 /* Actual RepoDetailPage virtual nodes; native presentation is NOT emulated. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
-const {load,mount,ui,all,tick,deferred}=require('./remoteFiles.test.cjs')
+const {load,mount,mountModal,ui,all,tick,deferred}=require('./remoteFiles.test.cjs')
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(root+'/pages/RepoDetailPage.tsx','utf8')
 const noop=()=>{},mocks={scripting:ui}
 // Every dependency is explicit; exercise the real List/presentation state, not native UIKit.
@@ -46,7 +46,7 @@ async function main(){
   assert.ok(destination.content.props.sessionId>firstImageSession+i,'same image gets a fresh session')
   destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false)
  }
- nav.isPresented=true;h.render();const business=h.tree.props.fullScreenCover[2];assert.equal(business.isPresented,true);assert.equal(business.content.type,'NavigationStack');assert.equal(business.content.children[0].children[0].type,'RepoDetailDestination');business.content.children[0].props.toolbar.topBarLeading.props.action();h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
+ nav.isPresented=true;h.render();const business=h.tree.props.fullScreenCover[2];assert.equal(business.isPresented,true);assert.equal(business.content.type,'NavigationStack');assert.equal(mountModal(business).tree.children[0].children[0].type,'RepoDetailDestination');const businessBody=mountModal(business);businessBody.tree.props.simultaneousGesture.changed();await businessBody.tree.props.simultaneousGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}});business.onChanged(false);businessBody.unmount();h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
  nav.isPresented=true;h.render();h.tree.props.fullScreenCover[2].onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);assert.equal(closedOtherPages,2);assert.equal(mergeLoads,2)
  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountClose=h.tree.props.fullScreenCover[1].content.props.onClose
  h.unmount();afterUnmountClose();assert.equal(h.lateWrites,0)
@@ -114,8 +114,8 @@ async function main(){
  }
  repeat.unmount()
  const normal=mount(ImageViewer,{url:'https://example.invalid/image.png',onClose(){}});await tick();const original=controllers.at(-1)
- assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/touchmove|prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.equal(all(normal.tree).find(n=>n.type==='WebView').props.opacity,1,'shared mode rendering unchanged');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
- assert.doesNotMatch(original.html,/conic-gradient|background-size: 16px|#707070|img \{ background: transparent/);assert.doesNotMatch(original.html,/Fast swipes|startX <= 24/);normal.unmount()
+ assert.match(original.html,/background: #000/);assert.doesNotMatch(original.html,/prefers-color-scheme|#242424/);assert.equal(normal.tree.props.background,'black');assert.equal(all(normal.tree).find(n=>n.type==='WebView').props.opacity,1,'shared mode rendering unchanged');assert.match(original.html,/max-width: 100%/);assert.match(original.html,/max-height: 100%/);assert.doesNotMatch(original.html,/viewport-fit=cover|safe-area-inset|object-fit/)
+ assert.doesNotMatch(original.html,/conic-gradient|background-size: 16px|#707070|img \{ background: transparent/);assert.match(original.html,/Fast swipes[\s\S]*startX <= 24/);normal.unmount()
  for(const name of ['DiffPage','CommitDiffPage','GitHubItemDetailPage'])assert.doesNotMatch(fs.readFileSync(root+'/pages/'+name+'.tsx','utf8'),/compactImage/)
  console.log('PASS compact local image HTML caps 80%/60% inside safe-area stage, intrinsic small-image sizing, full-screen container, unchanged close/zoom/error script and shared default mode.')
  console.log('PASS real RepoDetailPage keeps text cover, presents image in its own fullScreenCover entry (editor cover untouched) with close cleanup, refresh/stale/unmount guards and unrelated routes unchanged; no added Navigation.present/Script.exit path. Native lifecycle requires device validation.')

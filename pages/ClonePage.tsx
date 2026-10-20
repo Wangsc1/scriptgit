@@ -20,6 +20,8 @@ import { registeredGithubRepos } from "../utils/clonedGithubRepos"
 import { hideSystemDetails } from "../utils/displayPaths"
 import { runDirectoryCheck } from "../services/cloneDiagnostics"
 
+import { useEdgeBack } from "../hooks/useEdgeBack"
+
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
 export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; onClose?: () => void; initialUsername?: string }) {
@@ -200,7 +202,8 @@ export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onClone
   const selectedRepos = ownedRepos.filter(repo => selected.includes(repo.fullName))
   const counts = Object.entries(STATUS).map(([status, label]) => `${label} ${results.filter(item => item.status === status).length}`).join(" · ")
 
-  return <List navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
+  const backGesture = useEdgeBack(() => { if (alive.current && !locked.current) onClose?.() }, !cloning)
+  return <List simultaneousGesture={backGesture} navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
     navigationBarBackButtonHidden={cloning}
     toolbar={{ topBarLeading: <Button action={() => { if (!locked.current) onClose?.() }} disabled={cloning}><Image systemName="chevron.left" /></Button> }}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}

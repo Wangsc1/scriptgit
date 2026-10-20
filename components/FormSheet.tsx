@@ -8,11 +8,13 @@
 
 import { NavigationStack, List, Button, Text, Section, type VirtualNode } from "scripting"
 import { COLOR_RED } from "../constants/colors"
+import { useEdgeBack } from "../hooks/useEdgeBack"
 
 export function FormSheet({
   navigationTitle,
   confirmTitle,
   confirmDisabled = false,
+  backDisabled = false,
   error = null,
   onCancel,
   onConfirm,
@@ -21,15 +23,18 @@ export function FormSheet({
   navigationTitle: string
   confirmTitle: string
   confirmDisabled?: boolean
+  backDisabled?: boolean
   /** 表单内错误文案（校验失败或提交失败），为空时不占位 */
   error?: string | null
   onCancel: () => void
   onConfirm: () => void
   children: (VirtualNode | null)[] | VirtualNode
 }) {
+  const backGesture = useEdgeBack(onCancel, !backDisabled)
   return (
     <NavigationStack>
       <List
+        simultaneousGesture={backGesture}
         navigationTitle={navigationTitle}
         navigationBarTitleDisplayMode="inline"
         presentationBackground="systemGroupedBackground"

@@ -1,6 +1,6 @@
 /* Production modal expressions + hook/virtual-node tests. No native animation emulation. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript')
-const {load,mount,all,ui,deferred,tick}=require('./remoteFiles.test.cjs')
+const {load,mount,mountModal,all,ui,deferred,tick}=require('./remoteFiles.test.cjs')
 const root=path.resolve(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8')
 const navigation=load('components/FullScreenNavigation.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
 const files=[];(function walk(d){for(const n of fs.readdirSync(path.join(root,d))){const r=d+'/'+n;if(fs.statSync(path.join(root,r)).isDirectory())walk(r);else if(r.endsWith('.tsx'))files.push(r)}})('pages');files.push(...fs.readdirSync(path.join(root,'components')).filter(n=>n.endsWith('.tsx')).map(n=>'components/'+n),'index.tsx')
@@ -20,15 +20,15 @@ for(let i=0;i<2;i++){
  assert.equal(h.tree.props.fullScreenCover.isPresented,false)
  all(h.tree).find(n=>n.type==='Button'&&n.props.buttonStyle==='plain').props.action();h.render()
  const cover=h.tree.props.fullScreenCover;assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'NavigationStack')
- assert.equal(cover.content.children[0].children[0],destination,'destination title/toolbar node is retained')
- if(i===0)cover.content.children[0].props.toolbar.topBarLeading.props.action();else cover.onChanged(false)
+ assert.equal(mountModal(cover).tree.children[0].children[0],destination,'destination title/toolbar node is retained')
+ if(i===0)mountModal(cover).tree.props.toolbar.topBarLeading.props.action();else cover.onChanged(false)
  h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
 }
 const lateDismiss=h.tree.props.fullScreenCover.onChanged;h.unmount();lateDismiss(false);assert.equal(h.lateWrites,0)
 
 // Arrow-only variant retains the same dismiss callback and leaves default pages unchanged.
 const arrow=navigation.fullScreenPage({isPresented:true,onChanged:value=>assert.equal(value,false),content:destination},false,true)
-const arrowButton=arrow.content.children[0].props.toolbar.topBarLeading
+const arrowButton=mountModal(arrow).tree.props.toolbar.topBarLeading
 assert.equal(arrowButton.props.title,undefined);assert.equal(arrowButton.children[0].props.systemName,'chevron.left');arrowButton.props.action()
 assert.match(read('pages/RepoListPage.tsx'),/<FullScreenLink backArrow/)
 assert.match(read('pages/RepoDetailPage.tsx'),/false, nav.selectedCommitOid != null/)
@@ -61,8 +61,8 @@ for(const [file,state,setter,Component] of [
  let value=state==='viewerJob'?{name:'Job',log:'text',steps:[],initialStepNumber:1}:42,createClosed=0
  const render=()=>presentations(file,{[state]:value,[setter]:next=>value=next,[Component]:Component,fullName:'o/r',Text:'Text',showCreate:false,setShowCreate:()=>createClosed++,setCreateError(){},CreateIssueSheet:'CreateIssueSheet',creating:false,createError:null,handleCreate(){}})
  let cover=render()[0];assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'NavigationStack')
- const page=cover.content.children[0].children[0];assert.equal(page.type,Component)
- cover.content.children[0].props.toolbar.topBarLeading.props.action();assert.equal(value,null);assert.equal(render()[0].isPresented,false)
+ const page=mountModal(cover).tree.children[0].children[0];assert.equal(page.type,Component)
+ mountModal(cover).tree.props.toolbar.topBarLeading.props.action();assert.equal(value,null);assert.equal(render()[0].isPresented,false)
  value=state==='viewerJob'?{name:'Job',log:'text',steps:[]}:43;cover=render()[0];cover.onChanged(false);assert.equal(render()[0].isPresented,false)
  assert.equal(createClosed,0,'closing child leaves unrelated form untouched')
  console.log('PASS '+file+': actual cover content, toolbar return and native callback clear route state')
@@ -85,9 +85,9 @@ async function rootPresentation(){
  all(cloneHost.tree).find(n=>n.type==='FormRow'&&n.props.label==='Git URL').props.onChanged('https://github.com/bob/repo.git');cloneHost.render()
  const oldBack=cloneHost.tree.props.toolbar.topBarLeading.props.action
  const pending=all(cloneHost.tree).find(n=>n.type==='Button'&&n.props.title==='克隆').props.action();await tick();cloneHost.render()
- assert.equal(cloneHost.tree.props.toolbar.topBarLeading.props.disabled,true);oldBack();assert.equal(closed,0,'stale pre-clone close also respects write gate')
+ assert.equal(cloneHost.tree.props.toolbar.topBarLeading.props.disabled,true);oldBack();cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}});assert.equal(closed,0,'stale pre-clone close also respects write gate')
  cloning.resolve();await pending;cloneHost.render();assert.equal(cloneHost.tree.props.toolbar.topBarLeading.props.disabled,false)
- cloneHost.tree.props.toolbar.topBarLeading.props.action();assert.equal(closed,1);cloneHost.unmount();assert.equal(cloneHost.lateWrites,0)
+ cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}});assert.equal(closed,1);cloneHost.unmount();assert.equal(cloneHost.lateWrites,0)
  console.log('PASS real clone page: return blocked during clone, including stale callback; enabled after completion')
 }
 rootPresentation().catch(e=>{console.error(e);process.exitCode=1})

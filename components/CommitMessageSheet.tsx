@@ -39,7 +39,7 @@ export function CommitMessageSheet({
   const description = useObservable(initialDescription)
 
   return (
-    <FormSheet
+    <FormSheet backDisabled={busy}
       navigationTitle={navigationTitle}
       confirmTitle={confirmTitle}
       confirmDisabled={busy || !title.value.trim()}

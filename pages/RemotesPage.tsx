@@ -1,3 +1,4 @@
+import { useModalBackGuard } from "../hooks/useEdgeBack"
 /**
  * pages/RemotesPage.tsx - Remote / upstream 管理
  *
@@ -71,6 +72,8 @@ export function RemotesPage({
 
   const [pendingDelete, setPendingDelete] = useState<RemoteInfo | null>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
+
+  useModalBackGuard(busy || branchLoading)
 
   async function refreshRemoteBranches(remote: string): Promise<void> {
     const request = ++branchRequestRef.current

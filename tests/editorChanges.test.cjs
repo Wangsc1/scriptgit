@@ -47,7 +47,7 @@ async function main(){
  // Full-screen diff edge swipe shares save-first back, and ignores ordinary scrolling.
  const swipe=open(),swipeController=controllers.at(-1)
  find(swipe,'FileChangeSwitcher').props.selection.value=1;await pause()
- const gesture=find(swipe,'ScrollView').props.simultaneousGesture
+ swipe.render();const gesture=swipe.tree.children[0].props.simultaneousGesture
  assert.equal(gesture.kind,'drag');assert.deepEqual(gesture.options,{minDistance:20,coordinateSpace:'local'})
  const beforeSwipe={writes:writes.length,closed,reads:swipeController.reads||0}
  for(const [x,width,height] of [[25,100,0],[0,79,0],[0,100,100],[0,-100,0]])gesture.onEnded({startLocation:{x},translation:{width,height}})
@@ -55,7 +55,7 @@ async function main(){
  swipeController.content='unsaved';swipeController.nativeError='IME unavailable'
  gesture.onEnded({startLocation:{x:24},translation:{width:80,height:0}});await tick()
  assert.equal(closed,beforeSwipe.closed);assert.equal(writes.length,beforeSwipe.writes);assert.equal(swipeController.content,'unsaved')
- swipeController.nativeError=null;swipeController.latestNative='latest native draft'
+ swipeController.nativeError=null;swipeController.latestNative='latest native draft';gesture.changed()
  gesture.onEnded({startLocation:{x:0},translation:{width:100,height:10}});await tick()
  assert.equal(writes.length,beforeSwipe.writes+1);assert.equal(writes.at(-1),'latest native draft');assert.equal(closed,beforeSwipe.closed+1);swipe.unmount()
  // Opening stays immediate; after the first screen, real line counts arrive without selecting the changes tab.
@@ -130,6 +130,20 @@ async function main(){
  assert.equal(changedLabel.some(n=>n.props.systemName),false)
  assert.equal(switcher.tree.props.safeAreaInset,undefined);assert.equal(switcher.tree.props.padding,undefined)
  switcher.unmount()
+ // Unlike the local editor, remote exit must never turn into a GitHub commit.
+ const {GitHubFileSession}=load('services/githubFileSession.ts')
+ let remoteWrites=0,remoteCloses=0,discardRemote=false,remoteConfirms=0
+ global.Dialog={confirm:async()=>{remoteConfirms++;return discardRemote}}
+ const {GitHubFileEditor}=load('pages/GitHubFileEditor.tsx',{scripting:ui,'../services/githubFileSession':{GitHubFileSession},'../api/githubApi':{saveRepoTextFile:async()=>{remoteWrites++;throw Error('exit must not save')}}})
+ const remote=mount(GitHubFileEditor,{fullName:'o/r',branch:'main',file:{path:'a.ts',sha:'old-sha',text:'old'},onClose:()=>remoteCloses++})
+ const rc=controllers.at(-1);rc.content='remote draft'
+ all(remote.render()).find(n=>n.type==='TextField').props.onChanged('already filled commit message');remote.render()
+ const remoteGesture=remote.tree.children[0].props.simultaneousGesture
+ remoteGesture.changed();await remoteGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}})
+ assert.equal(remoteWrites,0);assert.equal(remoteCloses,0);assert.equal(remoteConfirms,1);assert.equal(rc.content,'remote draft')
+ discardRemote=true;remoteGesture.changed();await remoteGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}})
+ assert.equal(remoteWrites,0);assert.equal(remoteCloses,1);assert.equal(remoteConfirms,2);remote.unmount()
+ console.log('PASS remote swipe reuses discard confirmation: cancel retains draft, confirmed discard closes, zero remote writes even with a filled commit message')
  console.log('PASS 首屏不等统计、后台真实增删计数/草稿更新、数字在标题上方且复用已修改橙色、无符号图标、输入当下不算差异、原生TabView不设边距偏移、默认全屏内容、条件双按钮、红删绿增/行内高亮、即时草稿、切换零写入、同一控制器、自动保存、重试及卸载安全')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

@@ -26,7 +26,7 @@ export function AddRemoteSheet({
   const url = useObservable("")
 
   return (
-    <FormSheet
+    <FormSheet backDisabled={busy}
       navigationTitle="添加远端"
       confirmTitle={busy ? "处理中…" : "添加"}
       confirmDisabled={busy || !name.value.trim() || !url.value.trim()}
