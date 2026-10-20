@@ -332,7 +332,7 @@ export function RepoDetailPage({
             }}
           />
         ),
-      }),
+      }, false, nav.selectedCommitOid != null),
       {
         isPresented: worktree.commitSheetMode != null,
         onChanged: (presented: boolean) => {

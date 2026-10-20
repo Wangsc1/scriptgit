@@ -497,7 +497,7 @@ export function RepoListPage() {
                 ],
               }}
             >
-              <FullScreenLink
+              <FullScreenLink backArrow
                 destination={
                   <RepoDetailPage
                     bookmarkName={repo.bookmarkName}

@@ -11,13 +11,15 @@ type Presentation = {
  * Closing uses the same state/refresh callback as native modal dismissal.
  * Existing editor/viewer/form covers already own their stack and close policy.
  */
-export function fullScreenPage(presentation: Presentation, ownClose = false): Presentation {
+export function fullScreenPage(presentation: Presentation, ownClose = false, backArrow = false): Presentation {
   return {
     ...presentation,
     content: <NavigationStack>
       <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
         toolbar={ownClose ? undefined : {
-          topBarLeading: <Button title="返回" action={() => presentation.onChanged(false)} />,
+          topBarLeading: backArrow
+            ? <Button action={() => presentation.onChanged(false)}><Image systemName="chevron.left" /></Button>
+            : <Button title="返回" action={() => presentation.onChanged(false)} />,
         }}>
         {presentation.content}
       </VStack>
@@ -26,8 +28,9 @@ export function fullScreenPage(presentation: Presentation, ownClose = false): Pr
 }
 
 /** Row equivalent of a NavigationLink, but with native full-screen modal motion. */
-export function FullScreenLink({ destination, children }: {
+export function FullScreenLink({ destination, children, backArrow = false }: {
   destination: VirtualNode
+  backArrow?: boolean
   children: VirtualNode | VirtualNode[]
 }) {
   const [presented, setPresented] = useState(false)
@@ -38,7 +41,7 @@ export function FullScreenLink({ destination, children }: {
   }
   return <HStack fullScreenCover={fullScreenPage({
     isPresented: presented, onChanged: changePresented, content: destination,
-  })}>
+  }, false, backArrow)}>
     <Button action={() => changePresented(true)} buttonStyle="plain">
       <HStack>
         {children}

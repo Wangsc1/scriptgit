@@ -26,6 +26,13 @@ for(let i=0;i<2;i++){
 }
 const lateDismiss=h.tree.props.fullScreenCover.onChanged;h.unmount();lateDismiss(false);assert.equal(h.lateWrites,0)
 
+// Arrow-only variant retains the same dismiss callback and leaves default pages unchanged.
+const arrow=navigation.fullScreenPage({isPresented:true,onChanged:value=>assert.equal(value,false),content:destination},false,true)
+const arrowButton=arrow.content.children[0].props.toolbar.topBarLeading
+assert.equal(arrowButton.props.title,undefined);assert.equal(arrowButton.children[0].props.systemName,'chevron.left');arrowButton.props.action()
+assert.match(read('pages/RepoListPage.tsx'),/<FullScreenLink backArrow/)
+assert.match(read('pages/RepoDetailPage.tsx'),/false, nav.selectedCommitOid != null/)
+assert.match(read('pages/ClonePage.tsx'),/<Image systemName="chevron.left"/)
 // Full-screen business forms retain their own title and cancel/confirm toolbar.
 const {FormSheet}=load('components/FormSheet.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
 let cancelled=0,confirmed=0
@@ -61,7 +68,7 @@ for(const [file,state,setter,Component] of [
  console.log('PASS '+file+': actual cover content, toolbar return and native callback clear route state')
 }
 // Clone close must not bypass the write/cancel gate.
-const clone=read('pages/ClonePage.tsx');assert.match(clone,/title="返回" action=\{\(\) => \{ if \(!locked.current\) onClose\?\.\(\) \}\} disabled=\{cloning\}/)
+const clone=read('pages/ClonePage.tsx');assert.match(clone,/action=\{\(\) => \{ if \(!locked.current\) onClose\?\.\(\) \}\} disabled=\{cloning\}/)
 // Save-first editor close remains owned by the editor, never the generic business cover.
 const editor=read('pages/LocalFileEditor.tsx');assert.match(editor,/topBarLeading: <Button title="返回" action=\{back\}/);assert.equal((editor.match(/onClose\(\)/g)||[]).length,1);assert.match(editor,/async function back\(\)[\s\S]*saveLocalWorktreeFile[\s\S]*onClose\(\)/)
 assert.match(read('index.tsx'),/Navigation.present\(\{ element: <View \/>, modalPresentationStyle: "fullScreen" \}\)/)

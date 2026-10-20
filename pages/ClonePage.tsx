@@ -1,5 +1,5 @@
 /** 单个/按用户名批量克隆；默认本地 Scripting/git，手动选择目录仍保留。 */
-import { List, Section, Text, Button, HStack, useState, useEffect, useRef } from "scripting"
+import { List, Section, Text, Button, Image, HStack, useState, useEffect, useRef } from "scripting"
 import { AvatarView } from "../components/AvatarView"
 import { useGitHubUserSearch } from "../hooks/useGitHubUserSearch"
 import { FormRow } from "../components/FormRow"
@@ -202,7 +202,7 @@ export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onClone
 
   return <List navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
     navigationBarBackButtonHidden={cloning}
-    toolbar={{ topBarLeading: <Button title="返回" action={() => { if (!locked.current) onClose?.() }} disabled={cloning} /> }}
+    toolbar={{ topBarLeading: <Button action={() => { if (!locked.current) onClose?.() }} disabled={cloning}><Image systemName="chevron.left" /></Button> }}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>} footer={<Text>新克隆默认保存在本机，无需启用 iCloud。更改目录可选择 iCloud 或其它位置；不会迁移或修改已有仓库。</Text>}>
