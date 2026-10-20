@@ -46,7 +46,6 @@ export { getCachedRepoStatus, statusRevision } from "./git/statusScanService"
 import {
   amendHeadCommitInternal,
   revertCommitInternal,
-  resetToCommitInternal,
   resetToCommitAndPushInternal,
   softResetHeadInternal,
 } from "./git/historyMutationService"

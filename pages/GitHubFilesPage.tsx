@@ -1,5 +1,5 @@
 /** 远端文件浏览，无需克隆；分支与路径固定后才打开编辑会话。 */
-import { Button, List, Picker, Section, Text, TextField, HStack, VStack, Image, useEffect, useRef, useState } from "scripting"
+import { Button, List, Picker, Section, Text, TextField, HStack, VStack, useEffect, useRef, useState } from "scripting"
 import { getRepo, listMyRepos, listRepoBranches, listRepoContents, loadRepoTextFile, type GitHubContentEntry } from "../api/githubApi"
 import type { GitHubRepo } from "../types/git"
 import type { RemoteTextFile } from "../services/githubFileSession"

@@ -106,7 +106,7 @@ export function GitHubWorkPage({
   fullName: string
   initialKind?: number
 }) {
-  const [kind, setKind] = useState<ItemKind>(initialKind as ItemKind)
+  const [kind] = useState<ItemKind>(initialKind as ItemKind)
   const [filter, setFilter] = useState<FilterTab>(0)
   const [items, setItems] = useState<GitHubIssueItem[]>([])
   const [page, setPage] = useState(1)

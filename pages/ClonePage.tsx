@@ -18,7 +18,6 @@ import { repoNameFromUrl } from "../utils/format"
 import { yieldForUi } from "../utils/remoteProgress"
 import { registeredGithubRepos } from "../utils/clonedGithubRepos"
 import { hideSystemDetails } from "../utils/displayPaths"
-import { runDirectoryCheck } from "../services/cloneDiagnostics"
 
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
@@ -79,7 +78,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
     setDestination(next)
     setDirectoryError("")
     try {
-      const root = await prepareCloneRoot(next)
+      await prepareCloneRoot(next)
       if (alive.current && id === directoryRequest.current) setRootLabel(next.kind === "local" ? "我的 iPhone / Scripting / git" : next.kind === "icloud" ? "iCloud Drive / Scripting / git" : "所选父目录 / git")
     } catch (e: any) {
       if (alive.current && id === directoryRequest.current) {

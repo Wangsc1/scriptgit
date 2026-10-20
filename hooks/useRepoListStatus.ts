@@ -137,10 +137,8 @@ export function useRepoListStatus(setRepos: (repos: RepoMeta[]) => void) {
     setStatusMap(statuses)
     setRepoRefreshMap(Object.fromEntries(latest.map(repo => [repo.bookmarkName, { phase: "queued" as const }])))
     setProgress({ running: true, completed: 0, total: latest.length, current: "" })
-    let snapshots: Record<string, RepoSnapshot> = {}
     // 快照仅为展示信息，不应成为所有仓库刷新前的全局 await 屏障。
     readSnapshots().then(value => {
-      snapshots = value
       if (current()) setSnapshotMap(value)
     }).catch(() => {})
     // 首屏先交还事件循环，仓库和操作入口不必等文件系统或 Git 扫描。

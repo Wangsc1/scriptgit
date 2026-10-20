@@ -414,11 +414,6 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   return mapRepo(data)
 }
 
-/** 验证 token 是否有效（返回当前用户，无效则抛错） */
-export async function verifyToken(): Promise<GitHubUser> {
-  return await getCurrentUser()
-}
-
 /** Token 校验结果：区分有效 / 无效（被撤销或过期）/ 无法校验（网络等） */
 export type TokenCheckResult =
   | { status: "valid"; user: GitHubUser }

@@ -224,13 +224,6 @@ export interface RenameBranchResult {
   remoteError: string | null
 }
 
-/** Git 操作结果（统一返回结构） */
-export interface GitResult<T = unknown> {
-  ok: boolean
-  result?: T
-  error?: string
-}
-
 /** 仓库同步状态快照（供 Widget / 通知使用） */
 export interface RepoSnapshot {
   name: string
