@@ -514,7 +514,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
-  return <Section sheet={{
+  return <Section fullScreenCover={{
     isPresented: directoryForm !== null,
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,

@@ -1,3 +1,4 @@
+import { fullScreenPage } from "../components/FullScreenNavigation"
 import {
   Button,
   HStack,
@@ -218,7 +219,7 @@ export function GitHubWorkPage({
           />
         ) : undefined,
       }}
-      navigationDestination={{
+      fullScreenCover={[fullScreenPage({
         isPresented: selectedNumber != null,
         onChanged: (presented: boolean) => {
           if (!presented) setSelectedNumber(null)
@@ -230,8 +231,8 @@ export function GitHubWorkPage({
             number={selectedNumber}
           />
         ) : <Text>加载中…</Text>,
-      }}
-      sheet={{
+      }),
+      {
         isPresented: showCreate,
         onChanged: (presented: boolean) => {
           setShowCreate(presented)
@@ -245,7 +246,8 @@ export function GitHubWorkPage({
             onConfirm={handleCreate}
           />
         ),
-      }}
+      }]}
+
       toast={
         toastState
           ? {

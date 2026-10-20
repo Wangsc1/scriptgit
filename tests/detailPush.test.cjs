@@ -52,7 +52,7 @@ async function main(){
  await test('top and file/folder swipe use the identical native two-field alert; defaults, edits stable on rerender, cancellation/blank title write nothing',async()=>{
   const e=fixture();e.render();assert.equal(all(e.h.tree).find(n=>n.type==='RepoRemoteSections').props.onPush,all(e.h.tree).find(n=>n.type==='RepoDetailTabContent').props.onPush)
   for(const open of [e.top,e.swipe]){
-   open();open();e.render();assert.equal(e.h.tree.props.sheet.isPresented,false);assert.equal(e.alert().title,'提交并推送');assert.equal(e.inputs().length,2);assert.equal(e.inputs()[0].props.value,'a');assert.equal(e.inputs()[1].props.value,'');assert.deepEqual(e.calls,[])
+   open();open();e.render();assert.equal(e.h.tree.props.fullScreenCover[3].isPresented,false);assert.equal(e.alert().title,'提交并推送');assert.equal(e.inputs().length,2);assert.equal(e.inputs()[0].props.value,'a');assert.equal(e.inputs()[1].props.value,'');assert.deepEqual(e.calls,[])
    e.edit('自定义标题','描述');e.data.changes.push({filepath:'extra',status:'modified'});e.render();assert.equal(e.inputs()[0].props.value,'自定义标题');assert.equal(e.inputs()[1].props.value,'描述')
    e.edit('  ','描述');assert.equal(e.button('推送').props.disabled,true);await e.button('推送').props.action();assert.match(JSON.stringify(e.alert().message),/请填写提交信息/);assert.deepEqual(e.calls,[])
    const dismiss=e.alert().onChanged;e.button('取消').props.action();dismiss(false);e.render();assert.equal(e.alert().isPresented,false);assert.deepEqual(e.calls,[]);assert.equal(e.clears,0);e.data.changes.pop()
@@ -73,7 +73,7 @@ async function main(){
   for(const failure of ['stageAll','commit:a','pull']){
    const e=fixture();e.setFail(failure);e.swipe();await e.button('推送').props.action();assert.ok(!e.calls.includes('push'));assert.ok(e.toasts.some(([msg])=>msg.includes('推送失败')));if(failure==='stageAll')assert.ok(!e.calls.some(v=>v.startsWith('commit:')));e.h.unmount()
   }
-  for(const entry of ['top','swipe']){const e=fixture();e.data.changes=[];await e[entry]();assert.deepEqual(e.calls,['pull','push','refresh']);assert.equal(e.alert().isPresented,false);assert.equal(e.h.tree.props.sheet.isPresented,false);e.h.unmount()}
+  for(const entry of ['top','swipe']){const e=fixture();e.data.changes=[];await e[entry]();assert.deepEqual(e.calls,['pull','push','refresh']);assert.equal(e.alert().isPresented,false);assert.equal(e.h.tree.props.fullScreenCover[3].isPresented,false);e.h.unmount()}
  })
  await test('branch unknown, merge, busy, pending confirmation and commit/amend sheet protections at entry and confirmation; independent commit/amend and Stash remain unchanged',async()=>{
   for(const mode of ['branch','merge','busy','pending','commit','amend']){
@@ -85,8 +85,8 @@ async function main(){
    block();e.top();e.swipe();assert.deepEqual(e.calls,[]);assert.equal(e.inputs().length,0);e.h.unmount()
    const fresh=fixture();fresh.top();if(mode==='branch')fresh.data.branchStateKnown=false;else if(mode==='merge')fresh.data.mergeInProgress=true;else if(mode==='pending')fresh.pending.setPending({type:'restore',filepath:'a'});else fresh.worktree.setCommitSheetMode(mode);fresh.render();await fresh.button('推送').props.action();assert.deepEqual(fresh.calls,[]);fresh.h.unmount()
   }
-  const e=fixture();e.worktree.openCommitForm();e.render();assert.equal(e.h.tree.props.sheet.content.props.navigationTitle,'提交改动');assert.equal(e.h.tree.props.sheet.content.props.onConfirm,e.worktree.handleCommit);e.worktree.closeCommitSheet();e.render()
-  e.worktree.setCommitSheetMode('amend');e.render();assert.equal(e.h.tree.props.sheet.content.props.navigationTitle,'重编提交');assert.equal(e.h.tree.props.sheet.content.props.initialTitle,'old title');assert.equal(e.h.tree.props.sheet.content.props.onConfirm,e.pending.handleAmendFormConfirm);e.worktree.closeCommitSheet();e.render()
+  const e=fixture();e.worktree.openCommitForm();e.render();assert.equal(e.h.tree.props.fullScreenCover[3].content.props.navigationTitle,'提交改动');assert.equal(e.h.tree.props.fullScreenCover[3].content.props.onConfirm,e.worktree.handleCommit);e.worktree.closeCommitSheet();e.render()
+  e.worktree.setCommitSheetMode('amend');e.render();assert.equal(e.h.tree.props.fullScreenCover[3].content.props.navigationTitle,'重编提交');assert.equal(e.h.tree.props.fullScreenCover[3].content.props.initialTitle,'old title');assert.equal(e.h.tree.props.fullScreenCover[3].content.props.onConfirm,e.pending.handleAmendFormConfirm);e.worktree.closeCommitSheet();e.render()
   await e.worktree.handleStagePaths(['folder']);assert.deepEqual(e.calls,['stash']);assert.equal(e.calls.includes('stageAll'),false)
   e.calls.length=0;await e.worktree.handleCommit('独立提交','只提交已暂存内容');assert.deepEqual(e.calls,['commit:独立提交\n\n只提交已暂存内容']);assert.deepEqual(e.data.changes,[]);e.h.unmount()
  })

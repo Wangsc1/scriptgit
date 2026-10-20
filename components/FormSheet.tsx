@@ -1,8 +1,7 @@
 /**
- * components/FormSheet.tsx - 半屏表单弹窗外壳
+ * components/FormSheet.tsx - 全屏业务表单外壳
  *
- * 统一 sheet 的呈现参数：可拖拽 detents（避免固定 medium 下收起键盘后输入框失效）、
- * 半透明材质背景（输入时保持通透）、左取消右确认工具栏。
+ * 由 fullScreenCover 呈现，保留独立导航栈、左取消右确认工具栏。
  * 表单内容由调用方传入，草稿建议用 useObservable 在内容组件里自持。
  * 校验/提交失败信息用 error 在表单内展示：父页 toast 会被 sheet 遮住。
  */
@@ -33,8 +32,6 @@ export function FormSheet({
       <List
         navigationTitle={navigationTitle}
         navigationBarTitleDisplayMode="inline"
-        presentationDetents={["medium", "large"]}
-        presentationDragIndicator="visible"
         presentationBackground="systemGroupedBackground"
         scrollContentBackground="hidden"
         scrollDismissesKeyboard="interactively"

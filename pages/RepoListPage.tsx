@@ -1,3 +1,4 @@
+import { fullScreenPage, FullScreenLink } from "../components/FullScreenNavigation"
 /**
  * pages/RepoListPage.tsx - 仓库列表页
  *
@@ -19,7 +20,6 @@ import {
   Spacer,
   Image,
   Navigation,
-  NavigationLink,
   Toolbar,
   ToolbarItem,
   Button,
@@ -377,18 +377,19 @@ export function RepoListPage() {
       onAppear={appear}
       onDisappear={disappear}
       refreshable={refreshAndPullAll}
-      navigationDestination={{
+      fullScreenCover={[fullScreenPage({
         isPresented: showClone,
         onChanged: setShowClone,
         content: (
           <ClonePage
+            onClose={() => setShowClone(false)}
             onCloned={(repo, keepOpen) => {
               appendRepo(repo)
               if (!keepOpen) setShowClone(false)
             }}
           />
         ),
-      }}
+      }, true)]}
       alert={{
         title: pushForm ? "提交并推送" : activeAlert?.title ?? "",
         message: <Text>{pushForm ? pushForm.error || `将暂存「${pushForm.repo.name}」的全部改动并提交，再拉取、推送。` : activeAlert?.message ?? ""}</Text>,
@@ -496,7 +497,7 @@ export function RepoListPage() {
                 ],
               }}
             >
-              <NavigationLink
+              <FullScreenLink
                 destination={
                   <RepoDetailPage
                     bookmarkName={repo.bookmarkName}
@@ -511,7 +512,7 @@ export function RepoListPage() {
                   refresh={repoRefreshMap[repo.bookmarkName]}
                   visibility={visibilities[repo.bookmarkName]}
                 />
-              </NavigationLink>
+              </FullScreenLink>
             </HStack>
           ))}
         </Section>
@@ -601,7 +602,7 @@ function RepoRow({
         {refresh?.message && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={refresh.phase === "error" ? COLOR_RED : COLOR_ORANGE}>{refresh.message}</Text> : null}
       </VStack>
       <Spacer />
-      {/* 放在 NavigationLink 自带 > 的左侧，整行垂直居中 */}
+      {/* 放在 FullScreenLink 自带 > 的左侧，整行垂直居中 */}
       {status == null ? (
         <HStack spacing={8}>
           {snapshot &&

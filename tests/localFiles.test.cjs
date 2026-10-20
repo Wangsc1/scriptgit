@@ -251,13 +251,13 @@ async function main(){
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function group(name){h.render();return all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
   function action(name,title){return all(group(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action()}
-  function form(){h.render();assert.equal(h.tree.props.sheet.isPresented,true);return h.tree.props.sheet.content.props}
-  await action('form-folder','复制文件夹');assert.equal(form().initialName,'form-folder 副本');form().onCancel();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
-  global.Dialog.prompt=async options=>{assert.equal(options.title,'重命名文件夹');assert.equal(options.defaultValue,'form-folder');h.render();assert.equal(h.tree.props.sheet.isPresented,false);return 'form-folder'};await action('form-folder','重命名');h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
+  function form(){h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,true);return h.tree.props.fullScreenCover.content.props}
+  await action('form-folder','复制文件夹');assert.equal(form().initialName,'form-folder 副本');form().onCancel();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);assert.equal(updates,0)
+  global.Dialog.prompt=async options=>{assert.equal(options.title,'重命名文件夹');assert.equal(options.defaultValue,'form-folder');h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);return 'form-folder'};await action('form-folder','重命名');h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);assert.equal(updates,0)
   await action('form-folder','复制文件夹');await form().onConfirm('../bad');assert.match(form().error,/合法/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));form().onCancel()
   await action('form-folder','复制文件夹');await form().onConfirm('form copy');assert.ok(group('form copy'));group('form copy').props.onChanged(true);assert.ok(group('empty'));assert.ok(fs.existsSync(dir+'/form copy/untracked.bin'));const afterCopy=updates
   global.Dialog.prompt=async()=> 'form renamed';await action('form copy','重命名');assert.ok(group('form renamed'));assert.ok(!fs.existsSync(dir+'/form copy'));assert.equal(updates,afterCopy+1)
-  const rename=FileManager.rename;FileManager.rename=async()=>{throw Error('UI denied')};global.Dialog.prompt=async()=> 'denied form';try{await action('form-folder','重命名')}finally{FileManager.rename=rename}assert.match(text(h),/UI denied/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));h.render();assert.equal(h.tree.props.sheet.isPresented,false);h.unmount()
+  const rename=FileManager.rename;FileManager.rename=async()=>{throw Error('UI denied')};global.Dialog.prompt=async()=> 'denied form';try{await action('form-folder','重命名')}finally{FileManager.rename=rename}assert.match(text(h),/UI denied/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);h.unmount()
  })
  await test('folder rename uses centered prompt only: cancel, invalid/collision, busy duplicate, changed workspace, merge and unmount guards preserve source',async()=>{
   await disk('prompt-folder/sub/a','draft');await disk('prompt-collision/a','other');let updates=0,prompts=0
@@ -269,7 +269,7 @@ async function main(){
    return all(group.props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
   }
   const index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
-  global.Dialog.prompt=async opts=>{prompts++;assert.equal(opts.title,'重命名文件夹');assert.equal(opts.defaultValue,'prompt-folder');assert.equal(opts.cancelLabel,'取消');h.render();assert.equal(h.tree.props.sheet.isPresented,false);return null}
+  global.Dialog.prompt=async opts=>{prompts++;assert.equal(opts.title,'重命名文件夹');assert.equal(opts.defaultValue,'prompt-folder');assert.equal(opts.cancelLabel,'取消');h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);return null}
   await action();assert.equal(updates,0)
   for(const input of ['../escape','prompt-collision']){global.Dialog.prompt=async()=>input;await action();assert.match(text(h),/合法|存在|同名/);assert.equal(fs.readFileSync(dir+'/prompt-folder/sub/a','utf8'),'draft')}
   const gate=deferred();global.Dialog.prompt=async()=>{prompts++;return gate.promise};const pending=action();await tick();const before=prompts;await action();assert.equal(prompts,before);gate.resolve(null);await pending
@@ -361,7 +361,7 @@ async function main(){
   const fileLabel=name=>JSON.stringify(row(name).children)
   folder('rename-parent').props.onChanged(true);folder('source').props.onChanged(true)
   assert.match(label('rename-parent'),/已修改/);assert.doesNotMatch(label('rename-parent'),/已重命名/)
-  global.Dialog.prompt=async()=> 'target';await all(folder('source').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false)
+  global.Dialog.prompt=async()=> 'target';await all(folder('source').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
   assert.match(label('target'),/已重命名/);assert.doesNotMatch(label('target'),/已修改/)
   folder('target').props.onChanged(true);folder('sub').props.onChanged(true)
   assert.doesNotMatch(label('sub'),/已重命名|新增/)
@@ -408,7 +408,7 @@ async function main(){
   // Immediate file copy must be green before the asynchronous status refresh.
   global.Dialog.prompt=async()=> 'green-photo copy.jpg';await all(row('green-photo.jpg').props.contextMenu.menuItems).find(n=>n.props.title==='复制文件').props.action()
   badge(row('green-photo copy.jpg'),'新增','systemGreen');assert.equal(icon(row('green-photo copy.jpg')).props.systemName,'photo')
-  async function directoryAction(name,title,next){if(title==='重命名')global.Dialog.prompt=async()=>next;await all(folder(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action();h.render();if(title==='重命名')assert.equal(h.tree.props.sheet.isPresented,false);else await h.tree.props.sheet.content.props.onConfirm(next)}
+  async function directoryAction(name,title,next){if(title==='重命名')global.Dialog.prompt=async()=>next;await all(folder(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action();h.render();if(title==='重命名')assert.equal(h.tree.props.fullScreenCover.isPresented,false);else await h.tree.props.fullScreenCover.content.props.onConfirm(next)}
   await directoryAction('green-source','复制文件夹','green-copy');badge(folder('green-copy').props.label,'新增','systemGreen')
   folder('green-copy').props.onChanged(true);badge(folder('empty').props.label,'新增','systemGreen');badge(row('plain.txt'),'新增','systemGreen')
   await directoryAction('empty','复制文件夹','empty-copy');badge(folder('empty-copy').props.label,'新增','systemGreen')
@@ -720,7 +720,7 @@ async function main(){
   const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++,onOpen:file=>opened=file})
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
-  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
+  const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
  })
  await test('drag move uses real native rename, Git D/A only, same name/Unicode/path/link/root/lock protections and failure preserves bytes',async()=>{
   await disk('drag-source.bin',Buffer.from([0,255,6]));await git.add({fs,dir,filepath:'drag-source.bin'});await git.commit({fs,dir,author:{name:'test',email:'test@example.invalid'},message:'drag baseline'})

@@ -1,3 +1,4 @@
+import { FullScreenLink } from "./FullScreenNavigation"
 /**
  * components/CommitChangesView.tsx - 提交详情「更改」视图
  *
@@ -8,7 +9,6 @@
 import {
   Button,
   HStack,
-  NavigationLink,
   ProgressView,
   Section,
   Spacer,
@@ -116,7 +116,7 @@ export function CommitChangesSections({
                   onOpenImage={onOpenImage}
                 />
                 {truncated ? (
-                  <NavigationLink
+                  <FullScreenLink
                     destination={
                       <CommitDiffPage
                         bookmarkName={bookmarkName}
@@ -129,7 +129,7 @@ export function CommitChangesSections({
                     <Text foregroundStyle={COLOR_SECONDARY_LABEL}>
                       仅显示前 {COMMIT_CHANGES_MAX_RENDER_LINES} 行，点击查看完整差异
                     </Text>
-                  </NavigationLink>
+                  </FullScreenLink>
                 ) : null}
               </>
             ) : null}

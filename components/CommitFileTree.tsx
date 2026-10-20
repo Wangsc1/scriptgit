@@ -1,3 +1,4 @@
+import { FullScreenLink } from "./FullScreenNavigation"
 /**
  * components/CommitFileTree.tsx - 提交间文件变更树
  *
@@ -8,7 +9,6 @@
 import {
   Text,
   HStack,
-  NavigationLink,
   DisclosureGroup,
   Image,
 } from "scripting"
@@ -74,7 +74,7 @@ export function CommitFileTreeNode({
         : COLOR_ORANGE
   const label = status === "added" ? "A" : status === "deleted" ? "D" : "M"
   return (
-    <NavigationLink
+    <FullScreenLink
       destination={
         <CommitDiffPage
           bookmarkName={bookmarkName}
@@ -93,6 +93,6 @@ export function CommitFileTreeNode({
           {node.name}
         </Text>
       </HStack>
-    </NavigationLink>
+    </FullScreenLink>
   )
 }

@@ -326,7 +326,7 @@ export function RemotesPage({
           />
         ),
       }}
-      sheet={{
+      fullScreenCover={{
         isPresented: showAddSheet,
         onChanged: (presented: boolean) => {
           if (!presented) {

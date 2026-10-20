@@ -1,3 +1,4 @@
+import { FullScreenLink } from "../components/FullScreenNavigation"
 /**
  * pages/ConflictsPage.tsx - 合并冲突列表与解决
  *
@@ -16,7 +17,6 @@ import {
   Spacer,
   Button,
   Image,
-  NavigationLink,
   useState,
   useEffect,
 } from "scripting"
@@ -408,7 +408,7 @@ export function ConflictsPage({
                 ],
               }}
             >
-              <NavigationLink
+              <FullScreenLink
                 destination={
                   <DiffPage bookmarkName={bookmarkName} filepath={file.filepath} />
                 }
@@ -419,7 +419,7 @@ export function ConflictsPage({
                     {conflictKindLabel(file.kind)}
                   </Text>
                 </VStack>
-              </NavigationLink>
+              </FullScreenLink>
             </HStack>
           ))}
         </Section>

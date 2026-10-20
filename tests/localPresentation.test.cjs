@@ -46,10 +46,11 @@ async function main(){
   assert.ok(destination.content.props.sessionId>firstImageSession+i,'same image gets a fresh session')
   destination.onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[1].isPresented,false)
  }
- nav.isPresented=true;h.render();assert.equal(h.tree.props.navigationDestination.content.type,'RepoDetailDestination');h.tree.props.navigationDestination.onChanged(false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
+ nav.isPresented=true;h.render();const business=h.tree.props.fullScreenCover[2];assert.equal(business.isPresented,true);assert.equal(business.content.type,'NavigationStack');assert.equal(business.content.children[0].children[0].type,'RepoDetailDestination');business.content.children[0].props.toolbar.topBarLeading.props.action();h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);assert.equal(closedOtherPages,1);assert.equal(mergeLoads,1)
+ nav.isPresented=true;h.render();h.tree.props.fullScreenCover[2].onChanged(false);h.render();assert.equal(h.tree.props.fullScreenCover[2].isPresented,false);assert.equal(closedOtherPages,2);assert.equal(mergeLoads,2)
  tab().props.onOpenLocalFile({...file,previewImage:{nativeThumbnail:true},text:null});h.render();const afterUnmountClose=h.tree.props.fullScreenCover[1].content.props.onClose
  h.unmount();afterUnmountClose();assert.equal(h.lateWrites,0)
- const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(<View \/>\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
+ const entry=fs.readFileSync(root+'/index.tsx','utf8');assert.match(entry,/await Navigation.present\(\{ element: <View \/>, modalPresentationStyle: "fullScreen" \}\)/);assert.equal((entry.match(/Script.exit\(\)/g)||[]).length,1)
  for(const name of ['pages/FilesTab.tsx','pages/LocalFileEditor.tsx','services/git/localFileService.ts'])assert.doesNotMatch(fs.readFileSync(root+'/'+name,'utf8'),/Script.exit|Navigation.present/)
  // Capture actual WebView HTML for local/default modes; do not pretend to render native WebKit.
  let loadGate=null;const controllers=[];global.WebViewController=class{

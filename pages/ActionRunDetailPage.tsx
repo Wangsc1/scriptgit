@@ -1,3 +1,4 @@
+import { fullScreenPage } from "../components/FullScreenNavigation"
 /**
  * pages/ActionRunDetailPage.tsx - 工作流运行详情页
  *
@@ -362,7 +363,7 @@ export function ActionRunDetailPage({
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"
       refreshable={load}
-      navigationDestination={{
+      fullScreenCover={[fullScreenPage({
         isPresented: viewerJob != null,
         onChanged: (presented: boolean) => {
           if (!presented) setViewerJob(null)
@@ -378,7 +379,7 @@ export function ActionRunDetailPage({
         ) : (
           <Text>加载中…</Text>
         ),
-      }}
+      })]}
       toolbar={{
         topBarTrailing: run ? renderMenu(run) : undefined,
       }}

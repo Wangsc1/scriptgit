@@ -23,7 +23,7 @@ for(const [module,name]of [['useRepoPendingActions','useRepoPendingActions'],['u
 mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid(){}}
 mocks['../components/LocalImagePreview']={LocalImagePreview:ImagePage}
 const Parent=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage
-function open(parent){parent.render();all(parent.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(original);parent.render();const route=parent.tree.props.fullScreenCover[1];assert.equal(route.isPresented,true);assert.equal(parent.tree.props.navigationDestination.isPresented,false);assert.equal(parent.tree.props.fullScreenCover[0].isPresented,false);assert.equal(route.content.type,ImagePage);return route}
+function open(parent){parent.render();all(parent.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(original);parent.render();const route=parent.tree.props.fullScreenCover[1];assert.equal(route.isPresented,true);assert.equal(parent.tree.props.fullScreenCover[2].isPresented,false);assert.equal(parent.tree.props.fullScreenCover[0].isPresented,false);assert.equal(route.content.type,ImagePage);return route}
 function child(route){const h=mount(route.content.type,route.content.props);assert.equal(h.tree.type,'ZStack');assert.equal(all(h.tree).find(n=>n.type==='ImageViewer').props.sessionId,route.content.props.sessionId);assert.equal(all(h.tree).find(n=>n.type==='ImageViewer').props.onClose,route.content.props.onClose);assert.doesNotMatch(JSON.stringify(h.tree),/图片只读|显示缩略图/);assert.ok(!all(h.tree).some(n=>n.type==='WebView'));return h}
 async function main(){
  global.FileManager=new Proxy({},{get:()=>()=>{sourceWrites++;throw Error('navigation must not touch source')}})

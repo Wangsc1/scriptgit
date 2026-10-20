@@ -1,3 +1,4 @@
+import { fullScreenPage } from "../components/FullScreenNavigation"
 /**
  * pages/ActionsPage.tsx - GitHub Actions 工作流运行列表页
  *
@@ -351,7 +352,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
       onDisappear={() => {
         visibleRef.current = false
       }}
-      navigationDestination={{
+      fullScreenCover={[fullScreenPage({
         isPresented: selectedRunId != null,
         onChanged: (presented: boolean) => {
           if (!presented) setSelectedRunId(null)
@@ -365,7 +366,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
         ) : (
           <Text>加载中…</Text>
         ),
-      }}
+      })]}
       toolbar={{
         topBarTrailing: (
           <Menu

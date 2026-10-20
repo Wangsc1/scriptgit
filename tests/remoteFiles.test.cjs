@@ -14,6 +14,10 @@ function load(relative, mocks = {}) {
   }, fileName: filename, reportDiagnostics: true })
   const mod = { exports: {} }
   const req = (name) => {
+    // Exercise production modal wiring even in page fixtures that stub UI dependencies.
+    if (name.endsWith('/FullScreenNavigation')) return load('components/FullScreenNavigation.tsx', {
+      scripting: ui, '../constants/colors': load('constants/colors.ts'),
+    })
     if (Object.hasOwn(mocks, name)) return mocks[name]
     throw new Error('Unmocked dependency: ' + name)
   }

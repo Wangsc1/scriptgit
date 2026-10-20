@@ -1,10 +1,11 @@
+import { FullScreenLink } from "../components/FullScreenNavigation"
 /**
  * pages/StashTab.tsx - Stash 独立 Tab
  *
  * 展示 Stash 列表，支持保存当前改动（含未暂存）、点进查看改动文件、应用和删除。
  */
 
-import { Section, Text, HStack, Spacer, Button, Image, NavigationLink } from "scripting"
+import { Section, Text, HStack, Spacer, Button, Image } from "scripting"
 import type { StashEntry, FileChange } from "../types/git"
 import {
   COLOR_SECONDARY_LABEL,
@@ -99,7 +100,7 @@ export function StashTab({
               }}
             >
               {entry.oid ? (
-                <NavigationLink
+                <FullScreenLink
                   destination={
                     <CommitDetailPage
                       bookmarkName={bookmarkName}
@@ -109,7 +110,7 @@ export function StashTab({
                   }
                 >
                   {row}
-                </NavigationLink>
+                </FullScreenLink>
               ) : (
                 row
               )}

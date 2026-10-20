@@ -22,7 +22,7 @@ import { runDirectoryCheck } from "../services/cloneDiagnostics"
 
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
-export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; initialUsername?: string }) {
+export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; onClose?: () => void; initialUsername?: string }) {
   const [url, setUrl] = useState("")
   const [destination, setDestination] = useState<CloneDestination>({ kind: "local" })
   const [rootLabel, setRootLabel] = useState("我的 iPhone / Scripting / git")
@@ -202,6 +202,7 @@ export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo:
 
   return <List navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
     navigationBarBackButtonHidden={cloning}
+    toolbar={{ topBarLeading: <Button title="返回" action={() => { if (!locked.current) onClose?.() }} disabled={cloning} /> }}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>} footer={<Text>新克隆默认保存在本机，无需启用 iCloud。更改目录可选择 iCloud 或其它位置；不会迁移或修改已有仓库。</Text>}>

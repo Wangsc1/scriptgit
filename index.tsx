@@ -36,7 +36,7 @@ function View() {
 }
 
 async function run() {
-  await Navigation.present(<View />)
+  await Navigation.present({ element: <View />, modalPresentationStyle: "fullScreen" })
   // 页面关闭后终止实例，释放资源
   Script.exit()
 }
