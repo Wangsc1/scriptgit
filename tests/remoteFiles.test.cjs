@@ -5,7 +5,6 @@ const path = require('node:path')
 const ts = require('typescript')
 const root = path.resolve(__dirname, '..')
 let count = 0
-let edgeBackModule, horizontalModule, horizontalRouteModule
 async function test(name, fn) { await fn(); console.log('PASS ' + name); count++ }
 function load(relative, mocks = {}) {
   const filename = path.join(root, relative)
@@ -15,17 +14,10 @@ function load(relative, mocks = {}) {
   }, fileName: filename, reportDiagnostics: true })
   const mod = { exports: {} }
   const req = (name) => {
-    if (name.endsWith('/useEdgeBack')) return edgeBackModule ||= load('hooks/useEdgeBack.ts', { scripting: ui })
-    if (name.endsWith('/useHorizontalRoute')) return horizontalRouteModule ||= load('hooks/useHorizontalRoute.ts', { scripting: ui })
-    if (name.endsWith('/HorizontalNavigation')) return horizontalModule ||= load('components/HorizontalNavigation.tsx', {
-      scripting: ui, '../constants/colors': load('constants/colors.ts'),
-    })
     if (Object.hasOwn(mocks, name)) return mocks[name]
     throw new Error('Unmocked dependency: ' + name)
   }
   new Function('require', 'module', 'exports', result.outputText)(req, mod, mod.exports)
-  if (relative === 'components/HorizontalNavigation.tsx') horizontalModule = mod.exports
-  if (relative === 'hooks/useHorizontalRoute.ts') horizontalRouteModule = mod.exports
   return mod.exports
 }
 class MockData {
@@ -64,12 +56,7 @@ const ui = new Proxy({}, { get(_, name) {
   if (name === 'useColorScheme') return () => 'light'
   if (name === 'MagnifyGesture') return minScaleDelta => ({ kind: 'magnify', minScaleDelta,
     onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; return this } })
-  if (name === 'createContext') return () => ({ Provider: 'ContextProvider', testValue: undefined })
-  if (name === 'useContext') return context => context.testValue ?? (context === horizontalModule?.HorizontalRoutesContext ? active?.routes : undefined)
-  if (name === 'Animation') return { easeOut: duration => ({ duration }) }
-  if (name === 'withAnimation') return async (...args) => { args.at(-1)() }
-  if (name === 'DragGesture') return options => ({ kind: 'drag', options,
-    onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.onEnded = fn; return this } })
+  if (name === 'DragGesture') return options => ({ onEnded: onEnded => ({ kind: 'drag', options, onEnded }) })
   if (name === 'useObservable') return (initial) => {
     const h = active, i = h.cursor++
     if (!(i in h.slots)) {
@@ -104,11 +91,10 @@ const ui = new Proxy({}, { get(_, name) {
 }})
 // Legacy tests explicitly simulate refreshes; opt in to dependency effects for scheduling tests.
 function mount(Component, props, { effectUpdates = false } = {}) {
-  const h = { routes: horizontalModule ? new horizontalModule.HorizontalRoutes() : undefined, effectUpdates, slots: [], cursor: 0, effects: [], cleanups: [], lateWrites: 0, unmounted: false,
+  const h = { effectUpdates, slots: [], cursor: 0, effects: [], cleanups: [], lateWrites: 0, unmounted: false,
     render() { active=h; h.cursor=0; h.tree=Component(props); active=null; h.effects.splice(0).forEach(f=>f()); return h.tree },
     unmount() { h.unmounted=true; h.cleanups.forEach(f=>f()); h.slots.forEach(slot=>slot?.cleanup?.()) },
   }
-  h.effectUpdates = effectUpdates || !!h.routes
   h.render(); return h
 }
 function all(tree) {
@@ -254,9 +240,9 @@ async function main() {
     assert.deepEqual(reads.at(-1),['o/r','feature/a',''])
     await entryButton(h,'docs').props.action(); assert.deepEqual(reads.at(-1),['o/r','feature/a','docs'])
     await entryButton(h,'a.txt').props.action()
-    h.render(); const route=h.routes.routes[0]; assert.equal(route.destination.content.props.branch,'feature/a')
-    assert.equal(route.destination.ownClose,true,'generic shell cannot bypass editor confirmation')
-    route.destination.content.props.onClose(); h.render(); await tick(); assert.equal(h.routes.routes.length,0)
+    h.render(); const cover=h.tree.props.fullScreenCover; assert.equal(cover.isPresented,true); assert.equal(cover.content.props.branch,'feature/a')
+    cover.onChanged(false); h.render(); assert.equal(h.tree.props.fullScreenCover.isPresented,true)
+    cover.content.props.onClose(); h.render(); assert.equal(h.tree.props.fullScreenCover.isPresented,false)
     await node(h,'Button','上一级目录').props.action(); assert.equal(reads.at(-1)[2],''); h.unmount()
   })
   await test('browser loading/error/retry and symlink read-only path', async () => {
@@ -264,7 +250,7 @@ async function main() {
     const h=mount(browser(browserApi({listRepoContents:async()=>{if(fail)throw new Error('offline');return [{name:'link',path:'link',type:'symlink',sha:'l'}]},loadRepoTextFile:async()=>{loads++;throw new Error('must not follow symlink')}})),{fullName:'o/r'})
     assert.match(text(h),/加载中/); await tick(); assert.match(text(h),/offline/)
     fail=false; await node(h,'Button','刷新目录 / 重试').props.action(); await entryButton(h,'link').props.action()
-    h.render(); assert.equal(loads,0); assert.match(h.routes.routes[0].destination.content.props.file.readOnlyReason,/只读/); h.unmount()
+    h.render(); assert.equal(loads,0); assert.match(h.tree.props.fullScreenCover.content.props.file.readOnlyReason,/只读/); h.unmount()
   })
   await test('Raw URL encodes branch/path and refuses missing GitHub context or unsafe file paths', async () => {
     const {rawFileUrl}=load('utils/rawFileUrl.ts')

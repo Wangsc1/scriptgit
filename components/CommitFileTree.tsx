@@ -1,4 +1,3 @@
-import { HorizontalLink } from "./HorizontalNavigation"
 /**
  * components/CommitFileTree.tsx - 提交间文件变更树
  *
@@ -9,6 +8,7 @@ import { HorizontalLink } from "./HorizontalNavigation"
 import {
   Text,
   HStack,
+  NavigationLink,
   DisclosureGroup,
   Image,
 } from "scripting"
@@ -74,7 +74,7 @@ export function CommitFileTreeNode({
         : COLOR_ORANGE
   const label = status === "added" ? "A" : status === "deleted" ? "D" : "M"
   return (
-    <HorizontalLink
+    <NavigationLink
       destination={
         <CommitDiffPage
           bookmarkName={bookmarkName}
@@ -93,6 +93,6 @@ export function CommitFileTreeNode({
           {node.name}
         </Text>
       </HStack>
-    </HorizontalLink>
+    </NavigationLink>
   )
 }

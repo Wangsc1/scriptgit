@@ -1,4 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
 import { FilledSegmentedControl } from "../components/FilledSegmentedControl"
 import {
   List,
@@ -125,7 +124,13 @@ export function CommitDetailPage({
     detail?.files.map((file) => [file.filepath, file.status] as const) || []
   )
 
-  useHorizontalDestinations({
+  return (
+    <List
+      navigationTitle={title}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={handleRefresh}
+      fullScreenCover={{
         isPresented: previewUrl != null,
         onChanged: (isPresented: boolean) => {
           if (!isPresented) setPreviewUrl(null)
@@ -133,14 +138,7 @@ export function CommitDetailPage({
         content: previewUrl ? (
           <ImageViewer key={previewUrl} url={previewUrl} onClose={() => setPreviewUrl(null)} />
         ) : <></>,
-      })
-  return (
-    <List
-      navigationTitle={title}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={handleRefresh}
-
+      }}
     >
       {error ? (
         <Section>

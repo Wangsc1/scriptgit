@@ -1,5 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
-import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 import {
   Button,
   HStack,
@@ -185,13 +183,11 @@ export function GitHubWorkPage({
     try {
       const created = await createIssue(fullName, { title, body })
       pendingCreatedRef.current = [created, ...pendingCreatedRef.current]
-      await exitDestination(1, async () => {
-        setShowCreate(false)
-        setFilter(0)
-        await load(true, 0, 0)
-        setSelectedNumber(created.number)
-        showToast("Issue 已创建：#" + created.number, "success")
-      })
+      setShowCreate(false)
+      setFilter(0)
+      await load(true, 0, 0)
+      setSelectedNumber(created.number)
+      showToast("Issue 已创建：#" + created.number, "success")
     } catch (e: any) {
       // 表单仍开着，失败信息必须留在表单内（父页 toast 会被 sheet 遮住）
       setCreateError("创建 Issue 失败：" + String(e?.message || e))
@@ -201,38 +197,8 @@ export function GitHubWorkPage({
   }
 
   const visibleItems = items
-  useHorizontalBackGuard(creating)
-
   const sectionTitle = kind === 1 ? "Pull Requests" : "Issues"
 
-  const exitDestination = useHorizontalDestinations([horizontalPage({
-        isPresented: selectedNumber != null,
-        onChanged: (presented: boolean) => {
-          if (!presented) setSelectedNumber(null)
-        },
-        content: selectedNumber != null ? (
-          <GitHubItemDetailPage
-            key={`${fullName}-${selectedNumber}`}
-            fullName={fullName}
-            number={selectedNumber}
-          />
-        ) : <Text>加载中…</Text>,
-      }),
-      {
-        isPresented: showCreate,
-        onChanged: (presented: boolean) => {
-          setShowCreate(presented)
-          if (!presented) setCreateError(null)
-        },
-        content: (
-          <CreateIssueSheet
-            busy={creating}
-            error={createError}
-            onCancel={() => setShowCreate(false)}
-            onConfirm={handleCreate}
-          />
-        ),
-      }])
   return (
     <List
       navigationTitle={fullName}
@@ -252,8 +218,34 @@ export function GitHubWorkPage({
           />
         ) : undefined,
       }}
-
-
+      navigationDestination={{
+        isPresented: selectedNumber != null,
+        onChanged: (presented: boolean) => {
+          if (!presented) setSelectedNumber(null)
+        },
+        content: selectedNumber != null ? (
+          <GitHubItemDetailPage
+            key={`${fullName}-${selectedNumber}`}
+            fullName={fullName}
+            number={selectedNumber}
+          />
+        ) : <Text>加载中…</Text>,
+      }}
+      sheet={{
+        isPresented: showCreate,
+        onChanged: (presented: boolean) => {
+          setShowCreate(presented)
+          if (!presented) setCreateError(null)
+        },
+        content: (
+          <CreateIssueSheet
+            busy={creating}
+            error={createError}
+            onCancel={() => setShowCreate(false)}
+            onConfirm={handleCreate}
+          />
+        ),
+      }}
       toast={
         toastState
           ? {

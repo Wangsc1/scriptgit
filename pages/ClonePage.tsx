@@ -1,6 +1,5 @@
-import { useHorizontalExit, useHorizontalFinish } from "../hooks/useHorizontalRoute"
 /** 单个/按用户名批量克隆；默认本地 Scripting/git，手动选择目录仍保留。 */
-import { List, Section, Text, Button, Image, HStack, useState, useEffect, useRef } from "scripting"
+import { List, Section, Text, Button, HStack, useState, useEffect, useRef } from "scripting"
 import { AvatarView } from "../components/AvatarView"
 import { useGitHubUserSearch } from "../hooks/useGitHubUserSearch"
 import { FormRow } from "../components/FormRow"
@@ -21,11 +20,9 @@ import { registeredGithubRepos } from "../utils/clonedGithubRepos"
 import { hideSystemDetails } from "../utils/displayPaths"
 import { runDirectoryCheck } from "../services/cloneDiagnostics"
 
-import { useEdgeBack } from "../hooks/useEdgeBack"
-
 const STATUS = { cloned: "成功", failed: "失败", skipped: "跳过", cancelled: "取消" }
 
-export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; onClose?: () => void; initialUsername?: string }) {
+export function ClonePage({ onCloned, initialUsername = "" }: { onCloned: (repo: RepoMeta, keepOpen?: boolean) => void; initialUsername?: string }) {
   const [url, setUrl] = useState("")
   const [destination, setDestination] = useState<CloneDestination>({ kind: "local" })
   const [rootLabel, setRootLabel] = useState("我的 iPhone / Scripting / git")
@@ -181,7 +178,7 @@ export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onClone
       if (!alive.current) return
       if (!batch && completed[0]?.repo) {
         await notifySync("clone", requests[0].name, requests[0].url)
-        await finish(() => onCloned(completed[0].repo!))
+        onCloned(completed[0].repo)
       } else if (!batch && completed[0]?.status === "failed") {
         await notifyError("clone", requests[0].name, completed[0].message)
       } else if (!batch && completed[0]?.status === "skipped") {
@@ -203,12 +200,8 @@ export function ClonePage({ onCloned, onClose, initialUsername = "" }: { onClone
   const selectedRepos = ownedRepos.filter(repo => selected.includes(repo.fullName))
   const counts = Object.entries(STATUS).map(([status, label]) => `${label} ${results.filter(item => item.status === status).length}`).join(" · ")
 
-  const finish = useHorizontalFinish()
-  const exit = useHorizontalExit(() => onClose?.())
-  const backGesture = useEdgeBack(() => { if (alive.current && !locked.current) return exit() }, !cloning)
-  return <List simultaneousGesture={backGesture} navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
+  return <List navigationTitle="克隆仓库" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
     navigationBarBackButtonHidden={cloning}
-    toolbar={{ topBarLeading: <Button action={() => { if (!locked.current) return exit() }} disabled={cloning}><Image systemName="chevron.left" /></Button> }}
     overlay={cloning ? { alignment: "center", content: <BusyOverlay title="正在克隆" message={progress} onCancel={cancel} cancelling={cancelling} /> } : undefined}
     toast={toastState ? { isPresented: toastPresented, onChanged: handleToastChanged, content: toastContent(toastState.message, toastState.type), duration: toastState.duration, position: "top" } : undefined}>
     <Section header={<Text>目标目录</Text>} footer={<Text>新克隆默认保存在本机，无需启用 iCloud。更改目录可选择 iCloud 或其它位置；不会迁移或修改已有仓库。</Text>}>

@@ -1,5 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
-import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/RepoDetailPage.tsx - 仓库详情页
  *
@@ -114,7 +112,6 @@ export function RepoDetailPage({
     endOpBusy,
     clearChanges: () => data.setChanges([]),
     reloadRepo: data.loadAll,
-    closeCommitForm: clear => exitDestination(3, clear),
     refreshChangesAndSnapshot: data.refreshChangesAndSnapshot,
     loadChanges: data.loadChanges,
     loadStashes: data.loadStashes,
@@ -136,8 +133,8 @@ export function RepoDetailPage({
     loadStashes: data.loadStashes,
     setStashBusy: worktree.setStashBusy,
     openAmendSheet: () => worktree.setCommitSheetMode("amend"),
-    closeCommitSheet: () => exitDestination(3, worktree.closeCommitSheet),
-    closeRollbackPage: () => exitDestination(2, () => nav.closePage("rollback")),
+    closeCommitSheet: worktree.closeCommitSheet,
+    closeRollbackPage: () => nav.closePage("rollback"),
     showAlert,
     showToast,
   })
@@ -156,8 +153,6 @@ export function RepoDetailPage({
     onChanged: data.refreshChangesAndSnapshot,
     onError: message => showToast(message, "error"),
   })
-
-  useHorizontalBackGuard(mutating || localCreation.busy)
 
   const {
     handleMergeIntoCurrent,
@@ -266,9 +261,12 @@ export function RepoDetailPage({
 
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
-  const exitDestination = useHorizontalDestinations([{
+  return (
+    <List
+      fullScreenCover={[{
         isPresented: localFile !== null,
-        // 编辑器始终由稳定详情页声明，退出前读取并保存最新草稿。
+        // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
+        // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
         onChanged: () => {},
         content: localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
           onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
@@ -276,96 +274,14 @@ export function RepoDetailPage({
             catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
           }} /> : <Text>加载中…</Text>,
       }, {
-        // 图片与编辑器使用独立水平路由；缩放与多指检查由 WebKit 处理。
+        // Same presentation family as the existing diff/GitHub image viewers
+        // (fullScreenCover), separate from the editor entry: the system owns the
+        // modal dismissal motion; no custom drag/edge gesture is installed.
         isPresented: localImage !== null,
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
         content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} file={localImage.file}
           onClose={() => closeLocalImage(localImage.id)} /> : <Text>加载中…</Text>,
-      },
-      horizontalPage({
-        isPresented: nav.isPresented,
-        onChanged: (presented: boolean) => {
-          if (!presented) {
-            nav.closeAll()
-            // 从冲突页返回时刷新合并状态
-            data.loadMergeState()
-          }
-        },
-        content: (
-          <RepoDetailDestination
-            bookmarkName={bookmarkName}
-            displayName={data.displayName}
-            showUpload={nav.page === "upload"}
-            showRemotes={nav.page === "remotes"}
-            showConflicts={nav.page === "conflicts"}
-            showCompare={nav.page === "compare"}
-            showRollback={nav.page === "rollback"}
-            currentBranch={data.branchInfo.current}
-            githubFullName={
-              nav.page === "githubWork" ? data.githubFullName : null
-            }
-            githubWorkKind={nav.githubWorkKind}
-            commitGithubFullName={data.githubFullName}
-            selectedCommitOid={nav.selectedCommitOid}
-            onRollbackSelect={pendingActions.handleRollbackSelect}
-            onUploaded={(repo) => {
-              void exitDestination(2, async () => {
-                data.setDisplayName(repo.name)
-                data.setRepoSource(repo.source || "clone")
-                data.setHasRemote(true)
-                nav.closePage("upload")
-                await data.loadAll()
-                showToast("上传成功：已上传到 " + repo.name, "success")
-              })
-            }}
-            onRemotesChanged={() => {
-              data.refreshRemoteConfig()
-            }}
-            onConflictsChanged={(reason) => {
-              if (reason === "completed") {
-                // 完成合并后避免返回详情页时再做一次全树扫描（P2.42）
-                nav.skipNextAppearLoad()
-              }
-              data.loadMergeState()
-              data.loadChanges()
-              data.refreshHistoryIfLoaded()
-            }}
-          />
-        ),
-      }),
-      {
-        isPresented: worktree.commitSheetMode != null,
-        onChanged: (presented: boolean) => {
-          if (!presented) worktree.closeCommitSheet()
-        },
-        content: worktree.commitSheetMode === "amend" ? (
-          <CommitMessageSheet
-            key={`amend-${pendingActions.amendDraft.title}`}
-            navigationTitle="重编提交"
-            confirmTitle="提交"
-            footer="确认后将改写最近一次提交。只能用于尚未推送的 HEAD，已推送会被拒绝。"
-            initialTitle={pendingActions.amendDraft.title}
-            initialDescription={pendingActions.amendDraft.description}
-            error={pendingActions.amendError}
-            onCancel={worktree.closeCommitSheet}
-            onConfirm={pendingActions.handleAmendFormConfirm}
-          />
-        ) : (
-          <CommitMessageSheet
-            navigationTitle="提交改动"
-            confirmTitle="提交"
-            initialTitle={suggestCommitTitle(data.changes)}
-            initialDescription=""
-            busy={worktree.committing}
-            error={worktree.commitError}
-            onCancel={worktree.closeCommitSheet}
-            onConfirm={worktree.handleCommit}
-          />
-        ),
-      }])
-  return (
-    <List
-
+      }]}
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"
@@ -421,6 +337,86 @@ export function RepoDetailPage({
             />
           </Menu>
         ) : undefined,
+      }}
+      navigationDestination={{
+        isPresented: nav.isPresented,
+        onChanged: (presented: boolean) => {
+          if (!presented) {
+            nav.closeAll()
+            // 从冲突页返回时刷新合并状态
+            data.loadMergeState()
+          }
+        },
+        content: (
+          <RepoDetailDestination
+            bookmarkName={bookmarkName}
+            displayName={data.displayName}
+            showUpload={nav.page === "upload"}
+            showRemotes={nav.page === "remotes"}
+            showConflicts={nav.page === "conflicts"}
+            showCompare={nav.page === "compare"}
+            showRollback={nav.page === "rollback"}
+            currentBranch={data.branchInfo.current}
+            githubFullName={
+              nav.page === "githubWork" ? data.githubFullName : null
+            }
+            githubWorkKind={nav.githubWorkKind}
+            commitGithubFullName={data.githubFullName}
+            selectedCommitOid={nav.selectedCommitOid}
+            onRollbackSelect={pendingActions.handleRollbackSelect}
+            onUploaded={(repo) => {
+              data.setDisplayName(repo.name)
+              data.setRepoSource(repo.source || "clone")
+              data.setHasRemote(true)
+              nav.closePage("upload")
+              data.loadAll().then(() => {
+                showToast("上传成功：已上传到 " + repo.name, "success")
+              })
+            }}
+            onRemotesChanged={() => {
+              data.refreshRemoteConfig()
+            }}
+            onConflictsChanged={(reason) => {
+              if (reason === "completed") {
+                // 完成合并后避免返回详情页时再做一次全树扫描（P2.42）
+                nav.skipNextAppearLoad()
+              }
+              data.loadMergeState()
+              data.loadChanges()
+              data.refreshHistoryIfLoaded()
+            }}
+          />
+        ),
+      }}
+      sheet={{
+        isPresented: worktree.commitSheetMode != null,
+        onChanged: (presented: boolean) => {
+          if (!presented) worktree.closeCommitSheet()
+        },
+        content: worktree.commitSheetMode === "amend" ? (
+          <CommitMessageSheet
+            key={`amend-${pendingActions.amendDraft.title}`}
+            navigationTitle="重编提交"
+            confirmTitle="提交"
+            footer="确认后将改写最近一次提交。只能用于尚未推送的 HEAD，已推送会被拒绝。"
+            initialTitle={pendingActions.amendDraft.title}
+            initialDescription={pendingActions.amendDraft.description}
+            error={pendingActions.amendError}
+            onCancel={worktree.closeCommitSheet}
+            onConfirm={pendingActions.handleAmendFormConfirm}
+          />
+        ) : (
+          <CommitMessageSheet
+            navigationTitle="提交改动"
+            confirmTitle="提交"
+            initialTitle={suggestCommitTitle(data.changes)}
+            initialDescription=""
+            busy={worktree.committing}
+            error={worktree.commitError}
+            onCancel={worktree.closeCommitSheet}
+            onConfirm={worktree.handleCommit}
+          />
+        ),
       }}
       alert={{
         title: pushForm ? "提交并推送" : activeAlert?.title ?? "",

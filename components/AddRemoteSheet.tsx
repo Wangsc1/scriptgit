@@ -1,5 +1,5 @@
 /**
- * components/AddRemoteSheet.tsx - 添加远端水平路由表单
+ * components/AddRemoteSheet.tsx - 添加远端半屏表单
  *
  * 名称与 URL 草稿由本组件的 Observable 自持，确认时一次性回传。
  */
@@ -26,7 +26,7 @@ export function AddRemoteSheet({
   const url = useObservable("")
 
   return (
-    <FormSheet backDisabled={busy}
+    <FormSheet
       navigationTitle="添加远端"
       confirmTitle={busy ? "处理中…" : "添加"}
       confirmDisabled={busy || !name.value.trim() || !url.value.trim()}

@@ -1,5 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
-import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/ActionRunDetailPage.tsx - 工作流运行详情页
  *
@@ -129,8 +127,6 @@ export function ActionRunDetailPage({
   } | null>(null)
   // 是否正在发起重跑（防重复提交）
   const [rerunning, setRerunning] = useState(false)
-
-  useHorizontalBackGuard(rerunning || downloadingId !== null)
 
   async function load() {
     setError(null)
@@ -360,7 +356,13 @@ export function ActionRunDetailPage({
     )
   }
 
-  useHorizontalDestinations([horizontalPage({
+  return (
+    <List
+      navigationTitle={run ? `#${run.id}` : "加载中…"}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={load}
+      navigationDestination={{
         isPresented: viewerJob != null,
         onChanged: (presented: boolean) => {
           if (!presented) setViewerJob(null)
@@ -376,14 +378,7 @@ export function ActionRunDetailPage({
         ) : (
           <Text>加载中…</Text>
         ),
-      })])
-  return (
-    <List
-      navigationTitle={run ? `#${run.id}` : "加载中…"}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={load}
-
+      }}
       toolbar={{
         topBarTrailing: run ? renderMenu(run) : undefined,
       }}

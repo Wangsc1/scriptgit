@@ -1,4 +1,3 @@
-function routeDestination(h,slot=0){return h.routes?.routes.find(r=>r.slot===slot)?.destination || {isPresented:false}}
 /* Simulated JS queues/commits, NOT an iOS/native presentation test. */
 const assert=require('node:assert/strict'),{AsyncLocalStorage}=require('node:async_hooks')
 const {load,ui,mount,all,tick,deferred}=require('./remoteFiles.test.cjs')
@@ -39,10 +38,10 @@ async function main(){
  assert.match(trace.find(e=>e.api==='Timer').stack,/StatusCoordinator.mutate/);assert.equal(coordinator.isWriting('baseline'),false)
  h=on('render',()=>mount(FilesTab,props,{effectUpdates:true}));trace.length=0
  for(const title of ['创建文件','创建目录']){
-  menu(title);menu('导入图片');assert.deepEqual(trace,[]);assert.equal(routeDestination(h).isPresented,false)
-  render();assert.equal(routeDestination(h).isPresented,false,'intent commit must not already present sheet')
+  menu(title);menu('导入图片');assert.deepEqual(trace,[]);assert.equal(h.tree.props.sheet.isPresented,false)
+  render();assert.equal(h.tree.props.sheet.isPresented,false,'intent commit must not already present sheet')
   assert.equal(trace.filter(e=>e.api==='parent-create').length,1);assert.equal(trace[0].phase,'effect')
-  render();assert.equal(routeDestination(h).isPresented,false,'creation is never presented on Section');assert.equal(parentForm.directory,title==='创建目录')
+  render();assert.equal(h.tree.props.sheet.isPresented,false,'creation is never presented on Section');assert.equal(parentForm.directory,title==='创建目录')
   menu('导入文件');assert.equal(trace.some(e=>e.api==='DocumentPicker'),false)
   props.creationActive=false;parentForm=null
   render();trace.length=0
@@ -59,7 +58,7 @@ async function main(){
  trace.length=0;selected={sourcePath:'/picker/Folder',name:'Folder',release:async()=>mainOnly('release')}
  menu('导入目录');assert.deepEqual(trace,[]);render();await settle();assert.equal(mutations,2);assert.equal(refreshes,2)
  assert.ok(trace.some(e=>e.api==='DocumentPicker.pickDirectory'&&e.phase==='effect'));assert.ok(trace.some(e=>e.api==='import-directory'&&e.main))
- trace.length=0;menu('创建文件');props.mergeInProgress=true;render();render();assert.equal(routeDestination(h).isPresented,false);assert.deepEqual(trace,[])
+ trace.length=0;menu('创建文件');props.mergeInProgress=true;render();render();assert.equal(h.tree.props.sheet.isPresented,false);assert.deepEqual(trace,[])
  props.mergeInProgress=false;render();trace.length=0;menu('导入目录');props.bookmarkName='other-repo';render();render()
  assert.equal(mutations,2);assert.equal(trace.some(e=>e.api==='DocumentPicker.pickDirectory'),false);props.bookmarkName='repo';render();trace.length=0
  gate=deferred();menu('导入目录');render();await tick();h.unmount();gate.resolve();await tick();await tick()

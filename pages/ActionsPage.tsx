@@ -1,5 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
-import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/ActionsPage.tsx - GitHub Actions 工作流运行列表页
  *
@@ -196,11 +194,8 @@ export function ActionsPage({ fullName }: { fullName: string }) {
   const [dispatching, setDispatching] = useState(false)
   // 是否正在发起重跑（防重复提交）
   const [rerunning, setRerunning] = useState(false)
-  const [deleting, setDeleting] = useState(0)
   // 各行是否有工件（会话级缓存 + 受限并发，见 hooks/useRunArtifactCounts）
   const artifactCounts = useRunArtifactCounts(fullName, runs)
-
-  useHorizontalBackGuard(dispatching || rerunning || deleting > 0)
 
   async function load(reset = true) {
     const request = ++requestRef.current
@@ -283,7 +278,6 @@ export function ActionsPage({ fullName }: { fullName: string }) {
     })
     // actions 索引：0=取消，1=删除；取消返回 null
     if (result !== 1) return
-    setDeleting(count => count + 1)
     try {
       await deleteWorkflowRun(fullName, run.id)
       // 从列表中移除已删除的运行
@@ -291,7 +285,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
       showToast("已删除运行 #" + run.id, "success")
     } catch (e: any) {
       showToast("删除失败：" + String(e?.message || e), "error")
-    } finally { setDeleting(count => count - 1) }
+    }
   }
 
   // 左滑重新运行：有失败 Job 时让用户选全部还是仅失败
@@ -345,7 +339,19 @@ export function ActionsPage({ fullName }: { fullName: string }) {
     }
   }
 
-  useHorizontalDestinations([horizontalPage({
+  return (
+    <List
+      navigationTitle={fullName}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={handleRefresh}
+      onAppear={() => {
+        visibleRef.current = true
+      }}
+      onDisappear={() => {
+        visibleRef.current = false
+      }}
+      navigationDestination={{
         isPresented: selectedRunId != null,
         onChanged: (presented: boolean) => {
           if (!presented) setSelectedRunId(null)
@@ -359,20 +365,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
         ) : (
           <Text>加载中…</Text>
         ),
-      })])
-  return (
-    <List
-      navigationTitle={fullName}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={handleRefresh}
-      onAppear={() => {
-        visibleRef.current = true
       }}
-      onDisappear={() => {
-        visibleRef.current = false
-      }}
-
       toolbar={{
         topBarTrailing: (
           <Menu

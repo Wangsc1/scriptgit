@@ -1,4 +1,3 @@
-function routeDestination(h,slot=0){return h.routes?.routes.find(r=>r.slot===slot)?.destination || {isPresented:false}}
 /* Actual detail button -> hook -> same Dialog.prompt as create branch. Native UI not emulated. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const {load,mount,ui,all,deferred,tick}=require('./remoteFiles.test.cjs')
@@ -47,7 +46,7 @@ async function main(){
  const h=mount(Page,{bookmarkName:'repo',name:'test'})
  const section=()=>{h.render();return Section(all(h.tree).find(n=>n.type==='RepoBranchSection').props)}
  const rename=()=>all(section().props.header).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('重命名'))
- await rename().props.action();h.render();assert.equal(routeDestination(h,3).isPresented,false);assert.equal(prompts.at(-1).defaultValue,'main');assert.equal(prompts.at(-1).confirmLabel,'重命名');assert.deepEqual(calls,[]);assert.equal(begins,0);assert.equal(ends,0)
+ await rename().props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(prompts.at(-1).defaultValue,'main');assert.equal(prompts.at(-1).confirmLabel,'重命名');assert.deepEqual(calls,[]);assert.equal(begins,0);assert.equal(ends,0)
  input='bad..name';await rename().props.action();assert.match(toasts.at(-1)[0],/名称无效/);assert.deepEqual(calls,[])
  input='main';await rename().props.action();assert.deepEqual(calls,[])
  input='topic';fail=true;await rename().props.action();assert.match(toasts.at(-1)[0],/branch exists/);assert.equal(begins,1);assert.equal(ends,1);assert.equal(refreshes,0)
@@ -58,7 +57,7 @@ async function main(){
   {oldRemote:'origin',remoteError:'push denied',pushedNewBranch:false},
   {oldRemote:'origin',remoteError:'delete denied',pushedNewBranch:true},
  ]){
-  result=scenario;input='remote-name';await rename().props.action();assert.match(prompts.at(-1).message,/同步远端/);h.render();assert.equal(routeDestination(h,3).isPresented,false)
+  result=scenario;input='remote-name';await rename().props.action();assert.match(prompts.at(-1).message,/同步远端/);h.render();assert.equal(h.tree.props.sheet.isPresented,false)
   if(!scenario.remoteError)assert.match(toasts.at(-1)[0],/已重命名并同步远端/)
   else {assert.equal(h.tree.props.alert.title,'本地已重命名，远端同步失败');assert.match(JSON.stringify(h.tree.props.alert.message),scenario.pushedNewBranch?/删除远端旧分支失败/:/推送新分支失败/);h.tree.props.alert.onChanged(false)}
  }

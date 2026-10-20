@@ -1,4 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
 /** 远端文件浏览，无需克隆；分支与路径固定后才打开编辑会话。 */
 import { Button, List, Picker, Section, Text, TextField, HStack, VStack, Image, useEffect, useRef, useState } from "scripting"
 import { getRepo, listMyRepos, listRepoBranches, listRepoContents, loadRepoTextFile, type GitHubContentEntry } from "../api/githubApi"
@@ -100,14 +99,13 @@ export function GitHubFilesPage({ fullName: initialRepo = "" }: { fullName?: str
     })
   }
 
-  useHorizontalDestinations({
+  return <List navigationTitle="GitHub 文件" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
+    fullScreenCover={{
       isPresented: file !== null,
-      // 自有退出策略：放弃确认通过后才允许宿主向右退场。
+      // 全屏覆盖无下拉关闭；只允许编辑器内显式关闭并确认未保存修改。
       onChanged: () => {},
       content: file ? <GitHubFileEditor key={`${repo}:${branch}:${file.path}:${file.sha}`} fullName={repo} branch={branch} file={file} onClose={() => setFile(null)} /> : <Text>加载中…</Text>,
-    })
-  return <List navigationTitle="GitHub 文件" navigationBarTitleDisplayMode="inline" tabBarVisibility="hidden"
-    >
+    }}>
     <Section header={<Text>远端仓库</Text>} footer={<Text>在设置中配置 Token。无需克隆，直接修改 GitHub 上的现有文件。</Text>}>
       <TextField title="仓库" value={input} onChanged={setInput} prompt="owner/repo" />
       <Button title="打开仓库" action={() => openRepo(input)} disabled={busy || !input.trim()} />

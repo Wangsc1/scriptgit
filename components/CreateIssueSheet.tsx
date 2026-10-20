@@ -18,7 +18,7 @@ export function CreateIssueSheet({
   const body = useObservable("")
 
   return (
-    <FormSheet backDisabled={busy}
+    <FormSheet
       navigationTitle="新建 Issue"
       confirmTitle={busy ? "创建中…" : "创建"}
       confirmDisabled={busy || !title.value.trim()}

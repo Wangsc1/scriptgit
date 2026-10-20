@@ -1,5 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
 /**
  * pages/RemotesPage.tsx - Remote / upstream 管理
  *
@@ -73,8 +71,6 @@ export function RemotesPage({
 
   const [pendingDelete, setPendingDelete] = useState<RemoteInfo | null>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
-
-  useHorizontalBackGuard(busy || branchLoading)
 
   async function refreshRemoteBranches(remote: string): Promise<void> {
     const request = ++branchRequestRef.current
@@ -183,12 +179,10 @@ export function RemotesPage({
     setAddError(null)
     try {
       await addRemote(bookmarkName, name, url)
-      await exitDestination(0, async () => {
-        setShowAddSheet(false)
-        await loadAll()
-        notifyParent()
-        showToast("已添加：远端已写入仓库配置", "success")
-      })
+      setShowAddSheet(false)
+      await loadAll()
+      notifyParent()
+      showToast("已添加：远端已写入仓库配置", "success")
     } catch (e: any) {
       // 表单仍开着，失败信息必须留在表单内（父页 toast 会被 sheet 遮住）
       setAddError("添加失败：" + String(e?.message || e))
@@ -287,23 +281,6 @@ export function RemotesPage({
       }
     : null
 
-  const exitDestination = useHorizontalDestinations({
-        isPresented: showAddSheet,
-        onChanged: (presented: boolean) => {
-          if (!presented) {
-            setAddError(null)
-            setShowAddSheet(false)
-          }
-        },
-        content: (
-          <AddRemoteSheet
-            busy={busy}
-            error={addError}
-            onCancel={() => setShowAddSheet(false)}
-            onConfirm={handleAdd}
-          />
-        ),
-      })
   return (
     <List
       navigationTitle="远端管理"
@@ -349,7 +326,23 @@ export function RemotesPage({
           />
         ),
       }}
-
+      sheet={{
+        isPresented: showAddSheet,
+        onChanged: (presented: boolean) => {
+          if (!presented) {
+            setAddError(null)
+            setShowAddSheet(false)
+          }
+        },
+        content: (
+          <AddRemoteSheet
+            busy={busy}
+            error={addError}
+            onCancel={() => setShowAddSheet(false)}
+            onConfirm={handleAdd}
+          />
+        ),
+      }}
       alert={{
         title: activeAlert?.title ?? "",
         message: <Text>{activeAlert?.message ?? ""}</Text>,

@@ -1,10 +1,10 @@
-import { HorizontalLink } from "../components/HorizontalNavigation"
 import {
   List,
   Section,
   Text,
   HStack,
   VStack,
+  NavigationLink,
   Image,
   useEffect,
   useRef,
@@ -43,7 +43,7 @@ function CompareCommitRow({
   const body = commitBody(entry.message)
 
   return (
-    <HorizontalLink
+    <NavigationLink
       destination={
         <CommitDetailPage bookmarkName={bookmarkName} oid={entry.oid} />
       }
@@ -66,7 +66,7 @@ function CompareCommitRow({
           {shortOid(entry.oid)}
         </Text>
       </VStack>
-    </HorizontalLink>
+    </NavigationLink>
   )
 }
 

@@ -1,4 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
 /**
  * pages/DiffPage.tsx - 单文件 diff 展示页
  *
@@ -66,7 +65,14 @@ export function DiffPage({
   const title = truncatePath(filepath, 36)
   const stats = diff ? countDiffLines(diff) : null
 
-  useHorizontalDestinations({
+  return (
+    <List
+      navigationTitle={title}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      listStyle="plain"
+      refreshable={loadDiff}
+      fullScreenCover={{
         isPresented: previewUrl != null,
         onChanged: (isPresented) => {
           if (!isPresented) setPreviewUrl(null)
@@ -78,15 +84,7 @@ export function DiffPage({
             onClose={() => setPreviewUrl(null)}
           />
         ) : <></>,
-      })
-  return (
-    <List
-      navigationTitle={title}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      listStyle="plain"
-      refreshable={loadDiff}
-
+      }}
       safeAreaInset={
         diff && stats
           ? {

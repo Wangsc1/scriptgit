@@ -1,4 +1,3 @@
-import { useHorizontalDestinations, horizontalPage, HorizontalLink } from "../components/HorizontalNavigation"
 /**
  * pages/RepoListPage.tsx - 仓库列表页
  *
@@ -20,6 +19,7 @@ import {
   Spacer,
   Image,
   Navigation,
+  NavigationLink,
   Toolbar,
   ToolbarItem,
   Button,
@@ -351,19 +351,6 @@ export function RepoListPage() {
   })), [sortedRepos, statusMap])
   const visibilities = useRepoVisibilities(visibilityTargets)
 
-  useHorizontalDestinations([horizontalPage({
-        isPresented: showClone,
-        onChanged: setShowClone,
-        content: (
-          <ClonePage
-            onClose={() => setShowClone(false)}
-            onCloned={(repo, keepOpen) => {
-              appendRepo(repo)
-              if (!keepOpen) setShowClone(false)
-            }}
-          />
-        ),
-      }, true)])
   return (
     <List
       navigationTitle="scriptgit"
@@ -390,7 +377,18 @@ export function RepoListPage() {
       onAppear={appear}
       onDisappear={disappear}
       refreshable={refreshAndPullAll}
-
+      navigationDestination={{
+        isPresented: showClone,
+        onChanged: setShowClone,
+        content: (
+          <ClonePage
+            onCloned={(repo, keepOpen) => {
+              appendRepo(repo)
+              if (!keepOpen) setShowClone(false)
+            }}
+          />
+        ),
+      }}
       alert={{
         title: pushForm ? "提交并推送" : activeAlert?.title ?? "",
         message: <Text>{pushForm ? pushForm.error || `将暂存「${pushForm.repo.name}」的全部改动并提交，再拉取、推送。` : activeAlert?.message ?? ""}</Text>,
@@ -498,7 +496,7 @@ export function RepoListPage() {
                 ],
               }}
             >
-              <HorizontalLink onReturn={appear}
+              <NavigationLink
                 destination={
                   <RepoDetailPage
                     bookmarkName={repo.bookmarkName}
@@ -513,7 +511,7 @@ export function RepoListPage() {
                   refresh={repoRefreshMap[repo.bookmarkName]}
                   visibility={visibilities[repo.bookmarkName]}
                 />
-              </HorizontalLink>
+              </NavigationLink>
             </HStack>
           ))}
         </Section>
@@ -603,7 +601,7 @@ function RepoRow({
         {refresh?.message && ["slow", "error", "deferred"].includes(refresh.phase) ? <Text font="caption" foregroundStyle={refresh.phase === "error" ? COLOR_RED : COLOR_ORANGE}>{refresh.message}</Text> : null}
       </VStack>
       <Spacer />
-      {/* 放在 HorizontalLink 自带 > 的左侧，整行垂直居中 */}
+      {/* 放在 NavigationLink 自带 > 的左侧，整行垂直居中 */}
       {status == null ? (
         <HStack spacing={8}>
           {snapshot &&

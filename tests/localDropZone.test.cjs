@@ -1,4 +1,3 @@
-function routeDestination(h,slot=0){return h.routes?.routes.find(r=>r.slot===slot)?.destination || {isPresented:false}}
 /* Original List/native-row structure and JS wiring only; not native layout/drop validation. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const {load,mount,ui,all,tick}=require('./remoteFiles.test.cjs')
@@ -35,13 +34,13 @@ async function main(){
  global.UUID={string:()=>require('node:crypto').randomUUID()}
  global.ItemProvider={fromText:value=>({registeredTypes:['public.utf8-plain-text','public.url'],loadText:async()=>value})}
  const h=mount(Parent,{bookmarkName:'repo',name:'test'})
- const covers=h.routes.routes.length
+ const covers=h.tree.props.fullScreenCover
  for(const tab of [0,1,2]){
   data.tab=tab;h.render()
   assert.equal(h.tree.type,'List','all tabs keep original stable List presentation owner')
   assert.equal(typeof h.tree.props.refreshable,'function')
   assert.equal(h.tree.props.safeAreaInset,undefined)
-  assert.equal(h.routes.routes.length,covers)
+  assert.equal(h.tree.props.fullScreenCover.length,covers.length)
   assert.deepEqual(h.tree.children.map(n=>n.type),['RepoBranchSection','RepoRemoteSections','RepoDetailTabContent'],'original section order')
   assert.equal(all(h.tree).some(n=>['ScrollView','LazyVStack'].includes(n.type)),false)
   const props=all(h.tree).find(n=>n.type==='RepoDetailTabContent').props

@@ -1,9 +1,7 @@
-import { useHorizontalExit, useHorizontalActive } from "../hooks/useHorizontalRoute"
-/** 官方 Editor + EditorController；右滑与关闭按钮共用放弃确认，只有提交保存按钮写入远端。 */
-import { Button, Editor, HStack, Text, TextField, VStack, useEffect, useMemo, useRef, useState } from "scripting"
+/** 官方 Editor + EditorController；全屏弹层不提供下拉/返回手势，退出统一确认。 */
+import { Button, Editor, HStack, NavigationStack, Text, TextField, VStack, useEffect, useMemo, useRef, useState } from "scripting"
 import { saveRepoTextFile } from "../api/githubApi"
 import { GitHubFileSession, type RemoteTextFile } from "../services/githubFileSession"
-import { useEdgeBack } from "../hooks/useEdgeBack"
 
 export function GitHubFileEditor({ fullName, branch, file, onClose }: {
   fullName: string; branch: string; file: RemoteTextFile; onClose: () => void
@@ -18,14 +16,10 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const closing = useRef(false)
-  const alive = useRef(true)
-  const exited = useRef(false)
-  useEffect(() => () => { alive.current = false; controller.dispose() }, [controller])
+  useEffect(() => () => controller.dispose(), [controller])
 
-  const isActive = useHorizontalActive()
-  const exit = useHorizontalExit(() => { exited.current = true; onClose() })
   async function close() {
-    if (!isActive() || !alive.current || session.saving || closing.current || exited.current) return
+    if (session.saving || closing.current) return
     closing.current = true
     try {
       // 直接读取控制器，不能依赖有约 100ms 延迟的 onContentChanged。
@@ -33,26 +27,25 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
         const discard = await Dialog.confirm({ title: "放弃未保存的修改？", message: "尚未提交到 GitHub 的内容将丢失。可先取消并复制草稿。", confirmLabel: "放弃修改" })
         if (discard !== true) return
       }
-      if (alive.current) await exit()
+      onClose()
     } finally { closing.current = false }
   }
 
   async function save() {
-    if (!isActive() || !alive.current || session.saving || closing.current || exited.current) return
+    if (session.saving || closing.current) return
     setBusy(true)
     setStatus("")
     try {
       const text = controller.content
       await session.save(text, message, (input) => saveRepoTextFile(fullName, input))
-      if (alive.current) setStatus("已提交到 GitHub。" + (session.isDirty(controller.content) ? "仍有新的未保存修改。" : ""))
+      setStatus("已提交到 GitHub。" + (session.isDirty(controller.content) ? "仍有新的未保存修改。" : ""))
     } catch (e: any) {
-      if (alive.current) setStatus(String(e?.message || e) + "（草稿未清除）")
-    } finally { if (alive.current) setBusy(false) }
+      setStatus(String(e?.message || e) + "（草稿未清除）")
+    } finally { setBusy(false) }
   }
 
-  const backGesture = useEdgeBack(close, !busy)
-  return <>
-    <VStack simultaneousGesture={backGesture} navigationTitle={file.path.split("/").pop() || "编辑文件"}
+  return <NavigationStack>
+    <VStack navigationTitle={file.path.split("/").pop() || "编辑文件"}
       navigationBarTitleDisplayMode="inline"
       toolbar={{ topBarLeading: <Button title="关闭" action={close} disabled={busy} /> }}>
       <Text font="caption">{fullName} · {branch} · {file.path}</Text>
@@ -66,7 +59,7 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
       {status ? <Text font="caption" foregroundStyle={status.startsWith("已提交") ? "green" : "red"}>{status}</Text> : null}
       {file.text !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
     </VStack>
-  </>
+  </NavigationStack>
 }
 
 function editorExtension(path: string): "tsx" | "ts" | "js" | "jsx" | "txt" | "md" | "css" | "html" | "json" {

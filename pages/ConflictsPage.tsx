@@ -1,5 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
-import { HorizontalLink } from "../components/HorizontalNavigation"
 /**
  * pages/ConflictsPage.tsx - 合并冲突列表与解决
  *
@@ -18,6 +16,7 @@ import {
   Spacer,
   Button,
   Image,
+  NavigationLink,
   useState,
   useEffect,
 } from "scripting"
@@ -60,8 +59,6 @@ export function ConflictsPage({
   const [busyOverlay, setBusyOverlay] = useState<string | null>(null)
   const [pendingAbort, setPendingAbort] = useState(false)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
-
-  useHorizontalBackGuard(busy || busyOverlay !== null)
 
   async function loadState() {
     setLoading(true)
@@ -411,7 +408,7 @@ export function ConflictsPage({
                 ],
               }}
             >
-              <HorizontalLink
+              <NavigationLink
                 destination={
                   <DiffPage bookmarkName={bookmarkName} filepath={file.filepath} />
                 }
@@ -422,7 +419,7 @@ export function ConflictsPage({
                     {conflictKindLabel(file.kind)}
                   </Text>
                 </VStack>
-              </HorizontalLink>
+              </NavigationLink>
             </HStack>
           ))}
         </Section>

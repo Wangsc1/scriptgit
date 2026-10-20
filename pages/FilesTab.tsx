@@ -1,5 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
@@ -282,7 +280,6 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     // 单文件和目录均交由详情页同一个 alert 展示，保持文案、按钮颜色及确认行为一致。
     onRestore(path, directory ? targets.map(change => change.filepath) : undefined, directory)
   }
-  useHorizontalBackGuard(busy || creationActive)
   const [directoryForm, setDirectoryForm] = useState<{ path: string; kind: "copy" | "rename" } | null>(null)
   const [directoryError, setDirectoryError] = useState("")
   function cancelDirectoryForm() { if (!state.current.busy) setDirectoryForm(null) }
@@ -309,7 +306,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
           ...[...new Set([result.path, ...result.directories])].map(target => ({ path: target, before: changes, directory: true })),
           ...result.files.map(target => ({ path: target, before: changes })),
         ])
-        await exitDestination(0, () => setDirectoryForm(null))
+        setDirectoryForm(null)
       }
       await onWorktreeChanged()
     } catch (e: any) {
@@ -517,12 +514,11 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
 
   // 元数据只更新行文案，不再触发整棵目录树的重建和排序。
 
-  const exitDestination = useHorizontalDestinations({
+  return <Section sheet={{
     isPresented: directoryForm !== null,
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
-  })
-  return <Section  header={<HStack frame={{ maxWidth: Infinity }}>
+  }} header={<HStack frame={{ maxWidth: Infinity }}>
     <Text>仓库文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
     <Menu label={<Image systemName="plus" />} disabled={additionDisabled}>
       <Section header={<Text>添加到仓库</Text>}>

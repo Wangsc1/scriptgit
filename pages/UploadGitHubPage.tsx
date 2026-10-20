@@ -1,4 +1,3 @@
-import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
 /**
  * pages/UploadGitHubPage.tsx - 本地仓库上传到 GitHub
  *
@@ -69,8 +68,6 @@ export function UploadGitHubPage({
   const [uploadCancelling, setUploadCancelling] = useState(false)
   const [cancelToken, setCancelToken] = useState<RemoteCancelToken | null>(null)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
-
-  useHorizontalBackGuard(uploading)
 
   useEffect(() => {
     if (hasToken()) {

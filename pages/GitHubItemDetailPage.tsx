@@ -1,4 +1,3 @@
-import { useHorizontalDestinations } from "../components/HorizontalNavigation"
 import {
   Button,
   HStack,
@@ -69,7 +68,13 @@ export function GitHubItemDetailPage({
       ? COLOR_GREEN
       : COLOR_SECONDARY_LABEL
 
-  useHorizontalDestinations({
+  return (
+    <List
+      navigationTitle={item ? `#${item.number} ${kind}` : "加载中…"}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={load}
+      fullScreenCover={{
         isPresented: previewUrl != null,
         onChanged: (isPresented) => {
           if (!isPresented) {
@@ -83,14 +88,7 @@ export function GitHubItemDetailPage({
             onClose={() => setPreviewUrl(null)}
           />
         ) : <></>,
-      })
-  return (
-    <List
-      navigationTitle={item ? `#${item.number} ${kind}` : "加载中…"}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={load}
-
+      }}
       toolbar={{
         topBarTrailing: item ? (
           <Button
