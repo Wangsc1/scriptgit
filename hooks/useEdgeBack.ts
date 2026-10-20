@@ -1,4 +1,4 @@
-import { DragGesture, createContext, useContext, useEffect, useRef } from "scripting"
+import { DragGesture, useEffect, useRef } from "scripting"
 
 type Drag = { startLocation: { x: number }; translation: { width: number; height: number } }
 /** Points in the full page's local coordinate space; never a general horizontal swipe. */
@@ -8,7 +8,7 @@ export function isEdgeBack(details: Drag): boolean {
     x >= 0 && x <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5
 }
 
-/** End-only recognition keeps the native fullScreenCover dismissal animation.
+/** End-only recognition requests a protected horizontal exit; never a native pop.
  * One completion per drag; an async save cannot be started twice. Failed/cancelled
  * returns can be retried by starting a new drag. Never takes gesture priority.
  */
@@ -25,21 +25,4 @@ export function useEdgeBack(action: () => void | Promise<void>, enabled = true) 
       try { await s.action() }
       finally { s.pending = false }
     })
-}
-
-type BackScope = { guards: Set<() => boolean> }
-export const ModalBackContext = createContext<BackScope>()
-/** A page's writes block the enclosing modal's new swipe path (also its back button).
- * Ref-backed predicates remain current even for callbacks captured before a rerender.
- */
-export function useModalBackGuard(blocked: boolean) {
-  const scope = useContext(ModalBackContext)
-  const current = useRef(blocked)
-  current.current = blocked
-  useEffect(() => {
-    if (!scope) return
-    const guard = () => current.current
-    scope.guards.add(guard)
-    return () => { scope.guards.delete(guard) }
-  }, [scope])
 }

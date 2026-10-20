@@ -1,4 +1,5 @@
-import { Button, NavigationStack, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
+import { useHorizontalFinish, useHorizontalActive } from "../hooks/useHorizontalRoute"
+import { Button, Text, VStack, ScrollView, ProgressView, useObservable, useEffect, useMemo, useRef, useState } from "scripting"
 import { COLOR_SECONDARY_LABEL } from "../constants/colors"
 import { readLocalWorktreeFile, saveLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
 import { getFileVersions, type FileVersions, type FileDiff } from "../services/diffService"
@@ -95,26 +96,43 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       controller?.dispose()
     }
   }, [])
+  const isActive = useHorizontalActive()
+  const finish = useHorizontalFinish()
+  const changedOnDisk = useRef(false)
   const dirty = () => controller !== null && controller.content !== baseline.current.text
 
   async function discard(title: string) {
     return !dirty() || await Dialog.confirm({ title, message: "尚未保存的本地草稿将丢失。可取消后复制草稿。", confirmLabel: "放弃草稿" }) === true
   }
   async function back() {
-    if (!alive.current || lock.current || exiting.current) return
+    if (!isActive() || !alive.current || lock.current || exiting.current) return
     lock.current = true; setBusy(true); setStatus("")
     try {
       // 返回默认保存：无修改直接返回；保存失败/外部冲突留在本页并保留草稿。
-      let saved = false
       if (controller !== null && !file.readOnlyReason) await controller.getContent()
       if (controller !== null && !file.readOnlyReason && dirty()) {
         baseline.current = await saveLocalWorktreeFile(bookmarkName, baseline.current, controller.content)
-        saved = true
+        changedOnDisk.current = true
+        // A write can finish after another keystroke/IME update. Do not dispose
+        // the controller until the latest native draft still matches disk.
+        await controller.getContent()
+        if (dirty()) {
+          if (alive.current) setStatus("已保存，但仍有新的未保存修改；请再次返回以保存最新草稿。")
+          return
+        }
       }
-      if (alive.current) { exiting.current = true; onClose() }
-      // 保存成功才关闭；状态扫描等全屏退场后执行，避免阻塞右滑返回。
-      // 此任务有意跨编辑器卸载保留，由稳定父详情页接收刷新结果。
-      if (saved) setTimeout(() => void notifyChanged(), 350)
+      if (alive.current) {
+        await finish(() => {
+          exiting.current = true
+          onClose()
+          // Only a completed exit schedules the stable parent's single refresh.
+          // Root/source cancellation must not create a late refresh task.
+          if (changedOnDisk.current) {
+            changedOnDisk.current = false
+            setTimeout(() => void notifyChanged(), 350)
+          }
+        })
+      }
     } catch (e: any) {
       if (alive.current) setStatus(String(e?.message || e) + "（未返回，草稿未清除；可复制草稿后再刷新）")
     } finally { lock.current = false; if (alive.current) setBusy(false) }
@@ -141,7 +159,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   // CodeMirror already owns a WebKit edge recognizer (including IME/selection
   // guards) via onBack. Do not layer a second native recognizer over that WebView.
   const backGesture = useEdgeBack(back, !busy)
-  return <NavigationStack background={{ light: "white", dark: "#242424" }}>
+  return <>
     <VStack simultaneousGesture={viewKind === 1 || controller === null ? backGesture : undefined} spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={{ light: "white", dark: "#242424" }} foregroundStyle="label" ignoresSafeArea={{ regions: "container", edges: "bottom" }}
       toolbarBackground={{ style: { light: "white", dark: "#242424" }, bars: ["navigationBar"] }}
       toolbarBackgroundVisibility={{ visibility: "visible", bars: ["navigationBar"] }} navigationTitle={file.path.split("/").pop() || "本地文件"} navigationBarTitleDisplayMode="inline"
@@ -170,7 +188,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
       /> : controller !== null ? <LocalCodeEditor controller={controller} onBack={back} /> :
         (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
-  </NavigationStack>
+  </>
 }
 function extension(path: string): "tsx" | "ts" | "js" | "jsx" | "txt" | "md" | "css" | "html" | "json" {
   const ext = path.split(".").pop()?.toLowerCase() || "txt"

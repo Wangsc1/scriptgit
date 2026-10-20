@@ -32,6 +32,7 @@ type UseRepoWorktreeActionsProps = {
   endOpBusy: () => void
   clearChanges: () => void
   reloadRepo: () => Promise<void>
+  closeCommitForm?: (clear: () => void) => Promise<void>
   refreshChangesAndSnapshot: () => Promise<FileChange[]>
   loadChanges: () => Promise<FileChange[]>
   loadStashes: () => Promise<void>
@@ -48,6 +49,7 @@ export function useRepoWorktreeActions({
   endOpBusy,
   clearChanges,
   reloadRepo,
+  closeCommitForm,
   refreshChangesAndSnapshot,
   loadChanges,
   loadStashes,
@@ -185,10 +187,12 @@ export function useRepoWorktreeActions({
       setCommitError("没有暂存内容，请先暂存要提交的文件")
       return
     }
+    if (committing) return
     setCommitError(null)
-    setCommitSheetMode(null)
     setCommitting(true)
     try {
+      if (closeCommitForm) await closeCommitForm(() => setCommitSheetMode(null))
+      else setCommitSheetMode(null)
       await beginOpBusy("正在提交")
       const msg = buildCommitMessage(title, descriptionText)
       const oid = await commit(bookmarkName, msg)

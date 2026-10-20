@@ -1,5 +1,5 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
-import { FullScreenLink } from "../components/FullScreenNavigation"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
+import { HorizontalLink } from "../components/HorizontalNavigation"
 /**
  * pages/ConflictsPage.tsx - 合并冲突列表与解决
  *
@@ -61,7 +61,7 @@ export function ConflictsPage({
   const [pendingAbort, setPendingAbort] = useState(false)
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
 
-  useModalBackGuard(busy || busyOverlay !== null)
+  useHorizontalBackGuard(busy || busyOverlay !== null)
 
   async function loadState() {
     setLoading(true)
@@ -411,7 +411,7 @@ export function ConflictsPage({
                 ],
               }}
             >
-              <FullScreenLink
+              <HorizontalLink
                 destination={
                   <DiffPage bookmarkName={bookmarkName} filepath={file.filepath} />
                 }
@@ -422,7 +422,7 @@ export function ConflictsPage({
                     {conflictKindLabel(file.kind)}
                   </Text>
                 </VStack>
-              </FullScreenLink>
+              </HorizontalLink>
             </HStack>
           ))}
         </Section>

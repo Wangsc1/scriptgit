@@ -1,5 +1,5 @@
 /**
- * components/CommitMessageSheet.tsx - 提交信息半屏表单
+ * components/CommitMessageSheet.tsx - 提交信息水平路由表单
  *
  * 草稿由本组件的 Observable 自持，父页只在确认时收到一次结果，
  * 避免逐字符回写父页 state 导致 sheet 内容重建、输入框失焦或失效。

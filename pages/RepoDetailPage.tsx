@@ -1,5 +1,5 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
-import { fullScreenPage } from "../components/FullScreenNavigation"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
+import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/RepoDetailPage.tsx - 仓库详情页
  *
@@ -114,6 +114,7 @@ export function RepoDetailPage({
     endOpBusy,
     clearChanges: () => data.setChanges([]),
     reloadRepo: data.loadAll,
+    closeCommitForm: clear => exitDestination(3, clear),
     refreshChangesAndSnapshot: data.refreshChangesAndSnapshot,
     loadChanges: data.loadChanges,
     loadStashes: data.loadStashes,
@@ -135,8 +136,8 @@ export function RepoDetailPage({
     loadStashes: data.loadStashes,
     setStashBusy: worktree.setStashBusy,
     openAmendSheet: () => worktree.setCommitSheetMode("amend"),
-    closeCommitSheet: worktree.closeCommitSheet,
-    closeRollbackPage: () => nav.closePage("rollback"),
+    closeCommitSheet: () => exitDestination(3, worktree.closeCommitSheet),
+    closeRollbackPage: () => exitDestination(2, () => nav.closePage("rollback")),
     showAlert,
     showToast,
   })
@@ -156,7 +157,7 @@ export function RepoDetailPage({
     onError: message => showToast(message, "error"),
   })
 
-  useModalBackGuard(mutating || localCreation.busy)
+  useHorizontalBackGuard(mutating || localCreation.busy)
 
   const {
     handleMergeIntoCurrent,
@@ -265,12 +266,9 @@ export function RepoDetailPage({
 
   const canUpload = !data.hasRemote && data.repoSource !== "clone"
 
-  return (
-    <List
-      fullScreenCover={[{
+  const exitDestination = useHorizontalDestinations([{
         isPresented: localFile !== null,
-        // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
-        // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
+        // 编辑器始终由稳定详情页声明，退出前读取并保存最新草稿。
         onChanged: () => {},
         content: localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
           onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
@@ -278,15 +276,13 @@ export function RepoDetailPage({
             catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
           }} /> : <Text>加载中…</Text>,
       }, {
-        // Same presentation family as the existing diff/GitHub image viewers
-        // (fullScreenCover), separate from the editor entry: the system owns the
-        // modal dismissal motion; no custom drag/edge gesture is installed.
+        // 图片与编辑器使用独立水平路由；缩放与多指检查由 WebKit 处理。
         isPresented: localImage !== null,
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
         content: localImage ? <LocalImagePreview key={localImage.id} sessionId={localImage.id} file={localImage.file}
           onClose={() => closeLocalImage(localImage.id)} /> : <Text>加载中…</Text>,
       },
-      fullScreenPage({
+      horizontalPage({
         isPresented: nav.isPresented,
         onChanged: (presented: boolean) => {
           if (!presented) {
@@ -313,11 +309,12 @@ export function RepoDetailPage({
             selectedCommitOid={nav.selectedCommitOid}
             onRollbackSelect={pendingActions.handleRollbackSelect}
             onUploaded={(repo) => {
-              data.setDisplayName(repo.name)
-              data.setRepoSource(repo.source || "clone")
-              data.setHasRemote(true)
-              nav.closePage("upload")
-              data.loadAll().then(() => {
+              void exitDestination(2, async () => {
+                data.setDisplayName(repo.name)
+                data.setRepoSource(repo.source || "clone")
+                data.setHasRemote(true)
+                nav.closePage("upload")
+                await data.loadAll()
                 showToast("上传成功：已上传到 " + repo.name, "success")
               })
             }}
@@ -335,7 +332,7 @@ export function RepoDetailPage({
             }}
           />
         ),
-      }, false, nav.selectedCommitOid != null),
+      }),
       {
         isPresented: worktree.commitSheetMode != null,
         onChanged: (presented: boolean) => {
@@ -365,7 +362,10 @@ export function RepoDetailPage({
             onConfirm={worktree.handleCommit}
           />
         ),
-      }]}
+      }])
+  return (
+    <List
+
       navigationTitle={data.displayName}
       navigationBarTitleDisplayMode="inline"
       tabBarVisibility="hidden"

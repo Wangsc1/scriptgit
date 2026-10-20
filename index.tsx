@@ -13,6 +13,7 @@ import {
   Tab,
   useObservable,
 } from "scripting"
+import { HorizontalNavigationRoot } from "./components/HorizontalNavigation"
 import { RepoListPage } from "./pages/RepoListPage"
 import { SettingsPage } from "./pages/SettingsPage"
 
@@ -20,7 +21,7 @@ function View() {
   const selection = useObservable(0)
 
   return (
-    <TabView selection={selection}>
+    <HorizontalNavigationRoot><TabView selection={selection}>
       <Tab title="仓库" systemImage="folder.fill" value={0}>
         <NavigationStack>
           <RepoListPage />
@@ -31,7 +32,7 @@ function View() {
           <SettingsPage />
         </NavigationStack>
       </Tab>
-    </TabView>
+    </TabView></HorizontalNavigationRoot>
   )
 }
 

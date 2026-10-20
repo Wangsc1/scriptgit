@@ -1,4 +1,4 @@
-import { FullScreenLink } from "../components/FullScreenNavigation"
+import { HorizontalLink } from "../components/HorizontalNavigation"
 import {
   List,
   Section,
@@ -43,7 +43,7 @@ function CompareCommitRow({
   const body = commitBody(entry.message)
 
   return (
-    <FullScreenLink
+    <HorizontalLink
       destination={
         <CommitDetailPage bookmarkName={bookmarkName} oid={entry.oid} />
       }
@@ -66,7 +66,7 @@ function CompareCommitRow({
           {shortOid(entry.oid)}
         </Text>
       </VStack>
-    </FullScreenLink>
+    </HorizontalLink>
   )
 }
 

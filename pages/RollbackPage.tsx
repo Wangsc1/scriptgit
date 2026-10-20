@@ -1,4 +1,4 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
 /**
  * pages/RollbackPage.tsx - 回滚目标提交选择页
  *
@@ -111,7 +111,7 @@ export function RollbackPage({
   const { toastState, showToast, handleToastChanged, toastPresented } = useToast()
   const requestRef = useRef(0)
 
-  useModalBackGuard(selecting)
+  useHorizontalBackGuard(selecting)
 
   // 独立读取当前分支；失败时保留已有值，点击时还有一次实时读取兜底
   async function loadBranch() {

@@ -1,4 +1,4 @@
-import { FullScreenLink } from "../components/FullScreenNavigation"
+import { HorizontalLink } from "../components/HorizontalNavigation"
 /**
  * pages/StashTab.tsx - Stash 独立 Tab
  *
@@ -100,7 +100,7 @@ export function StashTab({
               }}
             >
               {entry.oid ? (
-                <FullScreenLink
+                <HorizontalLink
                   destination={
                     <CommitDetailPage
                       bookmarkName={bookmarkName}
@@ -110,7 +110,7 @@ export function StashTab({
                   }
                 >
                   {row}
-                </FullScreenLink>
+                </HorizontalLink>
               ) : (
                 row
               )}

@@ -3,7 +3,7 @@
  *
  * 修改的图片显示「原版本 / 新版本」两块，新增/删除只显示存在的一侧。
  * 缩略图用 UIImage 解码（失败回退占位）；点击经 onOpen 上抛 data URL，
- * 由页面 fullScreenCover + ImageViewer 全屏查看（缩放交给 WebKit）。
+ * 由页面水平路由 + ImageViewer 查看（缩放交给 WebKit）。
  */
 
 import { Button, HStack, Image, Text, VStack, useMemo } from "scripting"

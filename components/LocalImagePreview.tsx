@@ -1,3 +1,4 @@
+import { useHorizontalExit } from "../hooks/useHorizontalRoute"
 import { Button, Text, VStack, ZStack, useMemo } from "scripting"
 import { ImageViewer, LOCAL_IMAGE_BACKGROUND } from "./ImageViewer"
 import type { LocalWorktreeFile } from "../services/gitService"
@@ -13,10 +14,11 @@ export function LocalImagePreview({ file, sessionId, onClose }: {
 }) {
   // Prefer verified original browser image bytes; native fallback only for other formats.
   const display = useMemo(() => file.previewDataUrl ? { url: file.previewDataUrl } : file.previewImage ? localImageDisplayDataUrl(file.previewImage, file.path) : { error: "图片预览不可用" }, [file.previewDataUrl, file.previewImage, file.path])
-  const errorBackGesture = useEdgeBack(onClose)
+  const exit = useHorizontalExit(onClose)
+  const errorBackGesture = useEdgeBack(exit)
   if (!("url" in display)) return <VStack simultaneousGesture={errorBackGesture} spacing={12} padding frame={{ maxWidth: Infinity, maxHeight: Infinity }}>
     <Text foregroundStyle="red">{display.error}；文件未修改，可关闭后重试或删除。</Text>
-    <Button title="关闭" action={onClose} />
+    <Button title="关闭" action={exit} />
   </VStack>
   return <ZStack frame={{ maxWidth: Infinity, maxHeight: Infinity }} background={LOCAL_IMAGE_BACKGROUND}
     ignoresSafeArea={{ regions: "all", edges: "all" }}>

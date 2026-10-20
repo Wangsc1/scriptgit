@@ -1,5 +1,5 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
-import { fullScreenPage } from "../components/FullScreenNavigation"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
+import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/ActionRunDetailPage.tsx - 工作流运行详情页
  *
@@ -130,7 +130,7 @@ export function ActionRunDetailPage({
   // 是否正在发起重跑（防重复提交）
   const [rerunning, setRerunning] = useState(false)
 
-  useModalBackGuard(rerunning || downloadingId !== null)
+  useHorizontalBackGuard(rerunning || downloadingId !== null)
 
   async function load() {
     setError(null)
@@ -360,13 +360,7 @@ export function ActionRunDetailPage({
     )
   }
 
-  return (
-    <List
-      navigationTitle={run ? `#${run.id}` : "加载中…"}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={load}
-      fullScreenCover={[fullScreenPage({
+  useHorizontalDestinations([horizontalPage({
         isPresented: viewerJob != null,
         onChanged: (presented: boolean) => {
           if (!presented) setViewerJob(null)
@@ -382,7 +376,14 @@ export function ActionRunDetailPage({
         ) : (
           <Text>加载中…</Text>
         ),
-      })]}
+      })])
+  return (
+    <List
+      navigationTitle={run ? `#${run.id}` : "加载中…"}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={load}
+
       toolbar={{
         topBarTrailing: run ? renderMenu(run) : undefined,
       }}

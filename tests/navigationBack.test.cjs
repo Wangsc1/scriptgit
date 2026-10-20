@@ -1,94 +1,121 @@
-/* Production modal expressions + hook/virtual-node tests. No native animation emulation. */
+/* Production horizontal route store/layers and real page callbacks. No iOS renderer. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript')
-const {load,mount,mountModal,all,ui,deferred,tick}=require('./remoteFiles.test.cjs')
-const root=path.resolve(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8')
-const navigation=load('components/FullScreenNavigation.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
-const files=[];(function walk(d){for(const n of fs.readdirSync(path.join(root,d))){const r=d+'/'+n;if(fs.statSync(path.join(root,r)).isDirectory())walk(r);else if(r.endsWith('.tsx'))files.push(r)}})('pages');files.push(...fs.readdirSync(path.join(root,'components')).filter(n=>n.endsWith('.tsx')).map(n=>'components/'+n),'index.tsx')
-for(const f of files){
- const ast=ts.createSourceFile(f,read(f),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
- function visit(n){
-  if(ts.isJsxAttribute(n))assert.ok(!['navigationDestination','sheet'].includes(n.name.getText(ast)),f+': business destination must be a full-screen modal')
-  if(ts.isJsxOpeningElement(n)||ts.isJsxSelfClosingElement(n))assert.notEqual(n.tagName.getText(ast),'NavigationLink',f)
-  ts.forEachChild(n,visit)
- }visit(ast)
- assert.doesNotMatch(read(f),/highPriorityGesture|interactiveDismissDisabled/,f)
+const {load,mount,all,ui,deferred,tick}=require('./remoteFiles.test.cjs')
+const nav=load('components/HorizontalNavigation.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
+const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8')
+const drag={startLocation:{x:0},translation:{width:100,height:0}}
+function layer(routes,route){
+ const root=mount(nav.HorizontalNavigationRoot,{children:__jsx('RootTabs',{})})
+ const layersNode=root.tree.children[0].children[1]
+ const layers=mount(layersNode.type,{routes})
+ const node=layers.render().children.find(n=>n.props.route===route)
+ const h=mount(node.type,node.props)
+ h.surface=()=>h.render().children[0]({size:{width:390,height:844}})
+ h.close=()=>{h.unmount();layers.unmount();root.unmount()}
+ return h
 }
-// Actual row tap -> cover -> isolated NavigationStack -> back/native dismissal -> reopen.
-const destination=global.__jsx('BusinessPage',{navigationTitle:'Title',toolbar:{topBarTrailing:'existing action'}})
-const h=mount(navigation.FullScreenLink,{destination,children:global.__jsx('Text',{},'Row')})
-for(let i=0;i<2;i++){
- assert.equal(h.tree.props.fullScreenCover.isPresented,false)
- all(h.tree).find(n=>n.type==='Button'&&n.props.buttonStyle==='plain').props.action();h.render()
- const cover=h.tree.props.fullScreenCover;assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'NavigationStack')
- assert.equal(mountModal(cover).tree.children[0].children[0],destination,'destination title/toolbar node is retained')
- if(i===0)mountModal(cover).tree.props.toolbar.topBarLeading.props.action();else cover.onChanged(false)
- h.render();assert.equal(h.tree.props.fullScreenCover.isPresented,false)
-}
-const lateDismiss=h.tree.props.fullScreenCover.onChanged;h.unmount();lateDismiss(false);assert.equal(h.lateWrites,0)
-
-// Arrow-only variant retains the same dismiss callback and leaves default pages unchanged.
-const arrow=navigation.fullScreenPage({isPresented:true,onChanged:value=>assert.equal(value,false),content:destination},false,true)
-const arrowButton=mountModal(arrow).tree.props.toolbar.topBarLeading
-assert.equal(arrowButton.props.title,undefined);assert.equal(arrowButton.children[0].props.systemName,'chevron.left');arrowButton.props.action()
-assert.match(read('pages/RepoListPage.tsx'),/<FullScreenLink backArrow/)
-assert.match(read('pages/RepoDetailPage.tsx'),/false, nav.selectedCommitOid != null/)
-assert.match(read('pages/ClonePage.tsx'),/<Image systemName="chevron.left"/)
-// Full-screen business forms retain their own title and cancel/confirm toolbar.
-const {FormSheet}=load('components/FormSheet.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
-let cancelled=0,confirmed=0
-const formProps={navigationTitle:'Business form',confirmTitle:'确认',confirmDisabled:true,error:'retryable error',onCancel:()=>cancelled++,onConfirm:()=>confirmed++,children:global.__jsx('Text',{},'draft')}
-const form=mount(FormSheet,formProps)
-assert.equal(form.tree.type,'NavigationStack');const list=form.tree.children[0]
-assert.equal(list.props.navigationTitle,'Business form');assert.equal(list.props.presentationDetents,undefined)
-assert.equal(list.props.toolbar.confirmationAction.props.disabled,true)
-list.props.toolbar.cancellationAction.props.action();assert.equal(cancelled,1)
-formProps.confirmDisabled=false;form.render();assert.equal(form.tree.children[0].props.toolbar.confirmationAction.props.disabled,false)
-form.tree.children[0].props.toolbar.confirmationAction.props.action();assert.equal(confirmed,1);form.unmount()
-
-// Evaluate the actual page cover expression, not a duplicated fixture route.
-function presentations(file,scope){
+function declarations(file,scope){
  const source=read(file),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let expression
- function visit(n){if(ts.isJsxAttribute(n)&&n.name.getText(ast)==='fullScreenCover')expression=n.initializer.expression.getText(ast);ts.forEachChild(n,visit)}visit(ast);assert.ok(expression,file)
- const compiled=ts.transpileModule('module.exports = ('+expression+')',{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx'}}).outputText
- const mod={exports:{}};new Function('module',...Object.keys(scope),'fullScreenPage',compiled)(mod,...Object.values(scope),navigation.fullScreenPage)
- return [].concat(mod.exports)
+ function visit(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useHorizontalDestinations')expression=n.arguments[0].getText(ast);ts.forEachChild(n,visit)}visit(ast);assert.ok(expression,file)
+ const code=ts.transpileModule('module.exports=('+expression+')',{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,jsxFactory:'__jsx'}}).outputText
+ const mod={exports:{}};new Function('module',...Object.keys(scope),'horizontalPage',code)(mod,...Object.values(scope),nav.horizontalPage);return [].concat(mod.exports)
 }
-for(const [file,state,setter,Component] of [
- ['pages/ActionsPage.tsx','selectedRunId','setSelectedRunId','ActionRunDetailPage'],
- ['pages/ActionRunDetailPage.tsx','viewerJob','setViewerJob','ActionLogViewer'],
- ['pages/GitHubWorkPage.tsx','selectedNumber','setSelectedNumber','GitHubItemDetailPage'],
-]){
- let value=state==='viewerJob'?{name:'Job',log:'text',steps:[],initialStepNumber:1}:42,createClosed=0
- const render=()=>presentations(file,{[state]:value,[setter]:next=>value=next,[Component]:Component,fullName:'o/r',Text:'Text',showCreate:false,setShowCreate:()=>createClosed++,setCreateError(){},CreateIssueSheet:'CreateIssueSheet',creating:false,createError:null,handleCreate(){}})
- let cover=render()[0];assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'NavigationStack')
- const page=mountModal(cover).tree.children[0].children[0];assert.equal(page.type,Component)
- mountModal(cover).tree.props.toolbar.topBarLeading.props.action();assert.equal(value,null);assert.equal(render()[0].isPresented,false)
- value=state==='viewerJob'?{name:'Job',log:'text',steps:[]}:43;cover=render()[0];cover.onChanged(false);assert.equal(render()[0].isPresented,false)
- assert.equal(createClosed,0,'closing child leaves unrelated form untouched')
- console.log('PASS '+file+': actual cover content, toolbar return and native callback clear route state')
-}
-// Clone close must not bypass the write/cancel gate.
-const clone=read('pages/ClonePage.tsx');assert.match(clone,/action=\{\(\) => \{ if \(!locked.current\) onClose\?\.\(\) \}\} disabled=\{cloning\}/)
-// Save-first editor close remains owned by the editor, never the generic business cover.
-const editor=read('pages/LocalFileEditor.tsx');assert.match(editor,/topBarLeading: <Button title="返回" action=\{back\}/);assert.equal((editor.match(/onClose\(\)/g)||[]).length,1);assert.match(editor,/async function back\(\)[\s\S]*saveLocalWorktreeFile[\s\S]*onClose\(\)/)
-assert.match(read('index.tsx'),/Navigation.present\(\{ element: <View \/>, modalPresentationStyle: "fullScreen" \}\)/)
-// Root presentation uses the real entry code and still exits only after root dismissal.
-async function rootPresentation(){
- const gate=deferred();let options,exits=0
- load('index.tsx',{scripting:{...ui,Navigation:{present:input=>{options=input;return gate.promise}},Script:{exit:()=>exits++}},'./pages/RepoListPage':{RepoListPage:'RepoListPage'},'./pages/SettingsPage':{SettingsPage:'SettingsPage'}})
- assert.equal(options.modalPresentationStyle,'fullScreen');assert.equal(exits,0)
- gate.resolve();await tick();assert.equal(exits,1)
- console.log('PASS actual root Navigation.present fullScreen options; Script.exit waits for dismissal')
+async function main(){
+ // Parent vnode stays outside the changing layer list; neither tab nor parent is replaced.
+ const rootChild=__jsx('TabView',{selection:{value:1}}),root=mount(nav.HorizontalNavigationRoot,{children:rootChild})
+ const base=root.tree.children[0].children[0];assert.equal(base.children[0],rootChild)
+ const routes=new nav.HorizontalRoutes(),source={};let returned=0
+ const parent=mount(()=>{const [selection,set]=ui.useState('history');return __jsx('Parent',{selection,set})},{})
+ parent.tree.props.set('files');parent.render()
+ const destination=__jsx('RealDestination',{navigationTitle:'Details',toolbar:{topBarTrailing:'menu'}})
+ routes.update(source,[nav.horizontalPage({isPresented:true,content:destination,onChanged:()=>returned++})])
+ const route=routes.routes[0],h=layer(routes,route);await tick()
+ const surface=h.surface();assert.equal(surface.props.offset.x,0);assert.equal(surface.children[0].type,'NavigationStack')
+ const shell=surface.children[0].children[0];assert.equal(shell.children[0].children[0].children[0],destination)
+ assert.equal(shell.props.toolbar.topBarLeading.children[0].props.systemName,'chevron.left')
+ const gate=deferred();route.animate=()=>gate.promise
+ const closing=shell.props.toolbar.topBarLeading.props.action();await routes.back(route.id)
+ assert.equal(routes.routes[0],route);assert.equal(returned,0);assert.equal(parent.tree.props.selection,'files')
+ gate.resolve();await closing;assert.equal(returned,1);assert.equal(routes.routes.length,0);assert.equal(parent.unmounted,false)
+ routes.update(source,[{isPresented:true,content:destination,onChanged(){}}]);assert.equal(routes.routes.length,0,'stale presented state cannot reopen completed route')
+ routes.update(source,[{isPresented:false,content:null,onChanged(){}}]);routes.update(source,[nav.horizontalPage({isPresented:true,content:destination,onChanged:()=>returned++})])
+ assert.notEqual(routes.routes[0].id,route.id);const reopened=layer(routes,routes.routes[0]);await tick()
+ const gesture=reopened.surface().children[0].children[0].props.simultaneousGesture
+ gesture.changed();await gesture.onEnded(drag);assert.equal(returned,2);assert.equal(routes.routes.length,0)
+ reopened.close();h.close();root.unmount();parent.unmount()
+ console.log('PASS actual layer button/swipe close, sibling chrome/title content, retained parent state, delayed once-only cleanup, reopen')
+
+ // Exercise the actual row button, stable source and per-return callback twice.
+ let rowReturns=0
+ const row=mount(nav.HorizontalLink,{destination,children:__jsx('Text',{},'row'),onReturn:()=>rowReturns++})
+ for(let n=0;n<2;n++){
+  assert.equal(row.routes.routes.length,0)
+  all(row.tree).find(v=>v.type==='Button').props.action();row.render();assert.equal(row.routes.routes.length,1)
+  const active=row.routes.routes[0],finished=deferred();active.animate=()=>finished.promise
+  const pending=row.routes.back(active.id);assert.equal(rowReturns,n);assert.equal(row.routes.routes.length,1)
+  finished.resolve();await pending;row.render();assert.equal(rowReturns,n+1);assert.equal(row.routes.routes.length,0)
+ }
+ row.unmount();assert.equal(row.lateWrites,0)
+ console.log('PASS real HorizontalLink row open/return/reopen invokes one post-animation refresh per return')
+
+ // Real horizontal offset animations retain content/controllers until completion.
+ const animationGates=[],calls=[]
+ const animatedUI=new Proxy(ui,{get:(target,key)=>key==='withAnimation'?(...args)=>{const g=deferred();args.at(-1)();calls.push(args.length);animationGates.push(g);return g.promise}:target[key]})
+ const animated=load('components/HorizontalNavigation.tsx',{scripting:animatedUI,'../constants/colors':{}})
+ const aroot=mount(animated.HorizontalNavigationRoot,{children:__jsx('Root',{})}),aroutes=aroot.tree.props.value
+ aroutes.update({},[animated.horizontalPage({isPresented:true,content:destination,onChanged:()=>returned++})]);const aroute=aroutes.routes[0]
+ const layersNode=aroot.tree.children[0].children[1],als=mount(layersNode.type,{routes:aroutes}),av=als.tree.children[0],ah=mount(av.type,av.props)
+ const out=aroutes.back(aroute.id);assert.equal(animationGates.length,1);assert.equal(aroutes.routes.length,1)
+ animationGates[0].resolve();await tick();assert.equal(animationGates.length,2);assert.equal(calls[1],3,'explicit animation completion criterion')
+ assert.equal(ah.render().children[0]({size:{width:430,height:900}}).props.offset.x,430)
+ assert.equal(aroutes.routes.length,1,'do not unmount page at animation start')
+ animationGates[1].resolve();await out;assert.equal(aroutes.routes.length,0)
+ ah.unmount();als.unmount();aroot.unmount()
+ console.log('PASS actual geometry-sized rightward exit awaits animation completion, not a timer')
+
+ for(const [file,state,setter,Component] of [
+  ['pages/ActionsPage.tsx','selectedRunId','setSelectedRunId','ActionRunDetailPage'],
+  ['pages/ActionRunDetailPage.tsx','viewerJob','setViewerJob','ActionLogViewer'],
+  ['pages/GitHubWorkPage.tsx','selectedNumber','setSelectedNumber','GitHubItemDetailPage'],
+ ]){
+  let value=state==='viewerJob'?{name:'Job',log:'text',steps:[]}:42,unrelated=0
+  const render=()=>declarations(file,{[state]:value,[setter]:v=>value=v,[Component]:Component,fullName:'o/r',Text:'Text',showCreate:false,setShowCreate:()=>unrelated++,setCreateError(){},CreateIssueSheet:'CreateIssueSheet',creating:false,createError:null,handleCreate(){}})
+  const r=new nav.HorizontalRoutes();r.update({},render());assert.equal(r.routes[0].destination.content.type,Component)
+  const body=layer(r,r.routes[0]);const g=body.surface().children[0].children[0].props.simultaneousGesture
+  g.changed();await g.onEnded(drag);assert.equal(value,null);assert.equal(unrelated,0);body.close()
+ }
+ console.log('PASS actual Actions/log/Issue destination declarations close through protected horizontal shell')
+
+ // A source-controlled successful close freezes old content through animation;
+ // release/root shutdown cancels post-animation callbacks, including late promises.
+ const r=new nav.HorizontalRoutes(),src={};let callbacks=0
+ r.update(src,[{isPresented:true,content:destination,onChanged:()=>callbacks++}]);const old=r.routes[0],done=deferred();old.animate=()=>done.promise
+ r.update(src,[{isPresented:false,content:__jsx('Empty',{}),onChanged:()=>callbacks++}]);assert.equal(r.routes[0].destination.content,destination)
+ done.resolve();await tick();assert.equal(callbacks,1);r.update(src,[{isPresented:true,content:destination,onChanged(){}}]);assert.equal(r.routes.length,1,'programmatic false must not latch a later reopen')
+ const late=deferred();r.routes[0].animate=()=>late.promise;const pending=r.exit(r.routes[0].id,()=>callbacks++);r.release(src);late.resolve();await pending;assert.equal(callbacks,1)
+ r.dispose();assert.equal(r.routes.length,0)
+ console.log('PASS programmatic close retains content, reopen works, source/root unmount suppresses stale cleanup')
+
+ // Root native presentation and lifetime are untouched.
+ const rootGate=deferred();let options,exits=0
+ load('index.tsx',{scripting:{...ui,Navigation:{present:v=>{options=v;return rootGate.promise}},Script:{exit:()=>exits++}},'./pages/RepoListPage':{RepoListPage:'RepoListPage'},'./pages/SettingsPage':{SettingsPage:'SettingsPage'}})
+ assert.equal(options.modalPresentationStyle,'fullScreen');assert.equal(exits,0);rootGate.resolve();await tick();assert.equal(exits,1)
+ for(const dir of ['pages','components'])for(const name of fs.readdirSync(path.join(__dirname,'..',dir)).filter(n=>n.endsWith('.tsx'))){const s=read(dir+'/'+name);assert.doesNotMatch(s,/fullScreenCover=|sheet=|<NavigationLink|navigationDestination=/,dir+'/'+name)}
+ assert.match(read('pages/RepoListPage.tsx'),/<HorizontalLink onReturn=\{appear\}/)
+ assert.match(read('pages/ClonePage.tsx'),/<Image systemName="chevron.left"/)
+ assert.match(read('pages/RepoDetailPage.tsx'),/systemImage="ellipsis.circle"/)
+ assert.equal(fs.existsSync(path.join(__dirname,'../components/FullScreenNavigation.tsx')),false)
+ console.log('PASS all business entry families migrated; root fullScreen/exit lifetime, existing arrows and circle-ellipsis menu retained')
+
  const {env}=require('./cloneQueue.test.cjs'),{page}=require('./clonedSelection.test.cjs')
  const cloning=deferred(),e=env({clone:async()=>cloning.promise});let closed=0
  const cloneHost=mount(page(e,[]),{onCloned(){},onClose:()=>closed++});await tick()
  all(cloneHost.tree).find(n=>n.type==='FormRow'&&n.props.label==='Git URL').props.onChanged('https://github.com/bob/repo.git');cloneHost.render()
  const oldBack=cloneHost.tree.props.toolbar.topBarLeading.props.action
- const pending=all(cloneHost.tree).find(n=>n.type==='Button'&&n.props.title==='克隆').props.action();await tick();cloneHost.render()
- assert.equal(cloneHost.tree.props.toolbar.topBarLeading.props.disabled,true);oldBack();cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}});assert.equal(closed,0,'stale pre-clone close also respects write gate')
- cloning.resolve();await pending;cloneHost.render();assert.equal(cloneHost.tree.props.toolbar.topBarLeading.props.disabled,false)
- cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded({startLocation:{x:0},translation:{width:100,height:0}});assert.equal(closed,1);cloneHost.unmount();assert.equal(cloneHost.lateWrites,0)
- console.log('PASS real clone page: return blocked during clone, including stale callback; enabled after completion')
+ const running=all(cloneHost.tree).find(n=>n.type==='Button'&&n.props.title==='克隆').props.action();await tick();cloneHost.render()
+ oldBack();cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded(drag);assert.equal(closed,0)
+ cloning.resolve();await running;cloneHost.render();cloneHost.tree.props.simultaneousGesture.changed();await cloneHost.tree.props.simultaneousGesture.onEnded(drag);assert.equal(closed,1)
+ cloneHost.unmount();assert.equal(cloneHost.lateWrites,0)
+ console.log('PASS real ClonePage busy write/cancel gate blocks button and swipe, including stale pre-write callback')
 }
-rootPresentation().catch(e=>{console.error(e);process.exitCode=1})
-console.log('PASS full-screen row open/close/reopen, modal route callbacks and independent navigation containers; native vertical transition, gestures and toolbar rendering require device validation.')
+main().catch(e=>{console.error(e);process.exitCode=1})

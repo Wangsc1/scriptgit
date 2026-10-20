@@ -25,7 +25,7 @@ async function main(){
  await pause();let bar=find(h,'FileChangeSwitcher');assert.equal(bar.props.selection.value,0)
  assert.equal(versionCalls,0);assert.equal(diffCalls,0);assert.equal(h.tree.children[0].props.safeAreaInset,undefined)
  assert.equal(h.tree.children[0].props.frame.maxHeight,Infinity)
- assert.equal(h.tree.props.preferredColorScheme,undefined);assert.deepEqual(h.tree.props.background,{light:'white',dark:'#242424'})
+ assert.equal(h.tree.props.preferredColorScheme,undefined);assert.equal(h.tree.props.background,undefined)
  assert.deepEqual(h.tree.children[0].props.background,{light:'white',dark:'#242424'});assert.equal(h.tree.children[0].props.ignoresSafeArea.edges,'bottom')
  assert.deepEqual(h.tree.children[0].props.toolbarBackground,{style:{light:'white',dark:'#242424'},bars:['navigationBar']})
  bar.props.selection.value=1;await pause();const diff=find(h,'DiffViewer');assert.equal(diff.props.compact,true);assert.equal(diff.props.appearance,undefined);assert.equal(diff.props.nativeAppearance,true);assert.ok(diff.props.diff.lines.some(l=>l.type==='del'));assert.ok(diff.props.diff.lines.some(l=>l.type==='add'&&l.segments.some(s=>s.type==='changed')))

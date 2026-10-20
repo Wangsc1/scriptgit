@@ -1,5 +1,5 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
-import { fullScreenPage } from "../components/FullScreenNavigation"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
+import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 import {
   Button,
   HStack,
@@ -185,11 +185,13 @@ export function GitHubWorkPage({
     try {
       const created = await createIssue(fullName, { title, body })
       pendingCreatedRef.current = [created, ...pendingCreatedRef.current]
-      setShowCreate(false)
-      setFilter(0)
-      await load(true, 0, 0)
-      setSelectedNumber(created.number)
-      showToast("Issue 已创建：#" + created.number, "success")
+      await exitDestination(1, async () => {
+        setShowCreate(false)
+        setFilter(0)
+        await load(true, 0, 0)
+        setSelectedNumber(created.number)
+        showToast("Issue 已创建：#" + created.number, "success")
+      })
     } catch (e: any) {
       // 表单仍开着，失败信息必须留在表单内（父页 toast 会被 sheet 遮住）
       setCreateError("创建 Issue 失败：" + String(e?.message || e))
@@ -199,30 +201,11 @@ export function GitHubWorkPage({
   }
 
   const visibleItems = items
-  useModalBackGuard(creating)
+  useHorizontalBackGuard(creating)
 
   const sectionTitle = kind === 1 ? "Pull Requests" : "Issues"
 
-  return (
-    <List
-      navigationTitle={fullName}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={() => load(true)}
-      toolbar={{
-        topBarTrailing: kind === 0 ? (
-          <Button
-            title="新建 Issue"
-            systemImage="plus"
-            action={() => {
-              setCreateError(null)
-              setShowCreate(true)
-            }}
-            disabled={creating}
-          />
-        ) : undefined,
-      }}
-      fullScreenCover={[fullScreenPage({
+  const exitDestination = useHorizontalDestinations([horizontalPage({
         isPresented: selectedNumber != null,
         onChanged: (presented: boolean) => {
           if (!presented) setSelectedNumber(null)
@@ -249,7 +232,27 @@ export function GitHubWorkPage({
             onConfirm={handleCreate}
           />
         ),
-      }]}
+      }])
+  return (
+    <List
+      navigationTitle={fullName}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={() => load(true)}
+      toolbar={{
+        topBarTrailing: kind === 0 ? (
+          <Button
+            title="新建 Issue"
+            systemImage="plus"
+            action={() => {
+              setCreateError(null)
+              setShowCreate(true)
+            }}
+            disabled={creating}
+          />
+        ) : undefined,
+      }}
+
 
       toast={
         toastState

@@ -1,5 +1,5 @@
-import { useModalBackGuard } from "../hooks/useEdgeBack"
-import { fullScreenPage } from "../components/FullScreenNavigation"
+import { useHorizontalBackGuard } from "../hooks/useHorizontalRoute"
+import { useHorizontalDestinations, horizontalPage } from "../components/HorizontalNavigation"
 /**
  * pages/ActionsPage.tsx - GitHub Actions 工作流运行列表页
  *
@@ -200,7 +200,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
   // 各行是否有工件（会话级缓存 + 受限并发，见 hooks/useRunArtifactCounts）
   const artifactCounts = useRunArtifactCounts(fullName, runs)
 
-  useModalBackGuard(dispatching || rerunning || deleting > 0)
+  useHorizontalBackGuard(dispatching || rerunning || deleting > 0)
 
   async function load(reset = true) {
     const request = ++requestRef.current
@@ -345,19 +345,7 @@ export function ActionsPage({ fullName }: { fullName: string }) {
     }
   }
 
-  return (
-    <List
-      navigationTitle={fullName}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      refreshable={handleRefresh}
-      onAppear={() => {
-        visibleRef.current = true
-      }}
-      onDisappear={() => {
-        visibleRef.current = false
-      }}
-      fullScreenCover={[fullScreenPage({
+  useHorizontalDestinations([horizontalPage({
         isPresented: selectedRunId != null,
         onChanged: (presented: boolean) => {
           if (!presented) setSelectedRunId(null)
@@ -371,7 +359,20 @@ export function ActionsPage({ fullName }: { fullName: string }) {
         ) : (
           <Text>加载中…</Text>
         ),
-      })]}
+      })])
+  return (
+    <List
+      navigationTitle={fullName}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      refreshable={handleRefresh}
+      onAppear={() => {
+        visibleRef.current = true
+      }}
+      onDisappear={() => {
+        visibleRef.current = false
+      }}
+
       toolbar={{
         topBarTrailing: (
           <Menu

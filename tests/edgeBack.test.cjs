@@ -1,8 +1,8 @@
 /* Execute production gestures/callbacks and delivered image JS, not native iOS recognition. */
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path')
-const {load,mount,mountModal,all,ui,tick,deferred}=require('./remoteFiles.test.cjs')
+const {load,mount,all,ui,tick,deferred}=require('./remoteFiles.test.cjs')
 const edge=load('hooks/useEdgeBack.ts',{scripting:ui})
-const nav=load('components/FullScreenNavigation.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
+const nav=load('components/HorizontalNavigation.tsx',{scripting:ui,'../constants/colors':load('constants/colors.ts')})
 const drag=(x=0,width=100,height=0)=>({startLocation:{x},translation:{width,height}})
 const gesture=h=>all(h.tree).find(n=>n.props.simultaneousGesture)?.props.simultaneousGesture
 async function swipe(g,d=drag()){g.changed();await g.onEnded(d)}
@@ -22,24 +22,15 @@ async function main(){
   props.enabled=true;h.render();g=gesture(h);await swipe(g);assert.equal(calls,3)
   h.unmount();await swipe(g);assert.equal(calls,3)
  })
- await test('actual fullScreenLink -> modal edge return, guard update/retry, refresh once; own-close clone has no bypass gesture',async()=>{
-  let closes=0,refreshes=0
-  const cover=nav.fullScreenPage({isPresented:true,onChanged:()=>{closes++;refreshes++},content:__jsx('DiffPage',{})},false,true)
-  const body=mountModal(cover);const scope=body.tree.children[0].props.value
-  edge.ModalBackContext.testValue=scope
-  const props={busy:true};const guard=mount(()=>{edge.useModalBackGuard(props.busy);return __jsx('Guard',{})},{})
-  const g=gesture(body);await swipe(g);assert.equal(closes,0)
-  props.busy=false;guard.render();await swipe(g);await g.onEnded(drag());body.tree.props.toolbar.topBarLeading.props.action();cover.onChanged(false);assert.equal(closes,1);assert.equal(refreshes,1)
-  // Some hosts retain cover content while hidden: a new presentation must reset its close gate.
-  const bodyProps=cover.content.children[0].props
-  bodyProps.presentation=nav.fullScreenPage({isPresented:false,onChanged(){},content:__jsx('DiffPage',{})}).content.children[0].props.presentation;body.render()
-  bodyProps.presentation=nav.fullScreenPage({isPresented:true,onChanged:()=>{closes++;refreshes++},content:__jsx('DiffPage',{})}).content.children[0].props.presentation;body.render()
-  await swipe(gesture(body));assert.equal(closes,2);assert.equal(refreshes,2)
-  guard.unmount();assert.equal(scope.guards.size,0);edge.ModalBackContext.testValue=undefined;body.unmount()
-  const link=mount(nav.FullScreenLink,{destination:__jsx('CommitDiffPage',{}),children:__jsx('Text',{},'row')})
-  all(link.tree).find(n=>n.type==='Button'&&n.props.buttonStyle==='plain').props.action();link.render();assert.equal(link.tree.props.fullScreenCover.isPresented,true)
-  const child=mountModal(link.tree.props.fullScreenCover);await swipe(gesture(child));link.render();assert.equal(link.tree.props.fullScreenCover.isPresented,false);child.unmount();link.unmount()
-  const clone=mountModal(nav.fullScreenPage({isPresented:true,onChanged(){throw Error('bypass')},content:__jsx('ClonePage',{})},true));assert.equal(gesture(clone),undefined);clone.unmount()
+ await test('horizontal shell guards and close gate; owned editor/clone/image routes have no shell bypass',async()=>{
+  const routes=new nav.HorizontalRoutes(),source={};let closed=0,busy=true
+  routes.update(source,[nav.horizontalPage({isPresented:true,onChanged:()=>closed++,content:__jsx('Diff',{})})])
+  const route=routes.routes[0];route.scope.guards.add(()=>busy)
+  await routes.back(route.id);assert.equal(closed,0);busy=false
+  const gate=deferred();route.animate=()=>gate.promise;const pending=routes.back(route.id)
+  await routes.back(route.id);assert.equal(closed,0);assert.equal(routes.routes[0],route)
+  gate.resolve();await pending;assert.equal(closed,1);assert.equal(routes.routes.length,0)
+  routes.update({},[{isPresented:true,onChanged(){},content:__jsx('Editor',{})}]);assert.equal(routes.routes[0].destination.ownClose,true)
  })
  await test('forms use original cancel callback; busy blocks swipe independently of invalid/empty fields',async()=>{
   const {FormSheet}=load('components/FormSheet.tsx',{scripting:ui,'../constants/colors':{}})
@@ -70,6 +61,40 @@ async function main(){
   all(h.tree).find(n=>n.type==='Tabs').props.selection.value=0;h.render()
   await all(h.tree).find(n=>n.type==='Editor').props.onBack();assert.equal(closes,1);assert.equal(writes,2)
   h.unmount();await new Promise(r=>setTimeout(r,370));assert.equal(refreshes,1);assert.equal(h.lateWrites,0)
+ })
+ await test('real local editor and route gate: failures/new typing stay mounted; cleanup and refresh only after successful horizontal completion',async()=>{
+  const hooks=load('hooks/useHorizontalRoute.ts',{scripting:ui})
+  const routes=new nav.HorizontalRoutes();routes.update({},[{isPresented:true,content:__jsx('LocalEditor',{}),onChanged(){}}]);const route=routes.routes[0]
+  hooks.HorizontalRouteContext.testValue=route.scope
+  let controller,writes=0,closed=0,refreshed=0,fail=true,writeGate=null,animations=0
+  const gate=deferred();route.animate=()=>{animations++;return gate.promise}
+  const {LocalFileEditor}=load('pages/LocalFileEditor.tsx',{scripting:ui,'../constants/colors':{},'../services/gitService':{
+   saveLocalWorktreeFile:async(_,base,text)=>{writes++;if(fail)throw Error('disk denied');if(writeGate)await writeGate.promise;return {...base,text}},readLocalWorktreeFile:async()=>{throw Error('unused')},
+  },'../services/diffService':{},'../components/DiffViewer':{},'../components/FileChangeSwitcher':{},'../components/LocalCodeEditor':{LocalCodeEditor:'LocalCodeEditor'},'../services/localCodeEditor':{createLocalCodeEditorController:o=>(controller={...o,async getContent(){return this.content},dispose(){this.disposed=true}})},'../utils/editorDiff':{}})
+  const h=mount(LocalFileEditor,{bookmarkName:'r',file:{path:'a',text:'old'},onClose:()=>closed++,onChanged:()=>refreshed++,onReload(){}})
+  const back=()=>all(h.render()).find(n=>n.type==='Button'&&n.props.title==='返回').props.action()
+  controller.content='draft';await back();assert.equal(animations,0);assert.equal(closed,0);assert.equal(controller.disposed,undefined);assert.equal(controller.content,'draft')
+  fail=false;writeGate=deferred();const writing=back();await tick();controller.content='new typing';writeGate.resolve();await writing;writeGate=null
+  assert.equal(animations,0);assert.equal(closed,0);assert.match(JSON.stringify(h.render()),/新的未保存修改/)
+  const pending=back();await tick();assert.equal(writes,3);assert.equal(animations,1);assert.equal(closed,0);assert.equal(refreshed,0);assert.equal(controller.disposed,undefined)
+  await back();assert.equal(writes,3,'no duplicate write during exit animation')
+  gate.resolve();await pending;assert.equal(closed,1);assert.equal(routes.routes.length,0);h.unmount();assert.equal(controller.disposed,true)
+  await new Promise(r=>setTimeout(r,370));assert.equal(refreshed,1);assert.equal(h.lateWrites,0)
+  hooks.HorizontalRouteContext.testValue=undefined
+ })
+ await test('real remote editor discard confirmation precedes route animation; cancellation never animates or commits',async()=>{
+  const hooks=load('hooks/useHorizontalRoute.ts',{scripting:ui}),{GitHubFileSession}=load('services/githubFileSession.ts')
+  const routes=new nav.HorizontalRoutes();routes.update({},[{isPresented:true,content:__jsx('RemoteEditor',{}),onChanged(){}}]);const route=routes.routes[0]
+  hooks.HorizontalRouteContext.testValue=route.scope
+  let controller,discard=false,closed=0,writes=0,animations=0
+  global.EditorController=class{constructor(o){Object.assign(this,o);controller=this}dispose(){this.disposed=true}}
+  global.Dialog={confirm:async()=>discard}
+  const gate=deferred();route.animate=()=>{animations++;return gate.promise}
+  const {GitHubFileEditor}=load('pages/GitHubFileEditor.tsx',{scripting:ui,'../services/githubFileSession':{GitHubFileSession},'../api/githubApi':{saveRepoTextFile:async()=>{writes++;return 'never'}}})
+  const h=mount(GitHubFileEditor,{fullName:'o/r',branch:'main',file:{path:'a',text:'old',sha:'s'},onClose:()=>closed++});controller.content='draft'
+  await swipe(gesture(h));assert.equal(animations,0);assert.equal(closed,0);assert.equal(controller.content,'draft')
+  discard=true;const pending=swipe(gesture(h));await tick();assert.equal(animations,1);assert.equal(closed,0);assert.equal(controller.disposed,undefined);assert.equal(writes,0)
+  gate.resolve();await pending;assert.equal(closed,1);assert.equal(writes,0);h.unmount();assert.equal(controller.disposed,true);hooks.HorizontalRouteContext.testValue=undefined
  })
  await test('existing CodeMirror WebKit edge path keeps IME/selection, direction and multitouch protections without a competing native drag',async()=>{
   const {localCodeEditorBundle}=load('vendor/local-code-editor-bundle.ts')
@@ -113,7 +138,7 @@ async function main(){
    vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context)
    const start={clientX:x,clientY:100},end={clientX:x+dx,clientY:100+dy}
    listeners.touchstart({touches:multi?[start,start]:[start]});if(cancel)listeners.touchcancel({});if(unzoom)window.visualViewport.scale=1
-   if(!fast){listeners.touchmove({touches:[end]});listeners.touchmove({touches:[end]})}
+   if(!fast){listeners.touchmove({touches:[end]});listeners.touchmove({touches:[end]});assert.equal(closes,0,'no image navigation before touchend')}
    listeners.touchend({touches:[],changedTouches:[end]});return closes
   }
   for(const compactImage of [false,true]){
@@ -122,7 +147,7 @@ async function main(){
    assert.equal(gesture(h),undefined,'no outer native recognizer can steal image pan')
    assert.equal(run(html),1);assert.equal(run(html,{x:24,dx:80}),1);assert.equal(run(html,{fast:true}),1)
    for(const options of [{x:25},{x:-1},{dx:79},{dx:-100},{dy:100},{scale:2},{scale:2,unzoom:true},{multi:true},{cancel:true},{viewport:false}])assert.equal(run(html,options),0,JSON.stringify(options))
-   assert.equal(run(html,{dx:0,dy:130}),compactImage?1:0,'only local image retains its existing down gesture')
+   assert.equal(run(html,{dx:0,dy:130}),0,'vertical pan is never a navigation request')
    h.unmount()
   }
   let closed=0
@@ -132,13 +157,13 @@ async function main(){
   await swipe(gesture(loading));loadingController.closeViewer();assert.equal(closed,1,'loading mask and late WebKit callback share one close gate')
   loading.unmount()
  })
- await test('home/tab gestures unchanged; every cover family keeps its owning back path',async()=>{
+ await test('home/tab gestures unchanged; every route family keeps its owning back path',async()=>{
   const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8')
   for(const p of ['index.tsx','pages/RepoListPage.tsx','pages/SettingsPage.tsx','components/FileChangeSwitcher.tsx'])assert.doesNotMatch(read(p),/simultaneousGesture|useEdgeBack/)
   for(const p of ['DiffPage','CommitDiffPage','CommitDetailPage','GitHubItemDetailPage'])assert.match(read('pages/'+p+'.tsx'),/ImageViewer/)
-  assert.match(read('components/FullScreenNavigation.tsx'),/useEdgeBack\(back, !ownClose\)/)
+  assert.match(read('components/HorizontalNavigation.tsx'),/useEdgeBack\(back, top && !route.closing && !route.destination.ownClose\)/)
   assert.doesNotMatch(read('hooks/useEdgeBack.ts'),/highPriorityGesture|defersSystemGestures/)
  })
- console.log(groups+' edge-back groups passed; native gesture competition, toolbar layout and modal vertical animation require device validation.')
+ console.log(groups+' edge-back groups passed; native gesture competition, toolbar layout and horizontal animation require device validation.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1})

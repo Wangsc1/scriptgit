@@ -1,3 +1,4 @@
+function routeDestination(h,slot=0){return h.routes?.routes.find(r=>r.slot===slot)?.destination || {isPresented:false}}
 /* Real RepoDetailPage -> real LocalImagePreview props/lifecycle. System edge
  * gesture recognition itself is NOT simulated or established by this test. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
@@ -23,7 +24,7 @@ for(const [module,name]of [['useRepoPendingActions','useRepoPendingActions'],['u
 mocks['../utils/format']={suggestCommitTitle:()=>'',shortOid(){}}
 mocks['../components/LocalImagePreview']={LocalImagePreview:ImagePage}
 const Parent=load('pages/RepoDetailPage.tsx',mocks).RepoDetailPage
-function open(parent){parent.render();all(parent.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(original);parent.render();const route=parent.tree.props.fullScreenCover[1];assert.equal(route.isPresented,true);assert.equal(parent.tree.props.fullScreenCover[2].isPresented,false);assert.equal(parent.tree.props.fullScreenCover[0].isPresented,false);assert.equal(route.content.type,ImagePage);return route}
+function open(parent){parent.render();all(parent.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(original);parent.render();const route=routeDestination(parent,1);assert.equal(route.isPresented,true);assert.equal(routeDestination(parent,2).isPresented,false);assert.equal(routeDestination(parent,0).isPresented,false);assert.equal(route.content.type,ImagePage);return route}
 function child(route){const h=mount(route.content.type,route.content.props);assert.equal(h.tree.type,'ZStack');assert.equal(all(h.tree).find(n=>n.type==='ImageViewer').props.sessionId,route.content.props.sessionId);assert.equal(all(h.tree).find(n=>n.type==='ImageViewer').props.onClose,route.content.props.onClose);assert.doesNotMatch(JSON.stringify(h.tree),/图片只读|显示缩略图/);assert.ok(!all(h.tree).some(n=>n.type==='WebView'));return h}
 async function main(){
  global.FileManager=new Proxy({},{get:()=>()=>{sourceWrites++;throw Error('navigation must not touch source')}})
@@ -31,10 +32,10 @@ async function main(){
  const url=h=>all(h.tree).find(n=>n.type==='ImageViewer').props.url;assert.equal(url(image),'data:image/png;base64,FIRST')
  assert.ok(!all(image.tree).some(n=>n.type==='Button'),'no refresh button');assert.doesNotMatch(JSON.stringify(image.tree),/刷新/);assert.equal(route.content.props.onReload,undefined);assert.equal(route.content.props.bookmarkName,undefined)
  // Close via the ImageViewer callback: parent clears the session; a second/stale close cannot reopen.
- const staleClose=route.content.props.onClose;all(image.tree).find(n=>n.type==='ImageViewer').props.onClose();parent.render();assert.equal(parent.tree.props.fullScreenCover[1].isPresented,false);assert.equal(parent.tree.props.fullScreenCover[0].isPresented,false);image.unmount()
- route=open(parent);image=child(route);const nativeDismiss=parent.tree.props.fullScreenCover[1].onChanged;nativeDismiss(false);parent.render();assert.equal(parent.tree.props.fullScreenCover[1].isPresented,false,'system cover dismissal clears state');staleClose();parent.render();assert.equal(parent.tree.props.fullScreenCover[1].isPresented,false,'stale close is inert');image.unmount()
+ const staleClose=route.content.props.onClose;all(image.tree).find(n=>n.type==='ImageViewer').props.onClose();parent.render();assert.equal(routeDestination(parent,1).isPresented,false);assert.equal(routeDestination(parent,0).isPresented,false);image.unmount()
+ route=open(parent);image=child(route);const nativeDismiss=routeDestination(parent,1).onChanged;nativeDismiss(false);parent.render();assert.equal(routeDestination(parent,1).isPresented,false,'system cover dismissal clears state');staleClose();parent.render();assert.equal(routeDestination(parent,1).isPresented,false,'stale close is inert');image.unmount()
  route=open(parent);image=child(route);const detachedClose=route.content.props.onClose;image.unmount();parent.unmount();detachedClose();assert.equal(parent.lateWrites,0);assert.equal(sourceWrites,0);assert.equal(reads,0);assert.equal(mergeLoads,0)
- console.log('PASS actual parent native image destination -> real ImageViewer wiring without refresh -> close/system-dismiss cleanup, stale/unmounted close inert; fullScreenCover system dismissal callback/close button, no custom drag, ImageViewer PNG data URL/close preserved, no editor cover/source access')
- console.log('LIMIT native ImageViewer WebKit zoom, edge-swipe close and downward cover animation need device validation (stub does not prove smoothness)')
+ console.log('PASS actual parent horizontal image destination -> real ImageViewer wiring without refresh -> close/route-cleanup cleanup, stale/unmounted close inert; horizontal route callback, protected ImageViewer edge gesture, ImageViewer PNG data URL/close preserved, no editor route/source access')
+ console.log('LIMIT native ImageViewer WebKit zoom, edge-swipe close and horizontal route animation need device validation (stub does not prove smoothness)')
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{delete global.FileManager})

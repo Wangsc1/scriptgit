@@ -1,6 +1,6 @@
 /* Real commitService + diffService + CommitDetailPage/CommitChangesView on a disposable Git repo; no network, no user repos. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path')
-const {load,mount,mountModal,ui,all,tick,deferred,MockData}=require('./remoteFiles.test.cjs')
+const {load,mount,ui,all,tick,deferred,MockData}=require('./remoteFiles.test.cjs')
 global.self=globalThis
 MockData.fromUint8Array=bytes=>new MockData(bytes)
 global.Device={screen:{width:390}}
@@ -91,7 +91,7 @@ async function main(){try{
  })
  await test('large patch renders bounded lines with link to full diff while counts stay true',async()=>{
   reset();const h=await open(c5);picker(h).props.onChanged('changes');h.render();const node=section(h),c=mount(node.type,node.props);await until(()=>node.props.loader.snapshot().doneCount===1,'huge');c.render()
-  const viewer=all(c.tree).find(n=>n.type==='DiffViewer');assert.equal(viewer.props.diff.lines.length,changes.COMMIT_CHANGES_MAX_RENDER_LINES);assert.equal(node.props.loader.entries[0].added,1000);assert.match(text(c.tree),/\+1000/);const link=all(c.tree).find(n=>typeof n.type==='function'&&n.type.name==='FullScreenLink'&&n.props.destination.props.filepath==='huge.txt'&&n.props.destination.props.oid===c5);assert.ok(link);const route=mount(link.type,{...link.props,children:link.children});assert.equal(route.tree.props.fullScreenCover.isPresented,false);all(route.tree).find(n=>n.type==='Button'&&n.props.buttonStyle==='plain').props.action();route.render();assert.equal(route.tree.props.fullScreenCover.isPresented,true);const cover=route.tree.props.fullScreenCover;assert.equal(cover.content.type,'NavigationStack');mountModal(cover).tree.props.toolbar.topBarLeading.props.action();route.render();assert.equal(route.tree.props.fullScreenCover.isPresented,false);route.unmount();assert.match(text(c.tree),/完整差异/);c.unmount();h.unmount()
+  const viewer=all(c.tree).find(n=>n.type==='DiffViewer');assert.equal(viewer.props.diff.lines.length,changes.COMMIT_CHANGES_MAX_RENDER_LINES);assert.equal(node.props.loader.entries[0].added,1000);assert.match(text(c.tree),/\+1000/);const link=all(c.tree).find(n=>typeof n.type==='function'&&n.type.name==='HorizontalLink'&&n.props.destination.props.filepath==='huge.txt'&&n.props.destination.props.oid===c5);assert.ok(link);const route=mount(link.type,{...link.props,children:link.children});assert.equal(route.routes.routes.length,0);all(route.tree).find(n=>n.type==='Button'&&n.props.buttonStyle==='plain').props.action();route.render();assert.equal(route.routes.routes.length,1);const active=route.routes.routes[0];assert.equal(active.destination.content,link.props.destination);await route.routes.back(active.id);route.render();assert.equal(route.routes.routes.length,0);route.unmount();assert.match(text(c.tree),/完整差异/);c.unmount();h.unmount()
  })
  await test('failure is visible, retry rereads only failed file; persistent failure remains visible',async()=>{
   reset();stats.failOnce.add('c.txt');const h=await open(c2);picker(h).props.onChanged('changes');h.render();const node=section(h),loader=node.props.loader,c=mount(node.type,node.props)

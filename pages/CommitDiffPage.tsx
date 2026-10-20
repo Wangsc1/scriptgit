@@ -1,3 +1,4 @@
+import { useHorizontalDestinations } from "../components/HorizontalNavigation"
 import {
   List,
   Section,
@@ -60,13 +61,7 @@ export function CommitDiffPage({
     if (line.type === "del") deleted++
   }
 
-  return (
-    <List
-      navigationTitle={truncatePath(filepath, 36)}
-      navigationBarTitleDisplayMode="inline"
-      tabBarVisibility="hidden"
-      listStyle="plain"
-      fullScreenCover={{
+  useHorizontalDestinations({
         isPresented: previewUrl != null,
         onChanged: (isPresented) => {
           if (!isPresented) setPreviewUrl(null)
@@ -78,7 +73,14 @@ export function CommitDiffPage({
             onClose={() => setPreviewUrl(null)}
           />
         ) : <></>,
-      }}
+      })
+  return (
+    <List
+      navigationTitle={truncatePath(filepath, 36)}
+      navigationBarTitleDisplayMode="inline"
+      tabBarVisibility="hidden"
+      listStyle="plain"
+
       safeAreaInset={
         diff
           ? {

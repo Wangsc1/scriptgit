@@ -1,3 +1,5 @@
+import { Button, Image } from "scripting"
+import { useHorizontalExit, useHorizontalActive } from "../hooks/useHorizontalRoute"
 import {
   ProgressView,
   Rectangle,
@@ -152,22 +154,13 @@ function buildHTML(url: string, compactImage: boolean): string {
     startX = touch.clientX
     startY = touch.clientY
   }, { passive: true })
-  // All image covers: edge back is handled inside WebKit, never by an outer
+  // Image routes: edge back is handled inside WebKit, never by an outer
   // native drag recognizer that cannot inspect viewport zoom or finger count.
   document.addEventListener("touchmove", function (event) {
     if (event.touches.length > 1) { multiTouch = true; return }
     if (!window.visualViewport || window.visualViewport.scale > 1.01) zoomedDuringTouch = true
     if (multiTouch || pullClosed || zoomedDuringTouch) return
-    var touch = event.touches[0]
-    var dx = touch.clientX - startX
-    var dy = touch.clientY - startY
-    var scale = window.visualViewport ? window.visualViewport.scale : Infinity
-    var edgeBack = startX >= 0 && startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5
-    var pullDown = ${compactImage} && dy > 120 && Math.abs(dx) < dy * 0.5
-    if (scale <= 1.01 && (edgeBack || pullDown)) {
-      pullClosed = true
-      window.webkit.messageHandlers.closeViewer.postMessage(null)
-    }
+    // Track cancellation/zoom only. Navigation waits until the finger lifts.
   }, { passive: true })
   document.addEventListener("touchcancel", function () { multiTouch = true }, { passive: true })
 
@@ -181,7 +174,7 @@ function buildHTML(url: string, compactImage: boolean): string {
     var dy = touch.clientY - startY
     var scale = window.visualViewport ? window.visualViewport.scale : Infinity
     if (!pullClosed && !multiTouch && !zoomedDuringTouch && scale <= 1.01 &&
-      ((startX >= 0 && startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5) || (${compactImage} && dy > 120 && Math.abs(dx) < dy * 0.5))) {
+      (startX >= 0 && startX <= 24 && dx >= 80 && dx > Math.abs(dy) * 1.5)) {
       pullClosed = true
       window.webkit.messageHandlers.closeViewer.postMessage(null)
       return
@@ -213,11 +206,13 @@ export function ImageViewer({
   // 控制器随图片地址重建，避免复用已 dispose 的实例
   const controller = useMemo(() => new WebViewController(), [url, compactImage, sessionId])
   const [webViewReady, setWebViewReady] = useState(false)
+  const isActive = useHorizontalActive()
+  const exit = useHorizontalExit(onClose)
   const closing = useRef(false)
   function close() {
-    if (closing.current) return
+    if (!isActive() || closing.current) return
     closing.current = true
-    onClose()
+    void exit()
   }
   // Only the loading mask has a native gesture. Once WebKit is interactive,
   // exclusively its scale-aware passive touch handlers own image edge back.
@@ -258,6 +253,9 @@ export function ImageViewer({
   return (
     <ZStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+      navigationTitle="图片"
+      navigationBarTitleDisplayMode="inline"
+      toolbar={{ topBarLeading: <Button action={close}><Image systemName="chevron.left" /></Button> }}
       background={compactImage ? LOCAL_IMAGE_BACKGROUND : "black"}
       ignoresSafeArea={{ regions: "all", edges: "all" }}
     >

@@ -1,3 +1,4 @@
+function routeDestination(h,slot=0){return h.routes?.routes.find(r=>r.slot===slot)?.destination || {isPresented:false}}
 /* Actual detail List -> FilesTab callback -> centered Dialog.prompt hook. Native presentation remains unverified. */
 const assert=require('node:assert/strict')
 const {load,ui,mount,all,deferred,tick}=require('./remoteFiles.test.cjs')
@@ -36,14 +37,14 @@ async function main(){
  await tabProps(h).onCopyLink('folder/a.txt');assert.deepEqual(copied,['https://raw.githubusercontent.com/o/r/refs/heads/main/folder/a.txt']);assert.match(errors.pop(),/已复制 Raw 链接/)
  for(const directory of [false,true]){
   input=null;await tabProps(h).onCreateEntry(directory,path=>created.push(path));h.render()
-  assert.equal(h.tree.props.fullScreenCover[3].isPresented,false);assert.equal(prompts.at(-1).title,directory?'创建目录':'创建文件');assert.equal(prompts.at(-1).defaultValue,'');assert.equal(prompts.at(-1).confirmLabel,'创建');assert.equal(calls.length,0);assert.equal(refreshes,0)
+  assert.equal(routeDestination(h,3).isPresented,false);assert.equal(prompts.at(-1).title,directory?'创建目录':'创建文件');assert.equal(prompts.at(-1).defaultValue,'');assert.equal(prompts.at(-1).confirmLabel,'创建');assert.equal(calls.length,0);assert.equal(refreshes,0)
  }
- promptGate=deferred();const pending=tabProps(h).onCreateEntry(false,path=>created.push(path));await tick();h.render();assert.equal(tabProps(h).creationActive,true);assert.equal(h.tree.props.fullScreenCover[3].isPresented,false)
+ promptGate=deferred();const pending=tabProps(h).onCreateEntry(false,path=>created.push(path));await tick();h.render();assert.equal(tabProps(h).creationActive,true);assert.equal(routeDestination(h,3).isPresented,false)
  const count=prompts.length;await tabProps(h).onCreateEntry(true,noop);assert.equal(prompts.length,count)
- data.tab=2;h.render();assert.equal(h.tree.props.fullScreenCover[3].isPresented,false);data.tab=0
+ data.tab=2;h.render();assert.equal(routeDestination(h,3).isPresented,false);data.tab=0
  gate=deferred();refreshGate=deferred();promptGate.resolve('file.ts');await tick();assert.deepEqual(calls.at(-1),['repo','file.ts',false,'/authorized/work']);gate.resolve();await tick();assert.equal(tabProps(h).creationActive,true);refreshGate.resolve();await pending;gate=null;refreshGate=null;promptGate=null
  assert.deepEqual(created,['file.ts']);assert.equal(refreshes,1);assert.equal(tabProps(h).creationActive,false)
- input='Folder';fail=true;await tabProps(h).onCreateEntry(true,path=>created.push(path));assert.match(errors.at(-1),/native write failed/);assert.equal(h.tree.props.fullScreenCover[3].isPresented,false)
+ input='Folder';fail=true;await tabProps(h).onCreateEntry(true,path=>created.push(path));assert.match(errors.at(-1),/native write failed/);assert.equal(routeDestination(h,3).isPresented,false)
  fail=false;await tabProps(h).onCreateEntry(true,path=>created.push(path));assert.deepEqual(calls.at(-1),['repo','Folder',true,'/authorized/work'])
  promptGate=deferred();const detached=tabProps(h).onCreateEntry(false,()=>{throw Error('late created')});await tick();const before=calls.length;h.unmount();promptGate.resolve('detached');await detached;assert.equal(calls.length,before);assert.equal(h.lateWrites,0)
  console.log('PASS actual detail parent owns centered creation prompt: empty default/cancel, no bottom sheet, captured root, busy through refresh, duplicate/error/retry/tab/unmount guards')

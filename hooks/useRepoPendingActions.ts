@@ -52,8 +52,8 @@ type UseRepoPendingActionsProps = {
   loadStashes: () => Promise<void>
   setStashBusy: (busy: boolean) => void
   openAmendSheet: () => void
-  closeCommitSheet: () => void
-  closeRollbackPage: () => void
+  closeCommitSheet: () => void | Promise<void>
+  closeRollbackPage: () => void | Promise<void>
   showAlert: (title: string, message: string) => void
   showToast: (message: string, type?: ToastType, duration?: number) => void
 }
@@ -140,7 +140,7 @@ export function useRepoPendingActions({
     openAmendSheet()
   }
 
-  function handleAmendFormConfirm(titleText: string, descriptionText: string) {
+  async function handleAmendFormConfirm(titleText: string, descriptionText: string) {
     const title = titleText.trim()
     if (!title) {
       setAmendError("提交信息不能为空")
@@ -148,17 +148,17 @@ export function useRepoPendingActions({
     }
     setAmendError(null)
     setAmendMessage(buildCommitMessage(title, descriptionText))
-    closeCommitSheet()
-    // 等 sheet 收起后再弹确认，避免模态叠加导致 alert 不显示
-    setTimeout(() => setPending({ type: "amend" }), 350)
+    await closeCommitSheet()
+    // 水平退场完成后再弹原生确认，表单草稿在退场期间仍挂载。
+    setPending({ type: "amend" })
   }
 
   // 目标分支由回滚页以服务层读取为准后传入（详情页的 branchInfo 可能是页面打开时的旧值）
-  function handleRollbackSelect(entry: CommitEntry, branch: string) {
+  async function handleRollbackSelect(entry: CommitEntry, branch: string) {
     if (guardMergeBusy()) return
     // 关闭选择页，再弹确认
-    closeRollbackPage()
-    setTimeout(() => setPending({ type: "rollback", entry, branch }), 350)
+    await closeRollbackPage()
+    setPending({ type: "rollback", entry, branch })
   }
 
   async function submitAmend() {

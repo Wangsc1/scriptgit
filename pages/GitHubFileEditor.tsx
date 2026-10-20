@@ -1,5 +1,6 @@
+import { useHorizontalExit, useHorizontalActive } from "../hooks/useHorizontalRoute"
 /** 官方 Editor + EditorController；右滑与关闭按钮共用放弃确认，只有提交保存按钮写入远端。 */
-import { Button, Editor, HStack, NavigationStack, Text, TextField, VStack, useEffect, useMemo, useRef, useState } from "scripting"
+import { Button, Editor, HStack, Text, TextField, VStack, useEffect, useMemo, useRef, useState } from "scripting"
 import { saveRepoTextFile } from "../api/githubApi"
 import { GitHubFileSession, type RemoteTextFile } from "../services/githubFileSession"
 import { useEdgeBack } from "../hooks/useEdgeBack"
@@ -21,8 +22,10 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
   const exited = useRef(false)
   useEffect(() => () => { alive.current = false; controller.dispose() }, [controller])
 
+  const isActive = useHorizontalActive()
+  const exit = useHorizontalExit(() => { exited.current = true; onClose() })
   async function close() {
-    if (!alive.current || session.saving || closing.current || exited.current) return
+    if (!isActive() || !alive.current || session.saving || closing.current || exited.current) return
     closing.current = true
     try {
       // 直接读取控制器，不能依赖有约 100ms 延迟的 onContentChanged。
@@ -30,12 +33,12 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
         const discard = await Dialog.confirm({ title: "放弃未保存的修改？", message: "尚未提交到 GitHub 的内容将丢失。可先取消并复制草稿。", confirmLabel: "放弃修改" })
         if (discard !== true) return
       }
-      if (alive.current) { exited.current = true; onClose() }
+      if (alive.current) await exit()
     } finally { closing.current = false }
   }
 
   async function save() {
-    if (!alive.current || session.saving || closing.current || exited.current) return
+    if (!isActive() || !alive.current || session.saving || closing.current || exited.current) return
     setBusy(true)
     setStatus("")
     try {
@@ -48,7 +51,7 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
   }
 
   const backGesture = useEdgeBack(close, !busy)
-  return <NavigationStack>
+  return <>
     <VStack simultaneousGesture={backGesture} navigationTitle={file.path.split("/").pop() || "编辑文件"}
       navigationBarTitleDisplayMode="inline"
       toolbar={{ topBarLeading: <Button title="关闭" action={close} disabled={busy} /> }}>
@@ -63,7 +66,7 @@ export function GitHubFileEditor({ fullName, branch, file, onClose }: {
       {status ? <Text font="caption" foregroundStyle={status.startsWith("已提交") ? "green" : "red"}>{status}</Text> : null}
       {file.text !== null ? <Editor controller={controller} scriptName="scriptgit" showAccessoryView /> : null}
     </VStack>
-  </NavigationStack>
+  </>
 }
 
 function editorExtension(path: string): "tsx" | "ts" | "js" | "jsx" | "txt" | "md" | "css" | "html" | "json" {
