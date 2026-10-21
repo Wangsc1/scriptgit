@@ -320,7 +320,7 @@ export function HistoryTab({
   return (
     <Section
       header={
-        <HistorySearchBar searching={searchBusy} onSearch={onSearch} />
+        <HistorySearchBar title={`提交历史${log.length > 0 ? `（${log.length}）` : ""}`} searching={searchBusy} onSearch={onSearch} />
       }
       footer={
         <VStack alignment="leading" spacing={8}>
