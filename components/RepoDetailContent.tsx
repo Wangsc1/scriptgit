@@ -73,6 +73,7 @@ export function RepoDetailTabContent({
   historyHasMore,
   historySearchBusy,
   historyTotalMatches,
+  historyTotal,
   historyLoading,
   historyLimited,
   githubFullName,
@@ -109,6 +110,7 @@ export function RepoDetailTabContent({
   onLoadMore: () => void | Promise<void>
   historyHasMore: boolean
   historySearchBusy: boolean
+  historyTotal?: number | null
   historyTotalMatches: number | null
   historyLoading: boolean
   historyLimited: boolean
@@ -155,6 +157,7 @@ export function RepoDetailTabContent({
           onLoadMore={onLoadMore}
           hasMore={historyHasMore}
           searchBusy={historySearchBusy}
+          total={historyTotal}
           totalMatches={historyTotalMatches}
           limited={historyLimited}
           githubFullName={githubFullName}

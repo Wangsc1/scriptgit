@@ -559,6 +559,7 @@ export function RepoDetailPage({
         onLoadMore={data.handleHistoryLoadMore}
         historyHasMore={data.historyHasMore}
         historySearchBusy={data.historySearchBusy}
+        historyTotal={data.historyTotal}
         historyTotalMatches={data.historyTotalMatches}
         historyLoading={data.historyLoading}
         historyLimited={data.historyLimited}

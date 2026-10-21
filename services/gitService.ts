@@ -33,6 +33,7 @@ import {
   getLog,
   getLogPage,
   getHistoryCacheStats,
+  getHistoryTotal,
   hasHeadCommit,
   getTrackedFiles,
 } from "./git/statusQueryService"
@@ -587,6 +588,7 @@ export {
   getLog,
   getLogPage,
   getHistoryCacheStats,
+  getHistoryTotal,
   hasHeadCommit,
   getTrackedFiles,
   listRemotes,

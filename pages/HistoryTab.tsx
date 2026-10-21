@@ -240,6 +240,7 @@ export function HistoryTab({
   hasMore,
   searchBusy,
   totalMatches,
+  total,
   limited,
   githubFullName,
 }: {
@@ -255,6 +256,7 @@ export function HistoryTab({
   onLoadMore: () => void
   hasMore: boolean
   searchBusy: boolean
+  total?: number | null
   totalMatches: number | null
   limited: boolean
   githubFullName?: string | null
@@ -320,7 +322,7 @@ export function HistoryTab({
   return (
     <Section
       header={
-        <HistorySearchBar title={`提交历史${log.length > 0 ? `（${log.length}）` : ""}`} searching={searchBusy} onSearch={onSearch} />
+        <HistorySearchBar title={`提交历史${total != null ? `（${total}）` : ""}`} searching={searchBusy} onSearch={onSearch} />
       }
       footer={
         <VStack alignment="leading" spacing={8}>

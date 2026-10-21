@@ -5,7 +5,7 @@
  * 各自的加载函数。首屏只解析 HEAD，Stash、文件、历史首次切 Tab 才加载（P2.47）。
  */
 
-import { useRef, useState } from "scripting"
+import { useEffect, useRef, useState } from "scripting"
 import type {
   BranchInfo,
   CommitEntry,
@@ -17,6 +17,7 @@ import {
   getBranchUpstream,
   getChanges,
   getLogPage,
+  getHistoryTotal,
   getManagedBranches,
   getMergeConflictState,
   getRepoListStatus,
@@ -60,6 +61,10 @@ export function useRepoDetailData({
   const [tab, setTab] = useState<RepoDetailTabIndex>(0)
   const [changes, setChanges] = useState<FileChange[]>([])
   const [stashes, setStashes] = useState<StashEntry[]>([])
+  const historyRequest = useRef({ epoch: 0, alive: true })
+  useEffect(() => () => { historyRequest.current.alive = false; historyRequest.current.epoch++ }, [])
+  const historyTotalHead = useRef<string | undefined>(undefined)
+  const [historyTotal, setHistoryTotal] = useState<number | null>(null)
   const [log, setLog] = useState<CommitEntry[]>([])
   const [hasCommits, setHasCommits] = useState(false)
   const [historyQuery, setHistoryQuery] = useState("")
@@ -130,16 +135,27 @@ export function useRepoDetailData({
   }
 
   async function loadLog(reset = true, query = historyQuery) {
+    const request = ++historyRequest.current.epoch
     const normalizedQuery = reset ? query : historyQuery
     const offset = reset ? 0 : log.length
-    const page = await getLogPage(
+    let page = await getLogPage(
       bookmarkName,
       offset,
       HISTORY_PAGE_SIZE,
       normalizedQuery
     )
+    if (!historyRequest.current.alive || historyRequest.current.epoch !== request) return
+    const headChanged = historyTotalHead.current !== page.headOid
+    if (!reset && headChanged) {
+      page = await getLogPage(bookmarkName, 0, HISTORY_PAGE_SIZE, normalizedQuery)
+      if (!historyRequest.current.alive || historyRequest.current.epoch !== request) return
+    }
+    if (headChanged) {
+      historyTotalHead.current = page.headOid
+      setHistoryTotal(null)
+    }
     setLog((previous) => {
-      if (reset) return page.entries
+      if (reset || headChanged) return page.entries
       const seen = new Set(previous.map((entry) => entry.oid))
       return previous.concat(page.entries.filter((entry) => !seen.has(entry.oid)))
     })
@@ -148,8 +164,15 @@ export function useRepoDetailData({
     setHistoryLimited(!!page.limited)
     setHistoryLoaded(true)
     setHistoryQuery(normalizedQuery)
+    void getHistoryTotal(bookmarkName, page.headOid).then(total => {
+      if (historyRequest.current.alive && historyRequest.current.epoch === request) setHistoryTotal(total)
+    }).catch(() => {
+      if (historyRequest.current.alive && historyRequest.current.epoch === request) setHistoryTotal(null)
+    })
+
     if (reset && normalizedQuery.trim().length === 0) {
-      setHasCommits(await hasHeadCommit(bookmarkName))
+      const exists = await hasHeadCommit(bookmarkName)
+      if (historyRequest.current.alive && historyRequest.current.epoch === request) setHasCommits(exists)
     }
   }
 
@@ -257,6 +280,9 @@ export function useRepoDetailData({
     // 全量刷新时重置懒加载标记
     setStashesLoaded(false)
     setFilesLoaded(false)
+    historyRequest.current.epoch++
+    historyTotalHead.current = undefined
+    setHistoryTotal(null)
     setHistoryLoaded(false)
     setHistoryLimited(false)
     try {
@@ -384,6 +410,7 @@ export function useRepoDetailData({
     hasCommits,
     historyHasMore,
     historyTotalMatches,
+    historyTotal,
     historySearchBusy,
     historyLoading,
     historyLimited,

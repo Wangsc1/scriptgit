@@ -1,6 +1,7 @@
 import type { CommitEntry } from "../types/git"
 
 export interface HistoryPage {
+  headOid?: string
   entries: CommitEntry[]
   hasMore: boolean
   totalMatches: number | null
