@@ -188,6 +188,7 @@ export function RepoDetailPage({
       data.setLastPulledAt(timestamp)
     },
     refreshSyncState: data.refreshSyncState,
+    refreshWorktree: data.refreshChangesAndSnapshot,
     reloadRepo: data.loadAll,
     showToast,
     showConflictNotice,

@@ -28,6 +28,8 @@ type UseRepoSyncActionsProps = {
   makeSyncCancel: (token: RemoteCancelToken) => () => void
   setPulledAt: (branch: string, timestamp: number) => void
   refreshSyncState: () => Promise<void>
+  /** 重新读取真实工作区改动（文件列表/改动页/主页快照）；提交、拉取或推送后工作区状态已变。 */
+  refreshWorktree?: () => Promise<unknown>
   reloadRepo: () => Promise<void>
   showToast: (message: string, type?: ToastType, duration?: number) => void
   /** 合并冲突提醒：先在本页提示，关闭后再由详情页打开冲突页，避免提示被推入的页面遮住 */
@@ -46,6 +48,7 @@ export function useRepoSyncActions({
   makeSyncCancel,
   setPulledAt,
   refreshSyncState,
+  refreshWorktree,
   reloadRepo,
   showToast,
   showConflictNotice,
@@ -119,6 +122,12 @@ export function useRepoSyncActions({
         await refreshSyncState()
       } catch (_e) {
         // 刷新失败不覆盖推送结果
+      }
+      try {
+        // 成功、失败或取消都重读：提交/拉取可能已落盘，列表必须反映真实 Git 状态。
+        await refreshWorktree?.()
+      } catch (_e) {
+        // 刷新失败不覆盖推送结果；下拉刷新仍可重读
       }
       endOpBusy()
     }
