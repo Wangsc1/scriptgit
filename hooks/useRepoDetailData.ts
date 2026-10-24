@@ -133,8 +133,13 @@ export function useRepoDetailData({
   }
 
   async function loadTrackedFiles() {
-    const [files, entries] = await Promise.all([getTrackedFiles(bookmarkName), getWorktreeEntries(bookmarkName)])
+    // HEAD 树只需一次对象读取：先展示已跟踪文件；工作区目录枚举（大量原生调用）并行进行，
+    // 完成后再补充未跟踪文件/空目录。两者都完成才标记 filesLoaded。
+    const entriesTask = getWorktreeEntries(bookmarkName)
+    entriesTask.catch(() => {})
+    const files = await getTrackedFiles(bookmarkName)
     setTrackedFiles(files)
+    const entries = await entriesTask
     setWorktreeEntries(entries)
     setFilesLoaded(true)
   }
@@ -295,6 +300,9 @@ export function useRepoDetailData({
         await initRepo(bookmarkName)
       }
       // 首屏只解析 HEAD，不读取提交列表；Stash、文件、历史按 Tab 懒加载
+      // 文件 Tab 的 HEAD 树/目录枚举与状态矩阵互不依赖，同时启动，不再排在矩阵之后。
+      const lazyTab = tab === 0 ? loadTrackedFiles() : tab === 1 ? loadStashes() : tab === 2 ? loadLog() : Promise.resolve()
+      lazyTab.catch(() => {}) // 错误在下方按原有顺序（状态/分支错误优先）再抛出
       const [currentChanges, headExists] = await Promise.all([
         loadChanges(source, fresh),
         hasHeadCommit(bookmarkName),
@@ -304,10 +312,9 @@ export function useRepoDetailData({
         loadMergeState(),
       ])
       setHasCommits(headExists)
-      // 若当前已在懒加载 Tab，补数据
-      if (tab === 0) await loadTrackedFiles()
-      if (tab === 1) await loadStashes()
-      if (tab === 2) await loadLog()
+      await lazyTab
+      // 页面所需数据已齐：先结束“加载中”，主页快照写入不再阻塞详情页。
+      setLoading(false)
       await getRepoListStatus(bookmarkName, currentChanges.length, { source: `${source}摘要`, reuseWorktreeEntries: tab === 0 })
       return true
     } catch (e: any) {

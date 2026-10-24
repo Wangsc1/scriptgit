@@ -14,6 +14,7 @@ import {
 import type { RenameBranchResult } from "../../types/git"
 import {
   assertWorktreeCleanForCheckout,
+  checkoutWithEmptyDirCleanup,
   forceCheckoutRef,
   getCtx,
   hasAnyCommit,
@@ -33,6 +34,55 @@ function requireAuth(): { username: string; password: string } {
   const auth = getAuth()
   if (!auth) throw new Error("未配置 GitHub Token，请在设置页添加")
   return auth
+}
+
+/** 切换分支的工作区更新范围上限；超过后退回完整 checkout（避免超长路径过滤）。 */
+const MAX_SCOPED_SWITCH_PATHS = 500
+class ScopeTooLarge extends Error {} // 也用于“范围不适合缩小”的退出信号
+
+/**
+ * 当前 HEAD 树与目标分支树之间真正不同的叶子路径（按 oid 与 mode 比较，相同子树整体跳过）。
+ * 无法确定（HEAD 不可解析、目标树读取失败、差异过大）时返回 null，调用方退回完整 checkout。
+ */
+async function changedPathsToBranch(git: any, fs: any, dir: string, gitdir: string, target: string): Promise<string[] | null> {
+  const paths: string[] = []
+  try {
+    await git.walk({
+      fs, dir, gitdir,
+      trees: [git.TREE({ ref: "HEAD" }), git.TREE({ ref: target })],
+      map: async (path: string, [current, next]: any[]) => {
+        if (path === ".") return undefined
+        const currentType = current ? await current.type() : null
+        const nextType = next ? await next.type() : null
+        if (current && next && await current.oid() === await next.oid() && (currentType === "tree" || await current.mode() === await next.mode())) return null
+        // 文件↔目录互换保持原有完整 checkout 的行为（含其既有限制），不在缩小范围的路径上另行处理。
+        if (currentType && nextType && (currentType === "tree") !== (nextType === "tree")) throw new ScopeTooLarge()
+        if ((currentType && currentType !== "tree") || (nextType && nextType !== "tree")) {
+          paths.push(path)
+          if (paths.length > MAX_SCOPED_SWITCH_PATHS) throw new ScopeTooLarge()
+        }
+        return undefined
+      },
+    })
+    return paths
+  } catch (_e) {
+    return null
+  }
+}
+
+/**
+ * 调用前提：assertWorktreeCleanForCheckout 已在同一写屏障内确认工作区与 index 等于 HEAD。
+ * 此时 checkout 只需处理 HEAD→目标的差异路径，结果与完整 force checkout 相同，
+ * 但不再逐个比较未变化的全部文件。任何不确定情况都退回完整 force checkout。
+ */
+async function switchBranchWorktree(git: any, fs: any, dir: string, gitdir: string, name: string): Promise<void> {
+  const paths = await changedPathsToBranch(git, fs, dir, gitdir, name)
+  if (paths === null) return forceCheckoutRef(git, fs, dir, gitdir, name)
+  if (paths.length === 0) {
+    await checkoutWithEmptyDirCleanup(git, fs, { dir, gitdir, ref: name, noCheckout: true })
+    return
+  }
+  await checkoutWithEmptyDirCleanup(git, fs, { dir, gitdir, ref: name, force: true, filepaths: paths })
 }
 
 export async function createBranchInternal(
@@ -72,7 +122,7 @@ export async function checkoutBranchInternal(
     locals = []
   }
   if (locals.includes(name)) {
-    await forceCheckoutRef(git, fs, dir, gitdir, name)
+    await switchBranchWorktree(git, fs, dir, gitdir, name)
     return
   }
 
@@ -98,7 +148,7 @@ export async function checkoutBranchInternal(
     object: remoteOid,
     checkout: false,
   })
-  await forceCheckoutRef(git, fs, dir, gitdir, name)
+  await switchBranchWorktree(git, fs, dir, gitdir, name)
   try {
     await git.setConfig({
       fs,

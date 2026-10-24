@@ -76,7 +76,8 @@ export function useRepoBranchActions({
     if (mutating) return
     try {
       await beginOpBusy("正在切换分支", ref)
-      await checkoutBranch(bookmarkName, ref)
+      // 随后的 reloadRepo 会重读状态并写主页快照，写屏障内不再重复扫描。
+      await checkoutBranch(bookmarkName, ref, { refreshSnapshot: false })
       await reloadRepo()
       showToast(`已切换到 ${ref}`, "success")
     } catch (error: any) {

@@ -275,13 +275,22 @@ export async function createBranch(
   )
 }
 
+/** refreshSnapshot=false：成功后调用方会做完整详情刷新（其末尾已写主页快照），不重复全仓扫描；失败仍刷新快照。 */
 export async function checkoutBranch(
   bookmarkName: string,
-  ref: string
+  ref: string,
+  options?: { refreshSnapshot?: boolean }
 ): Promise<void> {
-  return runRepoMutation(bookmarkName, () =>
-    checkoutBranchInternal(bookmarkName, ref)
-  )
+  if (options?.refreshSnapshot !== false) {
+    return runRepoMutation(bookmarkName, () => checkoutBranchInternal(bookmarkName, ref))
+  }
+  try {
+    await runRepoMutation(bookmarkName, () => checkoutBranchInternal(bookmarkName, ref), false)
+  } catch (error) {
+    // 失败路径没有后续刷新：保持原有行为，仍更新主页快照（可能已部分写入）。
+    await refreshRepoSnapshot(bookmarkName)
+    throw error
+  }
 }
 
 /** 删除本地分支（不能删当前分支） */
