@@ -1,5 +1,4 @@
 import { Button, DisclosureGroup, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
-import { fileTreeRowTransition } from "../utils/fileTreeAnimation"
 import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
 import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
@@ -65,7 +64,7 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
     }
     swipeActions.push(<Button key="delete" title="删除" tint="systemRed" disabled={busy || deleted} action={() => remove(node.path)} />)
     return (
-      <Button transition={fileTreeRowTransition} action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
+      <Button action={() => open(node.path)} disabled={busy || deleted} frame={{ maxWidth: Infinity, alignment: "leading" }} contextMenu={{ menuItems: <>
         <Button title="重命名" disabled={busy || deleted} action={() => manage(node.path, "rename")} />
         <Button title="复制文件" disabled={busy || deleted} action={() => manage(node.path, "copy")} />
         <Button title="复制链接" disabled={busy || deleted || !copyLink} action={() => copyLink?.(node.path)} />
@@ -103,7 +102,7 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
   // Scope swipe actions to the folder label; attaching to DisclosureGroup also decorates descendant rows.
   // Target the full-width visible label, not DisclosureGroup's expandable subtree.
   // Official contentShape interaction/rect: /guide/View%20Modifiers/contentShape.md
-  return <DisclosureGroup transition={fileTreeRowTransition} contextMenu={{ menuItems: <>
+  return <DisclosureGroup contextMenu={{ menuItems: <>
     <Button title="重命名" disabled={busy} action={() => manage(node.path, "rename", true)} />
     <Button title="复制文件夹" disabled={busy} action={() => manage(node.path, "copy", true)} />
   </> }} isExpanded={expanded.has(node.path)} onChanged={value => toggleExpanded(node.path, value)} label={<HStack trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }} frame={{ maxWidth: Infinity, alignment: "leading" }} contentShape={{ kind: "interaction", shape: "rect" }} alignment="center" spacing={10}>

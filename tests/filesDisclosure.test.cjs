@@ -18,12 +18,6 @@ const FilesTab=load('pages/FilesTab.tsx',{
  assert.ok(!nodes().some(n=>n.type==='Text'&&n.children.includes('加载中…')))
  assert.equal(nodes().find(n=>n.type==='Menu').props.disabled,true)
  assert.equal(nodes().filter(n=>n.type==='DisclosureGroup').length,3);assert.equal(reads.length,0)
- // Both folder and file row roots use the same local identity transition;
- // the native DisclosureGroup still owns expansion, height and chevron animation.
- for(const row of nodes().filter(n=>n.type==='DisclosureGroup'||n.type==='Button'&&n.props.trailingSwipeActions)){
-   assert.deepEqual(row.props.transition,{kind:'identity'})
-   assert.equal(row.props.animation,undefined)
- }
  const initiallyBuilt=keys().map(([t,k])=>[t,k])
  assert.deepEqual(initiallyBuilt.map(([t,k])=>k),['a','a/deep','a/deep/one.txt','b','b/two.txt'])
  const subtitleRows=()=>nodes().filter(n=>n.type==='Text'&&n.props.font==='caption2'&&n.props.lineLimit===1)

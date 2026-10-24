@@ -1,8 +1,6 @@
 import { Button, DisclosureGroup, HStack, Image, List, Section, Text, useEffect, useRef, useState } from "scripting"
 
-import { fileTreeRowTransition } from "../utils/fileTreeAnimation"
-
-const MODES = ["① 官方非受控", "② 官方受控", "③ 递归受控", "④ 递归＋异步更新", "⑤ 局部取消淡化（生产方案）"]
+const MODES = ["① 官方非受控", "② 官方受控", "③ 递归受控", "④ 递归＋异步更新"]
 type Node = { path: string; name: string; children: Node[] }
 // Synthetic folders only. No repository, filesystem, Storage or network dependencies.
 const TREE: Node[] = [
@@ -12,11 +10,11 @@ const TREE: Node[] = [
   { path: "docs", name: "docs", children: ["guide", "reference"].map(name => ({ path: "docs/" + name, name, children: [] })) },
 ]
 
-function DiagnosticTreeRow({ node, expanded, toggle, corrected = false }: { node: Node; expanded: Set<string>; corrected?: boolean; toggle(path: string, value: boolean): void }) {
-  return <DisclosureGroup transition={corrected ? fileTreeRowTransition : undefined} isExpanded={expanded.has(node.path)} onChanged={value => toggle(node.path, value)} label={<HStack spacing={10}>
+function DiagnosticTreeRow({ node, expanded, toggle }: { node: Node; expanded: Set<string>; toggle(path: string, value: boolean): void }) {
+  return <DisclosureGroup isExpanded={expanded.has(node.path)} onChanged={value => toggle(node.path, value)} label={<HStack spacing={10}>
     <Image systemName="folder" foregroundStyle="secondaryLabel" /><Text>{node.name}</Text>
   </HStack>}>
-    {node.children.map(child => <DiagnosticTreeRow key={child.path} node={child} expanded={expanded} toggle={toggle} corrected={corrected} />)}
+    {node.children.map(child => <DiagnosticTreeRow key={child.path} node={child} expanded={expanded} toggle={toggle} />)}
   </DisclosureGroup>
 }
 
@@ -60,7 +58,7 @@ export function FolderAnimationDiagnosticGroup({ mode }: { mode: number }) {
           <DisclosureGroup title="bot"><DisclosureGroup title="one" /><DisclosureGroup title="two" /></DisclosureGroup>
         </DisclosureGroup>
         <DisclosureGroup title="docs"><DisclosureGroup title="guide" /><DisclosureGroup title="reference" /></DisclosureGroup>
-      </> : TREE.map(node => <DiagnosticTreeRow key={node.path} node={node} expanded={state.expanded} toggle={toggle} corrected={mode === 4} />)}
+      </> : TREE.map(node => <DiagnosticTreeRow key={node.path} node={node} expanded={state.expanded} toggle={toggle} />)}
     </Section>
   </>
 }
@@ -69,7 +67,7 @@ export function FolderAnimationDiagnosticsPage() {
   const [mode, setMode] = useState(0)
   return <List navigationTitle="文件夹动画诊断" navigationBarTitleDisplayMode="inline">
     <Section>
-      <Text>先对比③与⑤，每组将 app 展开、收拢三次并录屏。①至④保留作原方案对照。切组重置；左上返回。</Text>
+      <Text>依次选①至④，每组将 app 展开、收拢三次并录屏。切组会重置；左上返回。</Text>
       <Text font="caption">仅固定假数据，不访问仓库。①不统计点击，避免干扰原生行为。</Text>
       {MODES.map((title, index) => <Button key={title} title={(index === mode ? "✓ " : "") + title} action={() => { if (index !== mode) setMode(index) }} />)}
     </Section>
