@@ -15,6 +15,7 @@ function load(relative, mocks = {}) {
   const mod = { exports: {} }
   const req = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '../utils/fileTreeAnimation') return load('utils/fileTreeAnimation.ts', { scripting: ui })
     throw new Error('Unmocked dependency: ' + name)
   }
   new Function('require', 'module', 'exports', result.outputText)(req, mod, mod.exports)
@@ -53,6 +54,7 @@ global.__fragment = 'Fragment'
 global.__jsx = (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(x => x !== null && x !== false && x !== undefined) })
 let active
 const ui = new Proxy({}, { get(_, name) {
+  if (name === 'Transition') return { identity: () => ({ kind: 'identity' }) }
   if (name === 'useColorScheme') return () => 'light'
   if (name === 'MagnifyGesture') return minScaleDelta => ({ kind: 'magnify', minScaleDelta,
     onChanged(fn) { this.changed = fn; return this }, onEnded(fn) { this.ended = fn; return this } })

@@ -2,8 +2,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const {load,mount,ui,all}=require('./remoteFiles.test.cjs')
 const root=path.join(__dirname,'..'),file='pages/FolderAnimationDiagnosticsPage.tsx',source=fs.readFileSync(path.join(root,file),'utf8')
-assert.deepEqual([...source.matchAll(/from "([^"]+)"/g)].map(m=>m[1]),['scripting'])
-assert.doesNotMatch(source.replace(/\/\/.*$/gm, ""),/\b(FileManager|Storage|fetch|gitService|repoStore|transition|withAnimation|navigationBarBackButtonHidden)\b/)
+assert.deepEqual([...source.matchAll(/from "([^"]+)"/g)].map(m=>m[1]),['scripting','../utils/fileTreeAnimation'])
+assert.doesNotMatch(source.replace(/\/\/.*$/gm, ""),/\b(FileManager|Storage|fetch|gitService|repoStore|withAnimation|navigationBarBackButtonHidden)\b/)
 let writes=0
 const observed=new Proxy(ui,{get(t,k){if(k!=='useState')return t[k];return initial=>{const [v,set]=t.useState(initial);return [v,next=>{writes++;set(next)}]}}})
 const diagnostic=load(file,{scripting:observed})
@@ -41,19 +41,29 @@ try{
  assert.match(count(groups[3]),/额外更新：\s*1\s*次/)
  assert.equal(groups[3].slots[0].extra.size,0)
  // Independent groups do not touch parent selection or each other's expansion/counters.
+ for(const h of groups.slice(0,4)) assert.ok(all(tree(h)).filter(n=>n.type==='DisclosureGroup').every(n=>n.props.transition===undefined))
  assert.equal(app(groups[2]).props.isExpanded,false);assert.equal(app(groups[1]).props.isExpanded,true)
  assert.match(count(groups[1]),/额外更新：\s*0\s*次/)
  app(groups[3]).props.onChanged(false);assert.equal(timers.size,1)
  const queued=[...timers.values()];groups[3].unmount();assert.equal(timers.size,0)
  queued.forEach(fn=>fn());assert.equal(groups[3].lateWrites,0)
  groups.slice(0,3).forEach(h=>h.unmount())
+ const corrected=mount(diagnostic.FolderAnimationDiagnosticGroup,{mode:4})
+ for(const row of all(tree(corrected)).filter(n=>n.type==='DisclosureGroup')){
+   assert.deepEqual(row.props.transition,{kind:'identity'})
+   assert.equal(row.props.animation,undefined)
+ }
+ writes=0;app(corrected).props.onChanged(true);assert.equal(writes,1);assert.equal(timers.size,0)
+ app(corrected).props.onChanged(false);assert.match(count(corrected),/app 展开：1 次/)
+ assert.equal(all(tree(corrected)).filter(n=>n.type==='DisclosureGroup').length,13)
+ corrected.unmount()
  const page=mount(diagnostic.FolderAnimationDiagnosticsPage,{})
  assert.equal(page.tree.type,'List');assert.equal(page.tree.props.navigationTitle,'文件夹动画诊断')
  assert.equal(page.tree.props.toolbar,undefined);assert.equal(page.tree.props.navigationBarBackButtonHidden,undefined)
  const selected=()=>{page.render();return all(page.tree).find(n=>n.type===diagnostic.FolderAnimationDiagnosticGroup)}
  assert.equal(selected().props.key,0)
  const buttons=()=>all(page.tree).filter(n=>n.type==='Button')
- assert.equal(buttons().length,4);buttons()[3].props.action();assert.equal(selected().props.mode,3);assert.equal(selected().props.key,3)
+ assert.equal(buttons().length,5);buttons()[3].props.action();assert.equal(selected().props.mode,3);assert.equal(selected().props.key,3)
  buttons()[1].props.action();assert.equal(selected().props.key,1)
  const fresh=mount(diagnostic.FolderAnimationDiagnosticGroup,{mode:1});assert.equal(app(fresh).props.isExpanded,false);assert.match(count(fresh),/app 展开：0 次/);fresh.unmount();page.unmount()
 }finally{global.setTimeout=realSet;global.clearTimeout=realClear}
@@ -93,4 +103,4 @@ h.tree.props.navigationDestination.onChanged(false);h.render();assert.equal(h.tr
 h.tree.props.onAppear();assert.equal(loads,0);assert.equal(mergeReads,0)
 data.githubFullName='owner/repo';assert.deepEqual(menu().filter(n=>n.type==='Button').map(n=>n.props.title),['文件夹动画诊断','Edit Remote Files','Issues','Pull Requests','Actions'])
 h.unmount()
-console.log('PASS four fixed-data isolated diagnostic groups, native uncontrolled, keyed recursive structure, exact extra empty Map update, timer cleanup, reset, real detail menu/navigation/native back contract; no device frames asserted')
+console.log('PASS five fixed-data isolated diagnostic groups, shared production identity transition without disabling parent animation, native uncontrolled, keyed recursive structure, exact extra empty Map update, timer cleanup, reset, real detail menu/navigation/native back contract; no device frames asserted')
