@@ -40,23 +40,23 @@ async function main() {
   await tick()
   const nodes = () => { h.render(); return all(expand(h.tree)) }
   let rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 10)
-  assert.equal(rows.filter(n => n.props.trailingSwipeActions && n.type === 'Button').length, 0)
+  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20)
+  assert.equal(rows.filter(n => n.props.trailingSwipeActions && n.type === 'Button').length, 5000)
   assert.equal(statCalls, 0)
   rows.find(n => n.type === 'DisclosureGroup').props.onChanged(true)
   rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 11)
+  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20)
   rows.filter(n => n.type === 'DisclosureGroup')[1].props.onChanged(true)
   rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 500)
+  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 5000)
   rows.find(n => n.type === 'DisclosureGroup').props.onChanged(false)
   // Previously opened content stays attached for the native collapse animation.
   rows = nodes()
   assert.equal(rows.find(n => n.type === 'DisclosureGroup').props.isExpanded, false)
-  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 500)
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 11) // unopened folders still lazy
+  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 5000)
+  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20) // all folders present even before first expansion
   h.unmount()
-  console.log('PASS 5000文件首次展开惰性行、收拢保留动画内容、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
+  console.log('PASS 5000文件稳定完整子行、原生展开收拢内容不变、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
 
   let writes = 0, reads = 0, running = 0, maxReads = 0
   const observedUi = new Proxy(ui, { get(target, key) {

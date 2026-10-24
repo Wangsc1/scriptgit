@@ -27,7 +27,7 @@ function statusBadge(status: FileChange["status"], unstaged?: boolean): { text: 
 
 
 /** 文件列表：左滑 提交(push)/还原/删除 */
-function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove, manage, displayChanges, renameHints, addedHints, addedDirectories, directoryRestorePaths, deletedDirectories, changesByPath, changedDirectories, expanded, mountedFolders, toggleExpanded, metadata, onPush, onStage, onRestore, mergeInProgress }: { node: FileTreeNode; copyLink?: (path: string) => void | Promise<void>; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; displayChanges: Map<string, FileChange>; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; directoryRestorePaths: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; mountedFolders: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onStage: (filepaths: string[]) => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void; mergeInProgress: boolean }) {
+function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove, manage, displayChanges, renameHints, addedHints, addedDirectories, directoryRestorePaths, deletedDirectories, changesByPath, changedDirectories, expanded, toggleExpanded, metadata, onPush, onStage, onRestore, mergeInProgress }: { node: FileTreeNode; copyLink?: (path: string) => void | Promise<void>; moveTo: (path: string) => void; open: (path: string) => void; removed: Set<string>; busy: boolean; remove: (path: string, directory?: boolean) => void; manage: (path: string, kind: "copy" | "rename", directory?: boolean) => void; displayChanges: Map<string, FileChange>; renameHints: Set<string>; addedHints: Set<string>; addedDirectories: Set<string>; directoryRestorePaths: Set<string>; deletedDirectories: Set<string>; changesByPath: Map<string, FileChange>; changedDirectories: Set<string>; expanded: Set<string>; toggleExpanded: (path: string, value: boolean) => void; metadata: Map<string, { size: number; modified: number }>; onPush: () => void | Promise<void>; onStage: (filepaths: string[]) => void | Promise<void>; onRestore: (filepath: string, filepaths?: string[], directory?: boolean) => void; mergeInProgress: boolean }) {
   if (node.type === "file") {
     const deleted = removed.has(node.path)
     const change = changesByPath.get(node.path)
@@ -76,14 +76,16 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
             <Text font="body" foregroundStyle={deleted ? COLOR_SECONDARY_LABEL : COLOR_LABEL} lineLimit={1}>{node.name}</Text>
             {badge ? <Text font="caption2" foregroundStyle={badge.color as any}>{badge.text}</Text> : null}
           </HStack>
-          {metaParts.length > 0 ? <Text font="caption2" foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，")}</Text> : null}
+          {/* Reserve the subtitle line before async metadata arrives; otherwise expansion
+              is followed by a second row-height change. Single line also avoids wrapping. */}
+          <Text font="caption2" lineLimit={1} foregroundStyle={COLOR_SECONDARY_LABEL}>{metaParts.join("，") || " "}</Text>
         </VStack>
       </Button>
     )
   }
-  // DisclosureGroup owns hiding/animating its content. Build lazily on first open,
-  // but never remove that content on collapse: it is needed by the native transition.
-  // Nested expansion remains path-controlled in FilesTab, including inventory refreshes.
+  // Keep the full keyed content stable, even BEFORE the first expansion.
+  // DisclosureGroup owns visibility/animation; inserting children on the same
+  // isExpanded update changes the native transition's content underneath it.
   // 文件夹「暂存」：将其下所有改动路径保存到 Stash。
   const changesUnder = (directory: string) => [...changesByPath.keys()].filter(path => path.startsWith(directory + "/"))
   const hasChanges = [...changesByPath.keys()].some(path => path.startsWith(node.path + "/"))
@@ -107,7 +109,7 @@ function FileTreeNodeView({ node, copyLink, moveTo, open, removed, busy, remove,
     <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
     {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
   </HStack>}>
-    {mountedFolders.has(node.path) || expanded.has(node.path) ? node.children.map(child => <FileTreeNodeView key={child.path} node={child} copyLink={copyLink} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} mountedFolders={mountedFolders} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />) : null}
+    {node.children.map(child => <FileTreeNodeView key={child.path} node={child} copyLink={copyLink} moveTo={moveTo} open={open} removed={removed} busy={busy} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={onRestore} mergeInProgress={mergeInProgress} />)}
   </DisclosureGroup>
 }
 
@@ -125,9 +127,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
   onCreateEntry: (directory: boolean, onCreated: (path: string) => void) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const mountedFolders = useRef(new Set<string>())
   function toggleExpanded(path: string, value: boolean) {
-    if (value) mountedFolders.current.add(path)
     setExpanded(previous => {
       const next = new Set(previous)
       if (value) next.add(path)
@@ -538,6 +538,6 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     </Menu>
   </HStack>}>
     {error ? <Text foregroundStyle="red">{error}</Text> : null}
-    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} copyLink={onCopyLink} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} mountedFolders={mountedFolders.current} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={restore} mergeInProgress={mergeInProgress} />)}
+    {tree.length === 0 && !loading ? <Text foregroundStyle={COLOR_SECONDARY_LABEL}>当前工作区没有文件</Text> : tree.map(node => <FileTreeNodeView key={node.path} node={node} copyLink={onCopyLink} moveTo={moveTo} open={open} removed={removed} busy={busy || loading || mergeInProgress || creationActive} remove={remove} manage={manage} displayChanges={displayChanges} renameHints={renameHints} addedHints={addedHints} addedDirectories={addedDirectories} directoryRestorePaths={directoryRestorePaths} deletedDirectories={deletedDirectories} changesByPath={changesByPath} changedDirectories={changedDirectories} expanded={expanded} toggleExpanded={toggleExpanded} metadata={metadata} onPush={onPush} onStage={onStage} onRestore={restore} mergeInProgress={mergeInProgress} />)}
   </Section>
 }

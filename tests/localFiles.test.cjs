@@ -391,7 +391,8 @@ async function main(){
    {filepath:'deleted.jpg',status:'*deleted',worktreeDeleted:true},
   ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));// This test selects rows by basename, so traverse only native-visible content.
+   return {...n,children:(n.type==='DisclosureGroup'&&!n.props.isExpanded?[]:n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
   function folder(name){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
   function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}

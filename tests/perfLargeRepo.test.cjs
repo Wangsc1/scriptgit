@@ -52,6 +52,25 @@ async function main(){
   h.unmount();console.log('PASS enter detail: tracked list first, loading ends before snapshot, one scan + one inventory',{opsReadDirectory:ops['FM.readDirectory'],matrix:ops['git.statusMatrix']})
  }finally{S.cleanup()}}
 
+ // Stable native DisclosureGroup content on a real 1450-file repository: construction is JS-only.
+ {const S=setup();try{
+  const {all}=require('./remoteFiles.test.cjs'),{performance}=require('node:perf_hooks')
+  const files=await S.load('services/gitService.ts').getTrackedFiles('repo')
+  const FilesTab=S.load('pages/FilesTab.tsx').FilesTab
+  function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
+  S.reset();const t0=performance.now()
+  const h=S.mount(FilesTab,{files,changes:[],bookmarkName:'repo',loading:false,onOpen(){},onWorktreeChanged(){},onPush(){},onStage(){},onRestore(){},onCreateEntry(){},mergeInProgress:false})
+  const rows=all(expand(h.tree)),buildMs=performance.now()-t0
+  assert.equal(rows.filter(n=>n.type==='Button'&&n.props.trailingSwipeActions).length,files.length)
+  const folders=rows.filter(n=>n.type==='DisclosureGroup');assert.ok(folders.length>400);assert.ok(folders.every(n=>n.props.isExpanded===false))
+  await S.tick();h.render();await S.tick()
+  const ops=S.snap();assert.equal(ops['FM.stat'],1,'only root .gitignore metadata, NOT all prebuilt files')
+  for(const k of ['FM.readDirectory','FM.readAsData','FM.readAsString','fs.readFile','fs.readdir','git.statusMatrix'])assert.equal(ops[k]||0,0,'building full rows has no extra '+k)
+  const times=[];for(let i=0;i<5;i++){const t=performance.now();h.render();expand(h.tree);times.push(+(performance.now()-t).toFixed(1))}
+  console.log('PASS stable full disclosure: real Git HEAD files, zero extra file-content/directory reads',{files:files.length,folders:folders.length,firstJsBuildMs:+buildMs.toFixed(1),rerenderJsMs:times,metadataStats:ops['FM.stat']})
+  h.unmount()
+ }finally{S.cleanup()}}
+
  // ===================== C. branch switch: scoped worktree update == full force checkout, much fewer operations, protections intact
  {const S=setup();try{
   const svc=S.load('services/gitService.ts');const {git,fs:cfs,dir,gitdir}=S.ctx
