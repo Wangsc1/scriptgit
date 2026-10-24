@@ -82,6 +82,7 @@ import {
 import {
   cloneInternal,
   fetchRemoteInternal,
+  syncOriginBranchesInternal,
   pushInternal,
   setOriginAndPushInternal,
   type CloneOptions,
@@ -491,6 +492,17 @@ export async function fetchRemote(
     runRepoMutation(bookmarkName, () =>
       fetchRemoteInternal(bookmarkName, remote, ref, prune, options)
     )
+  )
+}
+
+/** 刷新仓库页时同步 origin 分支元数据（仅 refs/remotes/origin）；不改写本地分支和工作区。
+ * 仍走仓库写锁；快照由随后的详情刷新统一更新。 */
+export async function syncOriginBranches(
+  bookmarkName: string,
+  options?: RemoteOpOptions
+): Promise<boolean> {
+  return runWithBackgroundKeepAlive(() =>
+    runRepoMutation(bookmarkName, () => syncOriginBranchesInternal(bookmarkName, options, 60), false)
   )
 }
 

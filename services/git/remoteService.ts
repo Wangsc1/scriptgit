@@ -192,13 +192,15 @@ export async function fetchRemoteInternal(
   remote = "origin",
   ref?: string,
   prune = false,
-  options?: RemoteOpOptions
+  options?: RemoteOpOptions,
+  timeoutSeconds?: number,
+  remoteRef?: string
 ): Promise<void> {
   const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
   checkRemoteCancelled(options)
   await emitRemoteProgress(options, "Connecting")
   const auth = requireAuth()
-  const http = createHttpTransport(auth.username, auth.password)
+  const http = createHttpTransport(auth.username, auth.password, timeoutSeconds ? { timeout: timeoutSeconds } : undefined)
   await git.fetch({
     fs,
     dir,
@@ -207,12 +209,28 @@ export async function fetchRemoteInternal(
     onAuth: () => auth,
     remote,
     ref,
+    remoteRef,
     singleBranch: false,
     tags: false,
     prune,
     onProgress: createGitOnProgress(options),
   })
   checkRemoteCancelled(options)
+}
+
+/** 只更新 refs/remotes/origin/*：抓取全部远端分支并 prune 远端已删除的记录。
+ * 不快进、不合并、不碰工作区/本地分支/分支配置；无 origin 时不联网并返回 false。 */
+export async function syncOriginBranchesInternal(
+  bookmarkName: string,
+  options?: RemoteOpOptions,
+  timeoutSeconds?: number
+): Promise<boolean> {
+  const { git, fs, dir, gitdir } = await getCtx(bookmarkName)
+  const remotes = (await git.listRemotes({ fs, dir, gitdir })) as { remote: string }[]
+  if (!remotes.some((item) => item.remote === "origin")) return false
+  // remoteRef=HEAD：不依赖当前分支的 upstream（该分支被远端删除时引擎会因找不到它而中止抓取）。
+  await fetchRemoteInternal(bookmarkName, "origin", undefined, true, options, timeoutSeconds, "HEAD")
+  return true
 }
 
 export async function cloneInternal(

@@ -29,6 +29,9 @@ import {
   listRemotes,
   listStashes,
   statusRevision,
+  syncOriginBranches,
+  RemoteCancelToken,
+  isRemoteOperationCancelled,
 } from "../services/gitService"
 import { findRepo, getRepoLastPulledAt } from "../services/repoStore"
 import { relativeTime } from "../utils/format"
@@ -63,6 +66,8 @@ export function useRepoDetailData({
   const [stashes, setStashes] = useState<StashEntry[]>([])
   const historyRequest = useRef({ epoch: 0, alive: true })
   useEffect(() => () => { historyRequest.current.alive = false; historyRequest.current.epoch++ }, [])
+  const originSync = useRef({ alive: true, pending: null as Promise<"synced" | "skipped" | "aborted"> | null, token: null as RemoteCancelToken | null })
+  useEffect(() => () => { originSync.current.alive = false; originSync.current.token?.cancel() }, [])
   const historyTotalHead = useRef<string | undefined>(undefined)
   const [historyTotal, setHistoryTotal] = useState<number | null>(null)
   const [log, setLog] = useState<CommitEntry[]>([])
@@ -385,6 +390,30 @@ export function useRepoDetailData({
   }
 
   // 远端配置变更后刷新远端、分支与 upstream
+  /** 仅用户主动刷新时调用：获取 origin 新分支并清理远端已删除记录；失败保留旧列表。
+   * 重复调用共用同一请求；卸载取消。分支列表由随后的 loadAll 从 refs 重读。 */
+  function syncOriginBranchRefs(): Promise<"synced" | "skipped" | "aborted"> {
+    const state = originSync.current
+    if (state.pending) return state.pending
+    const token = new RemoteCancelToken()
+    state.token = token
+    const pending = (async () => {
+      try {
+        const changed = await syncOriginBranches(bookmarkName, { cancelToken: token })
+        return state.alive ? (changed ? "synced" : "skipped") : "aborted"
+      } catch (error: any) {
+        if (!state.alive) return "aborted"
+        if (!isRemoteOperationCancelled(error)) showToast("远端分支同步失败，仍显示本机已有记录：" + String(error?.message || error), "warning")
+        return "skipped"
+      } finally {
+        state.pending = null
+        state.token = null
+      }
+    })()
+    state.pending = pending
+    return pending
+  }
+
   async function refreshRemoteConfig() {
     await Promise.all([loadRemote(), loadBranches(), loadUpstream()])
     refreshMeta()
@@ -450,6 +479,7 @@ export function useRepoDetailData({
     refreshHistoryIfLoaded,
     refreshSyncState,
     refreshRemoteConfig,
+    syncOriginBranchRefs,
     handleTabChange,
     handleHistorySearch,
     handleHistoryLoadMore,

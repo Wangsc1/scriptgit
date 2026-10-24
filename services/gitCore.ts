@@ -412,7 +412,7 @@ async function reportHttpProgress(
 export function createHttpTransport(
   username?: string,
   password?: string,
-  options?: { confirmPhase?: string }
+  options?: { confirmPhase?: string; timeout?: number }
 ) {
   return {
     async request({ url, method, headers, body, onProgress }: any) {
@@ -461,6 +461,7 @@ export function createHttpTransport(
         method: method || "GET",
         headers: fetchHeaders,
         body: fetchBody,
+        ...(options?.timeout ? { timeout: options.timeout } : {}),
       })
 
       // 服务端返回 content-length 时为总字节数；chunked 传输返回 -1，此时总量未知

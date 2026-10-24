@@ -241,6 +241,8 @@ export function RepoDetailPage({
   async function handleRefresh() {
     // 写操作完成后已有统一刷新，此时不再并发读取其它 Tab 的中间状态。
     if (mutating) return
+    // 仅手动下拉才联网同步 origin 分支；失败只提示，普通刷新继续。
+    if ((await data.syncOriginBranchRefs()) === "aborted") return
     await data.loadAll("详情下拉", true)
   }
 
