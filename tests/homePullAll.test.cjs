@@ -5,6 +5,7 @@ function page(rows, pull, refresh, refreshOne = () => {}, overrides = {}) {
   const scripting = new Proxy(ui, { get(target, key) { return key === 'Navigation' ? { useDismiss: () => () => {} } : target[key] } })
   return load('pages/RepoListPage.tsx', {
     scripting,
+    '../services/cloneRemoval': { planCloneRemoval: () => ({ ok: false, reason: 'test' }), cloneRemovalAlert: () => ({}), identityOf: r => r },
     '../services/repoStore': { listRepos: () => rows, sourceLabel: () => '' },
     '../services/gitService': { autoPullFastForward: pull },
     '../components/BusyOverlay': {}, '../components/CommitMessageSheet': { CommitMessageSheet: 'CommitMessageSheet' }, '../utils/format': { buildCommitMessage: (title, description) => { const head = title.trim(), body = (description || '').trim(); return body ? `${head}\n\n${body}` : head } }, './RepoDetailPage': {}, './ClonePage': {},

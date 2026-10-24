@@ -28,7 +28,7 @@ function hookEnv(keys,read,snapshot=async()=>({})){
 function readPage(e){
   const scripting=new Proxy(ui,{get:(t,key)=>key==='Navigation'?{useDismiss:()=>()=>{}}:t[key]})
   return load('pages/RepoListPage.tsx',{
-    scripting,'../services/repoStore':{listRepos:()=>e.repos,sourceLabel:()=> '克隆'},'../services/gitService':{},
+    scripting,'../services/repoStore':{listRepos:()=>e.repos,sourceLabel:()=> '克隆'},'../services/gitService':{},'../services/cloneRemoval':{planCloneRemoval:()=>({ok:false,reason:'t'}),cloneRemovalAlert:()=>({}),identityOf:r=>r},
     '../components/BusyOverlay':{BusyOverlay:'BusyOverlay'},'../components/CommitMessageSheet':{CommitMessageSheet:'CommitMessageSheet'},'../utils/format':{buildCommitMessage:t=>t},'./RepoDetailPage':{RepoDetailPage:'RepoDetailPage'},'./ClonePage':{ClonePage:'ClonePage'},'./GitHubFilesPage':{GitHubFilesPage:'GitHubFilesPage'},
     '../constants/colors':load('constants/colors.ts'),'../utils/mergeConflict':{formatRepoListMergeSummary:()=>null},'../utils/github':{githubRepoFromRemoteUrl:()=>null},'../utils/remoteProgress':{},'../utils/repoSort':{sortReposByGithubUpdated:r=>r},
     '../hooks/useRepoListStatus':{useRepoListStatus:e.hook},'../utils/repoDetailAlerts':load('utils/repoDetailAlerts.ts',{'./format':{}}),'../hooks/useRepoSyncActions': { useRepoSyncActions: () => ({ handlePush: async () => {} }) }, '../hooks/useRepoVisibilities':{useRepoVisibilities:()=>({})},

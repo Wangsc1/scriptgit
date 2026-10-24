@@ -41,7 +41,8 @@ import {
   sourceLabel,
   updateBranchLastPulledAt,
 } from "../services/repoStore"
-import { getChanges, prepareRestoreScope, restoreWorktreeScope, type RestoreScopePlan, createStash, getRepoListStatus, initRepo, removeRepo, autoPullFastForward } from "../services/gitService"
+import { getChanges, prepareRestoreScope, restoreWorktreeScope, type RestoreScopePlan, createStash, getRepoListStatus, initRepo, removeRepo, removeClonedRepository, autoPullFastForward } from "../services/gitService"
+import { planCloneRemoval, cloneRemovalAlert, identityOf, type CloneRemovalPlan, type RemovalIdentity } from "../services/cloneRemoval"
 import { BusyOverlay } from "../components/BusyOverlay"
 import { buildCommitMessage, suggestPushTitle } from "../utils/format"
 import { RepoDetailPage } from "./RepoDetailPage"
@@ -66,7 +67,15 @@ export function RepoListPage() {
   const dismiss = Navigation.useDismiss()
   const [repos, setRepos] = useState<RepoMeta[]>(() => listRepos())
   const [showClone, setShowClone] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<RepoMeta | null>(null)
+  const [pendingDelete, setPendingDeleteState] = useState<RepoMeta | null>(null)
+  // 克隆仓库：确认时已固定的文件夹计划与记录身份；非克隆来源为 null（保持仅移除记录的旧行为）。
+  const deletePlan = useRef<{ plan: CloneRemovalPlan; identity: RemovalIdentity } | null>(null)
+  const deleting = useRef(false)
+  function setPendingDelete(repo: RepoMeta | null) {
+    const plan = repo && repo.source === "clone" ? planCloneRemoval(repo.bookmarkName) : null
+    deletePlan.current = repo && plan ? { plan, identity: identityOf(repo, plan) } : null
+    setPendingDeleteState(repo)
+  }
   const [pendingRestore, setPendingRestore] = useState<{ repo: RepoMeta; plan: RestoreScopePlan } | null>(null)
   const [restoringName, setRestoringName] = useState<string | null>(null)
   const restoring = useRef(false)
@@ -80,6 +89,7 @@ export function RepoListPage() {
   } = useRepoListStatus(setRepos)
   // 移除仓库忙态：删 gitdir 缓存对大仓库可能耗时，用全屏遮罩
   const [removingName, setRemovingName] = useState<string | null>(null)
+  const [removingWorkdir, setRemovingWorkdir] = useState(false)
 
 
   function showAlert(title: string, message: string) {
@@ -117,25 +127,39 @@ export function RepoListPage() {
 
   async function doDelete() {
     const repo = pendingDelete
+    const planned = deletePlan.current
+    if (!repo || deleting.current) return
     setPendingDelete(null)
-    if (!repo) return
+    if (restoring.current || pushGate.current || pulling.current || singlePull.current || pushForm || pushTarget || stagingName) {
+      showAlert("暂时无法删除", "有其他操作正在进行，请稍后再试；未删除任何内容。")
+      return
+    }
+    deleting.current = true
+    setRemovingWorkdir(planned?.plan.ok === true)
     setRemovingName(repo.name)
-    // 让出一帧，先渲染遮罩再执行可能耗时的缓存清理
+    // 让出一帧，先渲染遮罩再执行可能耗时的删除
     await yieldForUi()
     try {
-      // removeRepo 会清元数据 + gitdir 缓存 + 访问书签 + 快照
-      await removeRepo(repo.bookmarkName)
-      setRepos((current) => {
-        const next = current.filter(
-          (item) => item.bookmarkName !== repo.bookmarkName
-        )
-        return next
-      })
-      forgetRepo(repo.bookmarkName)
+      if (planned?.plan.ok) {
+        // 先删文件夹，成功（或本就不存在）后才清理记录/缓存/书签/快照。
+        await removeClonedRepository(planned.identity)
+      } else {
+        // 非克隆来源，或无法证明属于克隆目录且用户选择「仅移除记录」：工作区文件保持不动。
+        await removeRepo(repo.bookmarkName)
+      }
+      if (alive.current) {
+        setRepos((current) => current.filter((item) => item.bookmarkName !== repo.bookmarkName))
+        forgetRepo(repo.bookmarkName)
+      }
     } catch (e: any) {
-      showAlert("删除失败", String(e?.message || e))
+      if (alive.current) {
+        // 失败后以磁盘/记录的真实状态为准刷新，避免列表与实际不一致。
+        setRepos(listRepos())
+        showAlert("删除失败", String(e?.message || e))
+      }
     } finally {
-      setRemovingName(null)
+      deleting.current = false
+      if (alive.current) { setRemovingName(null); setRemovingWorkdir(false) }
     }
   }
 
@@ -326,11 +350,14 @@ export function RepoListPage() {
     pendingRestore != null
       ? { ...getRepoPendingAlert({ type: "restore", filepath: pendingRestore.repo.name, restorePlan: pendingRestore.plan }), isConfirm: true as const }
       : pendingDelete != null
-      ? {
+      ? (deletePlan.current
+        ? { ...cloneRemovalAlert(pendingDelete.name, deletePlan.current.plan, statusMap[pendingDelete.bookmarkName] ?? snapshotMap[pendingDelete.bookmarkName]), isConfirm: true as const }
+        : {
           title: "移除仓库？",
           message: `将从列表移除「${pendingDelete.name}」，并清除本地 Git 缓存；不会删除工作区文件。`,
+          confirm: "移除",
           isConfirm: true as const,
-        }
+        })
       : alertState
         ? {
             title: alertState.title,
@@ -368,7 +395,7 @@ export function RepoListPage() {
               content: (
                 <BusyOverlay
                   title="正在移除仓库"
-                  message={`清理「${removingName}」的 Git 缓存…`}
+                  message={removingWorkdir ? `正在删除「${removingName}」的文件夹并清理缓存…` : `清理「${removingName}」的 Git 缓存…`}
                 />
               ),
             }
@@ -418,7 +445,7 @@ export function RepoListPage() {
               role="cancel"
               action={() => { setPendingDelete(null); setPendingRestore(null) }}
             />
-            <Button title={pendingRestore ? "还原" : "移除"} role="destructive" action={pendingRestore ? doRestore : doDelete} />
+            <Button title={pendingRestore ? "还原" : (activeAlert as any).confirm ?? "移除"} role="destructive" action={pendingRestore ? doRestore : doDelete} />
           </>
         ) : (
           <Button title="好" role="cancel" action={() => setAlertState(null)} />

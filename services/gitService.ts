@@ -97,6 +97,7 @@ import {
   unstageFilesInternal,
 } from "./git/worktreeService"
 import { getRepoId, removeRepo as removeRepoInternal } from "./repoStore"
+import { removeClonedRepositoryInternal, type RemovalIdentity } from "./cloneRemoval"
 import type {
   AutoMarkConflictsResult,
   ConflictResolution,
@@ -173,6 +174,11 @@ export function renameLocalWorktreeDirectory(bookmarkName: string, path: string,
 
 export function deleteLocalWorktreeDirectory(bookmarkName: string, path: string): Promise<void> {
   return runRepoMutation(bookmarkName, () => deleteLocalDirectoryInternal(bookmarkName, path), false)
+}
+
+/** 删除 App 克隆仓库的工作区文件夹，成功后再清理记录；在同仓写屏障内重新验证。 */
+export function removeClonedRepository(identity: RemovalIdentity): Promise<"deleted" | "missing"> {
+  return runRepoMutation(identity.bookmarkName, () => removeClonedRepositoryInternal(identity), false)
 }
 
 export function removeRepo(bookmarkName: string): Promise<void> {
