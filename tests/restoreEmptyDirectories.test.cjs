@@ -1,3 +1,4 @@
+const {isFolderRow,folderExpanded}=require('./standardTreeHelpers.js')
 /* Disposable real FS + bundled Git + production facade/status/restore/UI.
  * Python.run bridge executes the exact shipped Python program via python3, not mocked rmdir.
  */
@@ -40,8 +41,8 @@ async function main(){
   let pending=null,refresh=0,shown=[];const req=mount(load('hooks/useRepoWorktreeActions.ts').useRepoWorktreeActions,{bookmarkName:'repo',changes:[],mergeInProgress:false,setPending:a=>pending=a,showToast:(...a)=>shown.push(a)})
   const props={files:await service.getTrackedFiles('repo'),worktreeEntries:await service.getWorktreeEntries('repo'),loading:false,bookmarkName:'repo',changes:[],onOpen(){},onWorktreeChanged(){},onPush(){throw Error('no push')},onStage(){throw Error('no stash')},onRestore:(...args)=>req.tree.handleRestore(...args),mergeInProgress:false}
   const files=mount(load('pages/FilesTab.tsx').FilesTab,props)
-  function folder(name){files.render();return all(expand(files.tree)).find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))}
-  folder('parent').props.onChanged(true);let row=folder('selected');assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['还原','删除']);await row.props.label.props.trailingSwipeActions.actions[0].props.action();for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10));req.render();assert.ok(pending.restorePlan);assert.equal(pending.restorePlan.scope,'parent/selected');assert.equal(pending.restorePlan.empty.directories.length,2);assert.equal(alerts.getRepoPendingAlert(pending).message,"当前文件改动将丢失，不可撤销。")
+  function folder(name){files.render();return all(expand(files.tree)).find(n=>isFolderRow(n)&&all(n.children[0].children[0]).some(t=>t.type==='Text'&&t.children.includes(name)))}
+  folder('parent').props.action();let row=folder('selected');assert.deepEqual(row.props.trailingSwipeActions.actions.map(a=>a.props.title),['还原','删除']);await row.props.trailingSwipeActions.actions[0].props.action();for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10));req.render();assert.ok(pending.restorePlan);assert.equal(pending.restorePlan.scope,'parent/selected');assert.equal(pending.restorePlan.empty.directories.length,2);assert.equal(alerts.getRepoPendingAlert(pending).message,"当前文件改动将丢失，不可撤销。")
   const exec=mount(load('hooks/useRepoPendingActions.ts').useRepoPendingActions,{bookmarkName:'repo',beginOpBusy:async()=>{},endOpBusy(){},reloadRepo:async()=>{refresh++},showAlert:(...a)=>shown.push(a),showToast:(...a)=>shown.push(a)})
   exec.tree.setPending(pending);exec.render();exec.tree.clearPending();exec.render();await exec.tree.runPending();assert.ok(exists(dir+'/parent/selected/leaf'));assert.equal(refresh,0)
   exec.tree.setPending(pending);exec.render();await exec.tree.runPending();assert.equal(refresh,1);assert.deepEqual(shown,[]);assert.ok(!exists(dir+'/parent/selected'));for(const p of ['parent','parent/other','outside-scope','tracked','tracked/empty'])assert.ok(exists(dir+'/'+p),p);sameHead();files.unmount();req.unmount();exec.unmount()
@@ -72,12 +73,12 @@ async function main(){
   const req=mount(load('hooks/useRepoWorktreeActions.ts').useRepoWorktreeActions,{bookmarkName:'repo',changes:await service.getChanges('repo'),mergeInProgress:false,setPending:a=>pending=a,showToast:(...a)=>shown.push(a)})
   const props={files:await service.getTrackedFiles('repo'),worktreeEntries:await service.getWorktreeEntries('repo'),loading:false,bookmarkName:'repo',changes:await service.getChanges('repo'),onOpen(){},onPush(){},onStage(){},mergeInProgress:false,onRestore:(...args)=>req.tree.handleRestore(...args),onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');props.worktreeEntries=await service.getWorktreeEntries('repo')}}
   const files=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
-  function folder(name){files.render();return all(expand(files.tree)).find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))}
+  function folder(name){files.render();return all(expand(files.tree)).find(n=>isFolderRow(n)&&all(n.children[0].children[0]).some(t=>t.type==='Text'&&t.children.includes(name)))}
   global.Dialog={prompt:async()=> 'renamed-fixture'}
   await all(folder('rename-fixture').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
   assert.ok(!exists(dir+'/rename-fixture'));assert.ok(exists(dir+'/renamed-fixture/nested/binary'))
   assert.equal(folder('rename-fixture'),undefined)
-  await folder('renamed-fixture').props.label.props.trailingSwipeActions.actions.find(a=>a.props.title==='还原').props.action()
+  await folder('renamed-fixture').props.trailingSwipeActions.actions.find(a=>a.props.title==='还原').props.action()
   for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10))
   assert.ok(pending?.restorePlan,JSON.stringify(shown));assert.deepEqual(new Set(pending.restorePlan.filepaths),new Set(['rename-fixture/main','rename-fixture/nested/binary','renamed-fixture/main','renamed-fixture/nested/binary']))
   assert.equal(alerts.getRepoPendingAlert(pending).message,"当前文件改动将丢失，不可撤销。")
@@ -85,8 +86,8 @@ async function main(){
   exec.tree.setPending(pending);exec.render();exec.tree.clearPending();exec.render();await exec.tree.runPending();assert.equal(refresh,0);assert.ok(exists(dir+'/renamed-fixture/main'));assert.ok(!exists(dir+'/rename-fixture'))
   exec.tree.setPending(pending);exec.render();await exec.tree.runPending();assert.equal(refresh,1)
   assert.equal(fs.readFileSync(dir+'/rename-fixture/main','utf8'),'original');assert.deepEqual(fs.readFileSync(dir+'/rename-fixture/nested/binary'),Buffer.from([0,255,3]));assert.ok(!exists(dir+'/renamed-fixture'))
-  assert.ok(folder('rename-fixture'));assert.equal(folder('renamed-fixture'),undefined);assert.doesNotMatch(JSON.stringify(folder('rename-fixture').props.label),/已删除|已重命名/)
-  folder('rename-fixture').props.onChanged(true);folder('nested').props.onChanged(true);files.render();assert.doesNotMatch(JSON.stringify(expand(files.tree)),/已删除/)
+  assert.ok(folder('rename-fixture'));assert.equal(folder('renamed-fixture'),undefined);assert.doesNotMatch(JSON.stringify(folder('rename-fixture').children[0].children[0]),/已删除|已重命名/)
+  folder('rename-fixture').props.action();folder('nested').props.action();files.render();assert.doesNotMatch(JSON.stringify(expand(files.tree)),/已删除/)
   assert.equal(fs.readFileSync(dir+'/tracked/base','utf8'),'OUTSIDE KEEP');assert.equal(cmd('ls-files','--stage'),beforeStage);sameHead();files.unmount();req.unmount();exec.unmount()
  })
  await test('old-version deleted-folder outcome can be recovered from HEAD through the original folder row, with cancel still read-only',async()=>{
@@ -113,10 +114,10 @@ async function main(){
   const req=mount(load('hooks/useRepoWorktreeActions.ts').useRepoWorktreeActions,{bookmarkName:'repo',mergeInProgress:false,setPending:a=>pending=a,showToast:(...a)=>shown.push(a)})
   const props={files:await service.getTrackedFiles('repo'),changes:await service.getChanges('repo'),worktreeEntries:await service.getWorktreeEntries('repo'),bookmarkName:'repo',loading:false,mergeInProgress:false,onOpen(){},onPush(){},onStage(){},onRestore:(...a)=>req.tree.handleRestore(...a),onWorktreeChanged:async()=>{props.changes=await service.getChanges('repo');props.worktreeEntries=await service.getWorktreeEntries('repo')}}
   const files=mount(load('pages/FilesTab.tsx').FilesTab,props,{effectUpdates:true})
-  function rows(){files.render();const map=new Map();function visit(n){if(!n||typeof n!=='object')return;if(Array.isArray(n)){n.forEach(visit);return}if(typeof n.type==='function'&&n.props.node){const row=n.type(n.props);map.set(n.props.node.path,row);visit(row);return}Object.values(n).forEach(visit)}visit(files.tree);return map}
-  function item(p){const parts=p.split('/');for(let i=1;i<parts.length;i++){const group=rows().get(parts.slice(0,i).join('/'));if(group&&!group.props.isExpanded)group.props.onChanged(true)}const row=rows().get(p);assert.ok(row,'row '+p);return row}
+  function rows(){files.render();const map=new Map();function visit(n){if(!n||typeof n!=='object')return;if(Array.isArray(n)){n.forEach(visit);return}if(typeof n.type==='function'&&n.props.node){const raw=n.type(n.props),row=typeof raw.type==='function'?raw.type(raw.props):raw;map.set(n.props.node.path,row);visit(row);return}Object.values(n).forEach(visit)}visit(files.tree);return map}
+  function item(p){const parts=p.split('/');for(let i=1;i<parts.length;i++){const group=rows().get(parts.slice(0,i).join('/'));if(group&&!folderExpanded(group))group.props.action()}const row=rows().get(p);assert.ok(row,'row '+p);return row}
   async function rename(p,name){global.Dialog={prompt:async()=>name};await all(item(p).props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()}
-  async function preview(p){pending=null;const row=item(p),actions=(row.props.label?.props||row.props).trailingSwipeActions.actions;await actions.find(n=>n.props.title==='还原').props.action();for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10));assert.ok(pending,JSON.stringify(shown));return pending}
+  async function preview(p){pending=null;const row=item(p),actions=row.props.trailingSwipeActions.actions;await actions.find(n=>n.props.title==='还原').props.action();for(let i=0;i<300&&!pending;i++)await new Promise(r=>setTimeout(r,10));assert.ok(pending,JSON.stringify(shown));return pending}
   const exec=mount(load('hooks/useRepoPendingActions.ts').useRepoPendingActions,{bookmarkName:'repo',beginOpBusy:async()=>{},endOpBusy(){},reloadRepo:props.onWorktreeChanged,showAlert:(...a)=>shown.push(a),showToast:(...a)=>shown.push(a)})
   async function restore(p,cancel=false){const plan=await preview(p);exec.tree.setPending(plan);exec.render();if(cancel){exec.tree.clearPending();exec.render()}await exec.tree.runPending();return plan}
   return {props,files,item,rename,preview,restore,shown,close(){files.unmount();req.unmount();exec.unmount()}}

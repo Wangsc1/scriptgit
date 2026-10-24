@@ -15,6 +15,7 @@ function load(relative, mocks = {}) {
   const mod = { exports: {} }
   const req = (name) => {
     if (Object.hasOwn(mocks, name)) return mocks[name]
+    if (name === '../components/StandardFolderRow') return load('components/StandardFolderRow.tsx', { scripting: ui })
     throw new Error('Unmocked dependency: ' + name)
   }
   new Function('require', 'module', 'exports', result.outputText)(req, mod, mod.exports)

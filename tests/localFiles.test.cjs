@@ -1,3 +1,4 @@
+const {isFolderRow,folderExpanded}=require('./standardTreeHelpers.js')
 /* Real local-file service + facade/coordinator + real isomorphic-git on disposable test repos. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),ts=require('typescript')
 const {ui,mount,node,all,text,tick,deferred}=require('./remoteFiles.test.cjs')
@@ -113,11 +114,11 @@ async function main(){
   const FilesTab=load('pages/FilesTab.tsx').FilesTab,props={files:['menu.bin','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen:f=>opened=f}
   const h=mount(FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
+  const row=name=>{h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))}
   const action=(name,title)=>all(row(name).props.contextMenu.menuItems).find(n=>n.type==='Button'&&n.props.title===title)
   const swipe=()=>row('menu.bin').props.trailingSwipeActions.actions[0]
   assert.equal(swipe().props.title,'删除');assert.equal(swipe().props.role,undefined);assert.equal(row('menu.bin').props.trailingSwipeActions.allowsFullSwipe,false)
-  assert.deepEqual(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
+  assert.deepEqual(all(expand(h.tree)).find(n=>isFolderRow(n)).props.trailingSwipeActions.actions.map(a=>a.props.title),['删除'])
   confirm=false;await swipe().props.action();assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(swipe().props.disabled,false);assert.equal(updates,0)
   let next=null;global.Dialog.prompt=async()=>next
   await action('menu.bin','复制文件').props.action();await action('menu.bin','重命名').props.action();assert.ok(!fs.existsSync(dir+'/menu 副本.bin'));assert.ok(fs.existsSync(dir+'/menu.bin'));assert.equal(updates,0)
@@ -134,12 +135,12 @@ async function main(){
   const copied=[],props={files:['a.txt','folder/b.txt'],loading:false,bookmarkName:'repo',changes:[],onCopyLink:path=>copied.push(path)}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function nodes(){h.render();function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}return all(expand(h.tree))}
-  const row=name=>nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))
+  const row=name=>nodes().find(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes(name))
   const action=name=>all(row(name).props.contextMenu.menuItems).find(n=>n.props.title==='复制链接')
   const original=fs.readFileSync(dir+'/a.txt'),index=fs.readFileSync(dir+'/.git/index'),head=await git.resolveRef({fs,dir,ref:'HEAD'})
   assert.deepEqual(all(row('a.txt').props.contextMenu.menuItems).filter(n=>n.type==='Button').map(n=>n.props.title),['重命名','复制文件','复制链接','移动到…'])
   assert.equal(action('a.txt').props.systemImage,undefined);assert.equal(action('a.txt').props.disabled,false);await action('a.txt').props.action()
-  const folder=nodes().find(n=>n.type==='DisclosureGroup');assert.deepEqual(all(folder.props.contextMenu.menuItems).filter(n=>n.type==='Button').map(n=>n.props.title),['重命名','复制文件夹']);folder.props.onChanged(true)
+  const folder=nodes().find(n=>isFolderRow(n));assert.deepEqual(all(folder.props.contextMenu.menuItems).filter(n=>n.type==='Button').map(n=>n.props.title),['重命名','复制文件夹']);folder.props.action()
   await action('b.txt').props.action();assert.deepEqual(copied,['a.txt','folder/b.txt'])
   props.changes=[{filepath:'a.txt',status:'*deleted',worktreeDeleted:true}];assert.equal(action('a.txt').props.disabled,true)
   props.loading=true;assert.equal(action('b.txt').props.disabled,true)
@@ -159,10 +160,10 @@ async function main(){
   const staged=[];const props={files:['swipe-folder/sub/a','swipe-folder-other/b'],loading:false,bookmarkName:'repo',changes:[{filepath:'swipe-folder/sub/a',status:'*modified'}],onWorktreeChanged:()=>updates++,onOpen(){},onPush:()=>pushes++,onStage:paths=>staged.push(paths),onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  let groups=folders();groups[0].props.onChanged(true);groups=folders();let a=groups[0].props.label.props.trailingSwipeActions.actions
-  assert.match(JSON.stringify(groups[0].props.label),/已修改/);assert.match(JSON.stringify(groups[1].props.label),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).props.label),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['推送','还原','暂存','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.label.props.trailingSwipeActions.allowsFullSwipe,false)
-  assert.deepEqual(groups.at(-1).props.label.props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
+  function folders(){h.render();return all(expand(h.tree)).filter(n=>isFolderRow(n))}
+  let groups=folders();groups[0].props.action();groups=folders();let a=groups[0].props.trailingSwipeActions.actions
+  assert.match(JSON.stringify(groups[0].children[0].children[0]),/已修改/);assert.match(JSON.stringify(groups[1].children[0].children[0]),/已修改/);assert.doesNotMatch(JSON.stringify(groups.at(-1).children[0].children[0]),/已修改/);assert.deepEqual(a.map(n=>n.props.title),['推送','还原','暂存','删除']);assert.ok(a.every(n=>!n.props.systemImage));assert.equal(groups[0].props.trailingSwipeActions.allowsFullSwipe,false)
+  assert.deepEqual(groups.at(-1).props.trailingSwipeActions.actions.map(n=>n.props.title),['删除'])
   const by=t=>a.find(n=>n.props.title===t)
   assert.equal(by('暂存').props.tint,'systemPurple','folder 暂存 is purple');await by('暂存').props.action();assert.deepEqual(staged,[['swipe-folder/sub/a']],'folder 暂存 dispatches exactly its changed paths to Stash handler')
   await by('推送').props.action();assert.equal(pushes,1)
@@ -174,18 +175,18 @@ async function main(){
   const props={files:['nest/sub/clean','nest/sub/dirty'],changes:[{filepath:'nest/sub/dirty',status:'*modified'}],bookmarkName:'repo',loading:false,mergeInProgress:false,onWorktreeChanged(){},onOpen(){},onStage(){},onPush(){},onRestore(){}}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  const groups=()=>{h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  groups()[0].props.onChanged(true);groups()[1].props.onChanged(true)
+  const groups=()=>{h.render();return all(expand(h.tree)).filter(n=>isFolderRow(n))}
+  groups()[0].props.action();groups()[1].props.action()
   let checked=0
   function check(n,inherited=[]){
    if(!n||typeof n!=='object')return
    if(Array.isArray(n)){n.forEach(v=>check(v,inherited));return}
    const own=n.props?.trailingSwipeActions?.actions||[]
-   if(n.type==='DisclosureGroup'){
-    assert.equal(own.length,0,'container must not propagate folder actions to descendants')
-    assert.deepEqual(n.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['推送','还原','暂存','删除'])
+   if(isFolderRow(n)){
+    assert.equal(own.length,4,'flat folder owns its actions; no descendant views inside the row')
+    assert.deepEqual(n.props.trailingSwipeActions.actions.map(a=>a.props.title),['推送','还原','暂存','删除'])
    }
-   if(n.type==='Button'&&n.props.contextMenu){
+   if(n.type==='Button'&&!isFolderRow(n)&&n.props.contextMenu){
     const titles=[...inherited,...own].map(a=>a.props.title)
     const dirty=JSON.stringify(n.children).includes('dirty')
     assert.deepEqual(titles,dirty?['推送','还原','暂存','删除']:['删除'])
@@ -202,8 +203,8 @@ async function main(){
   const props={files:['folder/b.txt','a.txt'],loading:false,bookmarkName:'repo',changes:[{filepath:'folder/b.txt',status:'*modified'},{filepath:'a.txt',status:'*modified'}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore:(...args)=>request=args,mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  const group=all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'),before=confirmations.length
-  await group.props.label.props.trailingSwipeActions.actions.find(n=>n.props.title==='还原').props.action()
+  const group=all(expand(h.tree)).find(n=>isFolderRow(n)),before=confirmations.length
+  await group.props.trailingSwipeActions.actions.find(n=>n.props.title==='还原').props.action()
   assert.deepEqual(request,['folder',['folder/b.txt'],true]);assert.equal(confirmations.length,before)
   assert.equal(fs.readFileSync(dir+'/folder/b.txt','utf8'),'changed inside');assert.equal(fs.readFileSync(dir+'/a.txt','utf8'),'changed outside');h.unmount()
  })
@@ -249,13 +250,13 @@ async function main(){
   await disk('form-folder/sub/a','nested');await disk('form-folder/untracked.bin',Buffer.from([0,255]));fs.mkdirSync(dir+'/form-folder/empty');let updates=0
   const props={files:['form-folder/sub/a'],loading:false,bookmarkName:'repo',changes:[],onWorktreeChanged:()=>updates++,onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  function group(name){h.render();return all(expand(h.tree)).find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
+  function group(name){h.render();return all(expand(h.tree)).find(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('"'+name+'"'))}
   function action(name,title){return all(group(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action()}
   function form(){h.render();assert.equal(h.tree.props.sheet.isPresented,true);return h.tree.props.sheet.content.props}
   await action('form-folder','复制文件夹');assert.equal(form().initialName,'form-folder 副本');form().onCancel();h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
   global.Dialog.prompt=async options=>{assert.equal(options.title,'重命名文件夹');assert.equal(options.defaultValue,'form-folder');h.render();assert.equal(h.tree.props.sheet.isPresented,false);return 'form-folder'};await action('form-folder','重命名');h.render();assert.equal(h.tree.props.sheet.isPresented,false);assert.equal(updates,0)
   await action('form-folder','复制文件夹');await form().onConfirm('../bad');assert.match(form().error,/合法/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));form().onCancel()
-  await action('form-folder','复制文件夹');await form().onConfirm('form copy');assert.ok(group('form copy'));group('form copy').props.onChanged(true);assert.ok(group('empty'));assert.ok(fs.existsSync(dir+'/form copy/untracked.bin'));const afterCopy=updates
+  await action('form-folder','复制文件夹');await form().onConfirm('form copy');assert.ok(group('form copy'));group('form copy').props.action();assert.ok(group('empty'));assert.ok(fs.existsSync(dir+'/form copy/untracked.bin'));const afterCopy=updates
   global.Dialog.prompt=async()=> 'form renamed';await action('form copy','重命名');assert.ok(group('form renamed'));assert.ok(!fs.existsSync(dir+'/form copy'));assert.equal(updates,afterCopy+1)
   const rename=FileManager.rename;FileManager.rename=async()=>{throw Error('UI denied')};global.Dialog.prompt=async()=> 'denied form';try{await action('form-folder','重命名')}finally{FileManager.rename=rename}assert.match(text(h),/UI denied/);assert.ok(fs.existsSync(dir+'/form-folder/sub/a'));h.render();assert.equal(h.tree.props.sheet.isPresented,false);h.unmount()
  })
@@ -313,10 +314,10 @@ async function main(){
   for(const name of ['icon-normal','icon-mod','icon-add','icon-unstaged','icon-photo.png'])await disk(name,'data')
   const props={files:['icon-normal','icon-mod','icon-add','icon-deleted','icon-unstaged','icon-photo.png','icon-folder/a'],loading:false,bookmarkName:'repo',changes:[{filepath:'icon-mod',status:'*modified'},{filepath:'icon-add',status:'*added'},{filepath:'icon-deleted',status:'*deleted',worktreeDeleted:true},{filepath:'icon-unstaged',status:'unknown',unstaged:true}],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false},h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  function row(name){h.render();return all(expand(h.tree)).find(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
   const color=name=>all(row(name)).find(n=>n.type==='Image'&&['doc.text','photo'].includes(n.props.systemName)).props.foregroundStyle
   assert.equal(color('icon-mod'),'systemOrange');assert.equal(color('icon-unstaged'),'systemOrange');assert.equal(color('icon-add'),'systemGreen');assert.equal(color('icon-deleted'),'systemRed');for(const name of ['icon-normal','icon-photo.png'])assert.equal(color(name),'secondaryLabel')
-  assert.equal(all(expand(h.tree)).find(n=>n.type==='DisclosureGroup').props.label.children[0].props.foregroundStyle,'secondaryLabel')
+  assert.equal(all(expand(h.tree)).find(n=>isFolderRow(n)).children[0].children[0].children[0].props.foregroundStyle,'secondaryLabel')
   global.Dialog.prompt=async()=> 'icon-renamed.png';await all(row('icon-photo.png').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();assert.equal(color('icon-renamed.png'),'systemOrange');assert.match(JSON.stringify(row('icon-renamed.png').children),/已重命名/)
   assert.equal(row('icon-photo.png'),undefined)
   for(const status of ['*added','*modified']){props.changes=[...props.changes.filter(c=>c.filepath!=='icon-renamed.png'),{filepath:'icon-renamed.png',status}];assert.equal(color('icon-renamed.png'),'systemOrange');const text=JSON.stringify(row('icon-renamed.png').children);assert.match(text,/已重命名/);assert.doesNotMatch(text,/已修改|新增/);assert.equal(props.changes.at(-1).status,status)}
@@ -355,15 +356,15 @@ async function main(){
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
-  function folder(name){return nodes().findLast(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
-  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&!n.props.disabled&&JSON.stringify(n.children).includes('"'+name+'"'))}
-  const label=name=>JSON.stringify(folder(name).props.label)
+  function folder(name){return nodes().findLast(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions&&!n.props.disabled&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  const label=name=>JSON.stringify(folder(name).children[0].children[0])
   const fileLabel=name=>JSON.stringify(row(name).children)
-  folder('rename-parent').props.onChanged(true);folder('source').props.onChanged(true)
+  folder('rename-parent').props.action();folder('source').props.action()
   assert.match(label('rename-parent'),/已修改/);assert.doesNotMatch(label('rename-parent'),/已重命名/)
   global.Dialog.prompt=async()=> 'target';await all(folder('source').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action();h.render();assert.equal(h.tree.props.sheet.isPresented,false)
   assert.match(label('target'),/已重命名/);assert.doesNotMatch(label('target'),/已修改/)
-  folder('target').props.onChanged(true);folder('sub').props.onChanged(true)
+  folder('target').props.action();folder('sub').props.action()
   assert.doesNotMatch(label('sub'),/已重命名|新增/)
   for(const name of ['a.txt','b.txt']){assert.doesNotMatch(fileLabel(name),/已重命名|新增/);assert.equal(all(row(name)).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')}
   assert.equal(folder('source'),undefined)
@@ -392,36 +393,36 @@ async function main(){
   ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));// This test selects rows by basename, so traverse only native-visible content.
-   return {...n,children:(n.type==='DisclosureGroup'&&!n.props.isExpanded?[]:n.children||[]).map(expand)}}
+   return {...n,children:(n.children||[]).map(expand)}}
   function nodes(){h.render();return all(expand(h.tree))}
-  function folder(name){return nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('"'+name+'"'))}
-  function row(name){return nodes().find(n=>n.type==='Button'&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
+  function folder(name){return nodes().find(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('"'+name+'"'))}
+  function row(name){return nodes().find(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions&&JSON.stringify(n.children).includes('"'+name+'"'))}
   const icon=n=>all(n).find(n=>n.type==='Image')
   function badge(n,text,color){const labels=all(n).filter(n=>n.type==='Text'&&n.props.font==='caption2');assert.ok(labels.some(n=>n.children.includes(text)&&n.props.foregroundStyle===color),JSON.stringify(n));assert.equal(icon(n).props.foregroundStyle,color)}
   for(const name of images){assert.equal(icon(row(name)).props.systemName,'photo');assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')}
   for(const name of ['normal.txt','green-photo.jpg'])assert.equal(icon(row(name)).props.foregroundStyle,'secondaryLabel')
-  assert.equal(icon(folder('green-source').props.label).props.foregroundStyle,'secondaryLabel')
+  assert.equal(icon(folder('green-source').children[0].children[0]).props.foregroundStyle,'secondaryLabel')
   for(const name of ['normal.txt','unsupported.svg'])assert.equal(icon(row(name)).props.systemName,'doc.text')
   assert.equal(icon(row('deleted.jpg')).props.systemName,'photo');assert.equal(row('deleted.jpg').props.disabled,true);assert.match(JSON.stringify(row('deleted.jpg')),/已删除/);badge(row('deleted.jpg'),'已删除','systemRed');assert.doesNotMatch(JSON.stringify(row('deleted.jpg')),/不可编辑/)
-  badge(folder('new-dir').props.label,'新增','systemGreen');folder('new-dir').props.onChanged(true);badge(folder('sub').props.label,'新增','systemGreen')
-  for(const name of ['existing','mixed','mixed-new'])badge(folder(name).props.label,'已修改','systemOrange')
-  folder('existing').props.onChanged(true);badge(row('new.jpg'),'新增','systemGreen');assert.equal(icon(row('new.jpg')).props.systemName,'photo')
+  badge(folder('new-dir').children[0].children[0],'新增','systemGreen');folder('new-dir').props.action();badge(folder('sub').children[0].children[0],'新增','systemGreen')
+  for(const name of ['existing','mixed','mixed-new'])badge(folder(name).children[0].children[0],'已修改','systemOrange')
+  folder('existing').props.action();badge(row('new.jpg'),'新增','systemGreen');assert.equal(icon(row('new.jpg')).props.systemName,'photo')
   // Immediate file copy must be green before the asynchronous status refresh.
   global.Dialog.prompt=async()=> 'green-photo copy.jpg';await all(row('green-photo.jpg').props.contextMenu.menuItems).find(n=>n.props.title==='复制文件').props.action()
   badge(row('green-photo copy.jpg'),'新增','systemGreen');assert.equal(icon(row('green-photo copy.jpg')).props.systemName,'photo')
   async function directoryAction(name,title,next){if(title==='重命名')global.Dialog.prompt=async()=>next;await all(folder(name).props.contextMenu.menuItems).find(n=>n.props.title===title).props.action();h.render();if(title==='重命名')assert.equal(h.tree.props.sheet.isPresented,false);else await h.tree.props.sheet.content.props.onConfirm(next)}
-  await directoryAction('green-source','复制文件夹','green-copy');badge(folder('green-copy').props.label,'新增','systemGreen')
-  folder('green-copy').props.onChanged(true);badge(folder('empty').props.label,'新增','systemGreen');badge(row('plain.txt'),'新增','systemGreen')
-  await directoryAction('empty','复制文件夹','empty-copy');badge(folder('empty-copy').props.label,'新增','systemGreen')
+  await directoryAction('green-source','复制文件夹','green-copy');badge(folder('green-copy').children[0].children[0],'新增','systemGreen')
+  folder('green-copy').props.action();badge(folder('empty').children[0].children[0],'新增','systemGreen');badge(row('plain.txt'),'新增','systemGreen')
+  await directoryAction('empty','复制文件夹','empty-copy');badge(folder('empty-copy').children[0].children[0],'新增','systemGreen')
   // A copied file renamed before scan keeps the rename label, never the green added label.
   global.Dialog.prompt=async()=> 'green-renamed.jpg';await all(row('green-photo copy.jpg').props.contextMenu.menuItems).find(n=>n.props.title==='重命名').props.action()
   badge(row('green-renamed.jpg'),'已重命名','systemOrange');assert.equal(icon(row('green-renamed.jpg')).props.systemName,'photo')
-  await directoryAction('green-copy','重命名','green-renamed-folder');badge(folder('green-renamed-folder').props.label,'已重命名','systemOrange');folder('green-renamed-folder').props.onChanged(true)
+  await directoryAction('green-copy','重命名','green-renamed-folder');badge(folder('green-renamed-folder').children[0].children[0],'已重命名','systemOrange');folder('green-renamed-folder').props.action()
   props.changes=[{filepath:'green-renamed.jpg',status:'*added'},{filepath:'green-renamed-folder/plain.txt',status:'*added'},{filepath:'green-renamed-folder/sub/picture.PNG',status:'*added'}]
-  badge(row('green-renamed.jpg'),'已重命名','systemOrange');badge(folder('green-renamed-folder').props.label,'已重命名','systemOrange')
-  assert.doesNotMatch(JSON.stringify(folder('empty-copy').props.label),/新增/)
+  badge(row('green-renamed.jpg'),'已重命名','systemOrange');badge(folder('green-renamed-folder').children[0].children[0],'已重命名','systemOrange')
+  assert.doesNotMatch(JSON.stringify(folder('empty-copy').children[0].children[0]),/新增/)
   props.changes=[]
-  for(const name of ['green-renamed-folder','empty-copy']){assert.doesNotMatch(JSON.stringify(folder(name).props.label),/新增|已修改|已重命名/);assert.equal(icon(folder(name).props.label).props.foregroundStyle,'secondaryLabel')}
+  for(const name of ['green-renamed-folder','empty-copy']){assert.doesNotMatch(JSON.stringify(folder(name).children[0].children[0]),/新增|已修改|已重命名/);assert.equal(icon(folder(name).children[0].children[0]).props.foregroundStyle,'secondaryLabel')}
   assert.equal(folder('new-dir'),undefined)
   assert.doesNotMatch(JSON.stringify(row('green-renamed.jpg')),/新增|已重命名/);assert.equal(icon(row('green-renamed.jpg')).props.foregroundStyle,'secondaryLabel')
   h.unmount()
@@ -433,17 +434,17 @@ async function main(){
   ],onWorktreeChanged(){},onOpen(){},onPush(){},onRestore(){},mergeInProgress:false}
   const h=mount(load('pages/FilesTab.tsx').FilesTab,props)
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  function folders(){h.render();return all(expand(h.tree)).filter(n=>n.type==='DisclosureGroup')}
-  function folder(name){return folders().find(n=>JSON.stringify(n.props.label).includes('"'+name+'"'))}
-  function badge(n,label,color){assert.ok(all(n.props.label).some(n=>n.type==='Text'&&n.children.includes(label)&&n.props.foregroundStyle===color));assert.equal(all(n.props.label).find(n=>n.type==='Image').props.foregroundStyle,color)}
-  badge(folder('gone'),'已删除','systemRed');folder('gone').props.onChanged(true);badge(folder('nested'),'已删除','systemRed')
-  for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).props.label),/已删除/)}
-  folder('parent').props.onChanged(true)
-  const nestedGone=folders().filter(n=>JSON.stringify(n.props.label).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
-  assert.deepEqual(all(folder('gone').props.label.props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['推送','还原','暂存','删除'])
+  function folders(){h.render();return all(expand(h.tree)).filter(n=>isFolderRow(n))}
+  function folder(name){return folders().find(n=>JSON.stringify(n.children[0].children[0]).includes('"'+name+'"'))}
+  function badge(n,label,color){assert.ok(all(n.children[0].children[0]).some(n=>n.type==='Text'&&n.children.includes(label)&&n.props.foregroundStyle===color));assert.equal(all(n.children[0].children[0]).find(n=>n.type==='Image').props.foregroundStyle,color)}
+  badge(folder('gone'),'已删除','systemRed');folder('gone').props.action();badge(folder('nested'),'已删除','systemRed')
+  for(const name of ['partial','mixed','index-only','parent']){badge(folder(name),'已修改','systemOrange');assert.doesNotMatch(JSON.stringify(folder(name).children[0].children[0]),/已删除/)}
+  folder('parent').props.action()
+  const nestedGone=folders().filter(n=>JSON.stringify(n.children[0].children[0]).includes('"gone"')).at(-1);badge(nestedGone,'已删除','systemRed')
+  assert.deepEqual(all(folder('gone').props.trailingSwipeActions.actions).filter(n=>n.type==='Button').map(n=>n.props.title),['推送','还原','暂存','删除'])
   // A restored leaf makes its parent modified rather than deleted; fully clean refresh clears both.
   props.changes=props.changes.filter(c=>c.filepath!=='gone/a');badge(folder('gone'),'已修改','systemOrange')
-  props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').props.label),/已删除|已修改/);assert.equal(all(folder('gone').props.label).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
+  props.changes=[];assert.doesNotMatch(JSON.stringify(folder('gone').children[0].children[0]),/已删除|已修改/);assert.equal(all(folder('gone').children[0].children[0]).find(n=>n.type==='Image').props.foregroundStyle,'secondaryLabel')
   h.unmount()
  })
  await test('root additions create empty arbitrary-extension files/empty dirs and native binary imports; real Git A with unchanged HEAD/index',async()=>{
@@ -590,25 +591,25 @@ async function main(){
   const menu=all(h.tree.props.header).find(n=>n.type==='Menu');assert.equal(menu.props.label.props.systemName,'plus')
   assert.match(JSON.stringify(h.tree.props.header),/仓库文件.*（1）/);const groups=menu.children.filter(n=>n.type==='Section');assert.equal(groups.length,2);assert.doesNotMatch(JSON.stringify(menu),/仅诊断|拖动记录/);assert.match(JSON.stringify(groups[0].props.header),/添加到仓库/)
   assert.deepEqual(all(menu.children).filter(n=>n.type==='Button').map(n=>[n.props.title,n.props.systemImage]),[['创建文件','doc.text'],['创建目录','folder'],['导入文件','doc.text'],['导入目录','folder'],['导入图片','photo']])
-  nodes().find(n=>n.type==='DisclosureGroup').props.onChanged(true)
+  nodes().find(n=>isFolderRow(n)).props.action()
   await dispatch('创建文件');assert.equal(createPrompts.at(-1).title,'创建文件');assert.equal(createPrompts.at(-1).defaultValue,'');assert.equal(updates,0)
   createInput='ui-created.json';await dispatch('创建文件');assert.equal(fs.readFileSync(dir+'/ui-created.json').length,0);assert.equal(fs.existsSync(dir+'/folder/ui-created.json'),false)
   assert.ok(nodes().some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
-  createInput='ui-empty';await dispatch('创建目录');assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
+  createInput='ui-empty';await dispatch('创建目录');assert.ok(nodes().some(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('ui-empty')));assert.deepEqual(fs.readdirSync(dir+'/ui-empty'),[])
   for(let refresh=0;refresh<3;refresh++){
-   props.changes=[...props.changes];const emptyRow=nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('ui-empty'));const label=all(emptyRow.props.label)
+   props.changes=[...props.changes];const emptyRow=nodes().find(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('ui-empty'));const label=all(emptyRow.children[0].children[0])
    assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'created empty directory stays green after actual changes-array replacement')
    assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'))
   }
 
   createInput='UI-CREATED.JSON';await dispatch('创建文件');assert.match(createErrors.at(-1),/同名/)
   const before=updates;await dispatch('导入文件');await dispatch('导入目录');await dispatch('导入图片');assert.equal(updates,before);assert.equal(photoCalls,1)
-  selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
+  selectedDirectory=outside+'/UI Imported';fs.mkdirSync(selectedDirectory+'/empty',{recursive:true});fs.writeFileSync(selectedDirectory+'/bytes.bin',Buffer.from([0,255]));await dispatch('导入目录');assert.deepEqual(fs.readFileSync(dir+'/UI Imported/bytes.bin'),Buffer.from([0,255]));assert.ok(nodes().some(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes('UI Imported')));assert.ok(fs.existsSync(dir+'/UI Imported/empty'));await dispatch('导入目录');assert.match(text(h),/同名/)
   // Real directory picker -> facade/coordinator -> native mkdir -> FilesTab:
   // Git has no empty-directory rows, so labels must survive real changes refreshes.
   const emptyIndex=fs.readFileSync(dir+'/.git/index'),emptyHead=await git.resolveRef({fs,dir,ref:'HEAD'})
-  const folderRow=name=>nodes().find(n=>n.type==='DisclosureGroup'&&all(n.props.label).some(t=>t.type==='Text'&&t.children.includes(name)))
-  const assertAddedFolder=name=>{const row=folderRow(name);assert.ok(row,'directory visible: '+name);const label=all(row.props.label);assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'green folder: '+name);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'),'green 新增: '+name);assert.deepEqual(row.props.label.props.trailingSwipeActions.actions.map(a=>a.props.title),['还原','删除'],'empty directory gains restore only; no push/Stash actions');return row}
+  const folderRow=name=>nodes().find(n=>isFolderRow(n)&&all(n.children[0].children[0]).some(t=>t.type==='Text'&&t.children.includes(name)))
+  const assertAddedFolder=name=>{const row=folderRow(name);assert.ok(row,'directory visible: '+name);const label=all(row.children[0].children[0]);assert.ok(label.some(n=>n.type==='Image'&&n.props.systemName==='folder'&&n.props.foregroundStyle==='systemGreen'),'green folder: '+name);assert.ok(label.some(n=>n.type==='Text'&&n.children.includes('新增')&&n.props.foregroundStyle==='systemGreen'),'green 新增: '+name);assert.deepEqual(row.props.trailingSwipeActions.actions.map(a=>a.props.title),['还原','删除'],'empty directory gains restore only; no push/Stash actions');return row}
   for(const [name,child] of [['UI Empty Imported',''],['UI Nested Empty','middle/leaf']]){
    selectedDirectory=outside+'/'+name;fs.mkdirSync(selectedDirectory+(child?'/'+child:''),{recursive:true});await dispatch('导入目录')
    for(let refresh=0;refresh<3;refresh++){
@@ -616,7 +617,7 @@ async function main(){
     else {props.changes=[...props.changes];props.files=[...props.files]}
     await tick();h.render()
     const rootRow=assertAddedFolder(name);assert.equal(props.changes.some(c=>c.filepath===name||c.filepath.startsWith(name+'/')),false)
-    if(child){rootRow.props.onChanged(true);assertAddedFolder('middle').props.onChanged(true);assertAddedFolder('leaf')}
+    if(child){if(!folderExpanded(rootRow))rootRow.props.action();const middle=assertAddedFolder('middle');if(!folderExpanded(middle))middle.props.action();assertAddedFolder('leaf')}
    }
    assert.deepEqual(fs.readdirSync(dir+'/'+name+(child?'/'+child:'')),[],'no .gitkeep or other placeholder')
    assert.deepEqual(fs.readdirSync(selectedDirectory+(child?'/'+child:'')),[],'source remains empty')
@@ -624,7 +625,7 @@ async function main(){
   // Existing destination directories are NOT merged by the production import service.
   // A rejected conflict must not mark the existing folder or inject its source children.
   selectedDirectory=outside+'/folder';fs.mkdirSync(selectedDirectory+'/not-imported-empty',{recursive:true});await dispatch('导入目录');assert.match(text(h),/同名|存在/)
-  assert.equal(fs.existsSync(dir+'/folder/not-imported-empty'),false);assert.doesNotMatch(JSON.stringify(folderRow('folder').props.label),/新增/)
+  assert.equal(fs.existsSync(dir+'/folder/not-imported-empty'),false);assert.doesNotMatch(JSON.stringify(folderRow('folder').children[0].children[0]),/新增/)
   selectedDirectory=null;const cancelRefresh=updates;await dispatch('导入目录');assert.equal(updates,cancelRefresh);assertAddedFolder('UI Empty Imported')
   assert.deepEqual(fs.readFileSync(dir+'/.git/index'),emptyIndex);assert.equal(await git.resolveRef({fs,dir,ref:'HEAD'}),emptyHead)
   // Hints intentionally belong to this mounted FilesTab only, not new persistence.
@@ -720,7 +721,7 @@ async function main(){
   const FilesTab=load('pages/FilesTab.tsx').FilesTab;let updates=0,opened=null
   const h=mount(FilesTab,{files:['folder/b.txt','a.txt','image.bin'],loading:false,bookmarkName:'repo',changes:[{filepath:'image.bin',status:'*deleted',worktreeDeleted:true}],onWorktreeChanged:()=>updates++,onOpen:file=>opened=file})
   function expand(n){if(!n||typeof n!=='object')return n;if(Array.isArray(n))return n.map(expand);if(typeof n.type==='function')return expand(n.type(n.props));return {...n,children:(n.children||[]).map(expand)}}
-  let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>n.type==='DisclosureGroup'));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
+  let expanded=expand(h.tree);assert.ok(all(expanded).some(n=>isFolderRow(n)));const deleted=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('image.bin'));assert.equal(deleted.props.disabled,true)
   const leaf=all(expanded).find(n=>n.type==='Button'&&JSON.stringify(n.children).includes('a.txt'));await leaf.props.action();h.render();assert.equal(h.tree.props.fullScreenCover,undefined);assert.equal(opened.text,fs.readFileSync(dir+'/a.txt','utf8'));assert.equal(updates,0);h.unmount()
  })
  await test('drag move uses real native rename, Git D/A only, same name/Unicode/path/link/root/lock protections and failure preserves bytes',async()=>{
@@ -778,17 +779,17 @@ async function main(){
   assert.ok(offered.includes('mv-target')&&offered.includes('mv-other'),'existing folders offered');assert.equal(fs.existsSync(dir+'/mv-ui.txt'),false);assert.equal(fs.readFileSync(dir+'/mv-target/mv-ui.txt','utf8'),'move bytes')
   assert.ok(props.changes.some(c=>c.filepath==='mv-target/mv-ui.txt'),'refresh reports the moved file')
   // 移动后的三处显示：①源位置显示红色「已删除」 ②目标文件夹橙色「已修改」 ③移入的文件绿色「新增」，图标同色。
-  {const folderNode=name=>nodes().find(n=>n.type==='DisclosureGroup'&&JSON.stringify(n.props.label).includes(name))
+  {const folderNode=name=>nodes().find(n=>isFolderRow(n)&&JSON.stringify(n.children[0].children[0]).includes(name))
    const labelOf=n=>all(n).filter(x=>x.type==='Text').map(x=>[x.children.join(''),x.props.foregroundStyle])
    const iconOf=n=>all(n).find(x=>x.type==='Image').props.foregroundStyle
-   folderNode('mv-target').props.onChanged(true);h.render()
+   folderNode('mv-target').props.action();h.render()
    const rows=nodes().filter(n=>n.type==='Button'&&n.props.contextMenu&&JSON.stringify(n.children).includes('mv-ui.txt'))
    const info=rows.map(r=>({texts:labelOf(r),icon:iconOf(r),disabled:r.props.disabled}))
    const added=info.find(r=>r.texts.some(([t])=>t==='新增')),gone=info.find(r=>r.texts.some(([t])=>t==='已删除'))
    assert.ok(added,'③ moved-in file shows 新增: '+JSON.stringify(info));assert.ok(added.texts.some(([t,c])=>t==='新增'&&c==='systemGreen'));assert.equal(added.icon,'systemGreen')
    assert.ok(gone,'① source location shows 已删除: '+JSON.stringify(info));assert.ok(gone.texts.some(([t,c])=>t==='已删除'&&c==='systemRed'));assert.equal(gone.icon,'systemRed')
-   const fl=labelOf(folderNode('mv-target').props.label)
-   assert.ok(fl.some(([t,c])=>t==='已修改'&&c==='systemOrange'),'② destination folder shows 已修改 in orange: '+JSON.stringify(fl));assert.equal(iconOf(folderNode('mv-target').props.label),'systemOrange')}
+   const fl=labelOf(folderNode('mv-target').children[0].children[0])
+   assert.ok(fl.some(([t,c])=>t==='已修改'&&c==='systemOrange'),'② destination folder shows 已修改 in orange: '+JSON.stringify(fl));assert.equal(iconOf(folderNode('mv-target').children[0].children[0]),'systemOrange')}
   // Name collision: destination already has the name, source must stay untouched and error is visible.
   await disk('mv-other/mv-cancel.txt','other');updates=0
   global.Dialog.actionSheet=async o=>o.actions.map(a=>a.label).indexOf('mv-other');await moveItem('mv-cancel.txt').props.action()

@@ -1,6 +1,7 @@
+import { StandardFolderRow, visibleTreeRows } from "../components/StandardFolderRow"
 import { Button, DisclosureGroup, HStack, Image, List, Section, Text, useEffect, useRef, useState } from "scripting"
 
-const MODES = ["① 官方非受控", "② 官方受控", "③ 递归受控", "④ 递归＋异步更新"]
+const MODES = ["① 官方非受控", "② 官方受控", "③ 递归受控", "④ 递归＋异步更新", "⑤ 标准行（生产方案）"]
 type Node = { path: string; name: string; children: Node[] }
 // Synthetic folders only. No repository, filesystem, Storage or network dependencies.
 const TREE: Node[] = [
@@ -51,7 +52,10 @@ export function FolderAnimationDiagnosticGroup({ mode }: { mode: number }) {
       <Text font="caption">{mode === 0 ? "展开次数：原生自管，不监听事件" : `app 展开：${state.opens} 次`}；额外更新：{state.extraUpdates} 次</Text>
     </Section>
     <Section header={<Text>固定文件夹（无真实文件）</Text>}>
-      {mode <= 1 ? <>
+      {mode === 4 ? visibleTreeRows(TREE, state.expanded).map(({ node, depth }) => <StandardFolderRow
+        key={node.path} path={node.path} depth={depth} expanded={state.expanded.has(node.path)}
+        onToggle={() => toggle(node.path, !state.expanded.has(node.path))}
+        label={<HStack spacing={10}><Image systemName="folder" foregroundStyle="secondaryLabel" /><Text>{node.name}</Text></HStack>} />) : mode <= 1 ? <>
         <DisclosureGroup title="app" {...(mode === 1 ? { isExpanded: state.expanded.has("app"), onChanged: (value: boolean) => toggle("app", value) } : {})}>
           <DisclosureGroup title="admin"><DisclosureGroup title="one" /><DisclosureGroup title="two" /></DisclosureGroup>
           <DisclosureGroup title="agent"><DisclosureGroup title="one" /><DisclosureGroup title="two" /></DisclosureGroup>
@@ -67,7 +71,7 @@ export function FolderAnimationDiagnosticsPage() {
   const [mode, setMode] = useState(0)
   return <List navigationTitle="文件夹动画诊断" navigationBarTitleDisplayMode="inline">
     <Section>
-      <Text>依次选①至④，每组将 app 展开、收拢三次并录屏。切组会重置；左上返回。</Text>
+      <Text>先对比③与⑤，每组将 app 展开、收拢三次并录屏。⑤为即时标准行，不使用展开过渡。切组重置；左上返回。</Text>
       <Text font="caption">仅固定假数据，不访问仓库。①不统计点击，避免干扰原生行为。</Text>
       {MODES.map((title, index) => <Button key={title} title={(index === mode ? "✓ " : "") + title} action={() => { if (index !== mode) setMode(index) }} />)}
     </Section>

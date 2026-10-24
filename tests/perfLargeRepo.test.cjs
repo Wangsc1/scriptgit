@@ -1,3 +1,4 @@
+const {isFolderRow,folderExpanded}=require('./standardTreeHelpers.js')
 /* Large-repo (1400+ files, real temp Git repo) enter-detail and branch-switch performance + correctness.
  * Production services/hooks; counts native-style operations and uses RELATIVE comparisons only
  * (op counts, in-flight concurrency, simulated per-call latency ratio). No network, no absolute-ms assertions. */
@@ -52,7 +53,7 @@ async function main(){
   h.unmount();console.log('PASS enter detail: tracked list first, loading ends before snapshot, one scan + one inventory',{opsReadDirectory:ops['FM.readDirectory'],matrix:ops['git.statusMatrix']})
  }finally{S.cleanup()}}
 
- // Stable native DisclosureGroup content on a real 1450-file repository: construction is JS-only.
+ // Visible flat standard-row content on a real 1450-file repository: construction is JS-only.
  {const S=setup();try{
   const {all}=require('./remoteFiles.test.cjs'),{performance}=require('node:perf_hooks')
   const files=await S.load('services/gitService.ts').getTrackedFiles('repo')
@@ -61,13 +62,13 @@ async function main(){
   S.reset();const t0=performance.now()
   const h=S.mount(FilesTab,{files,changes:[],bookmarkName:'repo',loading:false,onOpen(){},onWorktreeChanged(){},onPush(){},onStage(){},onRestore(){},onCreateEntry(){},mergeInProgress:false})
   const rows=all(expand(h.tree)),buildMs=performance.now()-t0
-  assert.equal(rows.filter(n=>n.type==='Button'&&n.props.trailingSwipeActions).length,files.length)
-  const folders=rows.filter(n=>n.type==='DisclosureGroup');assert.ok(folders.length>400);assert.ok(folders.every(n=>n.props.isExpanded===false))
+  assert.equal(rows.filter(n=>n.type==='Button'&&!isFolderRow(n)&&n.props.trailingSwipeActions).length,1,'only root .gitignore file visible')
+  const folders=rows.filter(isFolderRow);assert.equal(folders.length,60);assert.ok(folders.every(n=>!folderExpanded(n)))
   await S.tick();h.render();await S.tick()
-  const ops=S.snap();assert.equal(ops['FM.stat'],1,'only root .gitignore metadata, NOT all prebuilt files')
-  for(const k of ['FM.readDirectory','FM.readAsData','FM.readAsString','fs.readFile','fs.readdir','git.statusMatrix'])assert.equal(ops[k]||0,0,'building full rows has no extra '+k)
+  const ops=S.snap();assert.equal(ops['FM.stat'],1,'only root .gitignore metadata, NOT hidden files')
+  for(const k of ['FM.readDirectory','FM.readAsData','FM.readAsString','fs.readFile','fs.readdir','git.statusMatrix'])assert.equal(ops[k]||0,0,'building visible rows has no extra '+k)
   const times=[];for(let i=0;i<5;i++){const t=performance.now();h.render();expand(h.tree);times.push(+(performance.now()-t).toFixed(1))}
-  console.log('PASS stable full disclosure: real Git HEAD files, zero extra file-content/directory reads',{files:files.length,folders:folders.length,firstJsBuildMs:+buildMs.toFixed(1),rerenderJsMs:times,metadataStats:ops['FM.stat']})
+  console.log('PASS visible standard rows: real Git HEAD files, zero extra file-content/directory reads',{files:files.length,folders:folders.length,firstJsBuildMs:+buildMs.toFixed(1),rerenderJsMs:times,metadataStats:ops['FM.stat']})
   h.unmount()
  }finally{S.cleanup()}}
 

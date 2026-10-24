@@ -1,3 +1,4 @@
+const {isFolderRow,folderExpanded}=require('./standardTreeHelpers.js')
 /* UI/IO scheduling tests: synthetic repositories, no network or user worktrees. */
 const assert = require('node:assert/strict')
 const { load, mount, ui, all, tick } = require('./remoteFiles.test.cjs')
@@ -40,23 +41,23 @@ async function main() {
   await tick()
   const nodes = () => { h.render(); return all(expand(h.tree)) }
   let rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20)
-  assert.equal(rows.filter(n => n.props.trailingSwipeActions && n.type === 'Button').length, 5000)
+  assert.equal(rows.filter(n => isFolderRow(n)).length, 10)
+  assert.equal(rows.filter(n => n.props.trailingSwipeActions && n.type === 'Button' && !isFolderRow(n)).length, 0)
   assert.equal(statCalls, 0)
-  rows.find(n => n.type === 'DisclosureGroup').props.onChanged(true)
+  rows.find(n => isFolderRow(n)).props.action()
   rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20)
-  rows.filter(n => n.type === 'DisclosureGroup')[1].props.onChanged(true)
+  assert.equal(rows.filter(n => isFolderRow(n)).length, 11)
+  rows.filter(n => isFolderRow(n))[1].props.action()
   rows = nodes()
-  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 5000)
-  rows.find(n => n.type === 'DisclosureGroup').props.onChanged(false)
-  // Previously opened content stays attached for the native collapse animation.
+  assert.equal(rows.filter(n => n.type === 'Button' && !isFolderRow(n) && n.props.trailingSwipeActions).length, 500)
+  rows.find(n => isFolderRow(n)).props.action()
+  // Collapse removes hidden rows; nested expansion intent stays in the Set.
   rows = nodes()
-  assert.equal(rows.find(n => n.type === 'DisclosureGroup').props.isExpanded, false)
-  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 5000)
-  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 20) // all folders present even before first expansion
+  assert.equal(folderExpanded(rows.find(n => isFolderRow(n))), false)
+  assert.equal(rows.filter(n => n.type === 'Button' && !isFolderRow(n) && n.props.trailingSwipeActions).length, 0)
+  assert.equal(rows.filter(n => isFolderRow(n)).length, 10) // only visible rows
   h.unmount()
-  console.log('PASS 5000文件稳定完整子行、原生展开收拢内容不变、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
+  console.log('PASS 5000文件仅构建可见标准行、折叠销毁隐藏视图、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
 
   let writes = 0, reads = 0, running = 0, maxReads = 0
   const observedUi = new Proxy(ui, { get(target, key) {
