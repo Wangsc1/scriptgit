@@ -50,9 +50,13 @@ async function main() {
   rows = nodes()
   assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 500)
   rows.find(n => n.type === 'DisclosureGroup').props.onChanged(false)
-  assert.equal(nodes().filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 0)
+  // Previously opened content stays attached for the native collapse animation.
+  rows = nodes()
+  assert.equal(rows.find(n => n.type === 'DisclosureGroup').props.isExpanded, false)
+  assert.equal(rows.filter(n => n.type === 'Button' && n.props.trailingSwipeActions).length, 500)
+  assert.equal(rows.filter(n => n.type === 'DisclosureGroup').length, 11) // unopened folders still lazy
   h.unmount()
-  console.log('PASS 5000文件折叠惰性行、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
+  console.log('PASS 5000文件首次展开惰性行、收拢保留动画内容、父目录索引、按展开范围读取、最多4路元数据IO、让出UI与取消')
 
   let writes = 0, reads = 0, running = 0, maxReads = 0
   const observedUi = new Proxy(ui, { get(target, key) {

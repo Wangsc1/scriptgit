@@ -13,7 +13,7 @@ export function changedDirectoryPaths(paths: string[]): Set<string> {
   return result
 }
 
-/** 折叠目录不构建子行，也不预读整棵树的文件元数据。 */
+/** 只读取当前可见展开路径的元数据；已收拢的动画内容即使保留，也不预读。 */
 export function expandedFilePaths(tree: FileTreeNode[], expanded: Set<string>): string[] {
   const result: string[] = []
   function visit(nodes: FileTreeNode[]) {
