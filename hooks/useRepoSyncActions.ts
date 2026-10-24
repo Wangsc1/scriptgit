@@ -139,6 +139,7 @@ export function useRepoSyncActions({
       await beginOpBusy("正在拉取", undefined, makeSyncCancel(token))
       const result = await pull(bookmarkName, "origin", undefined, undefined, {
         cancelToken: token,
+        pruneOriginBranches: true,
         onProgress: async (info: RemoteProgressInfo) => {
           await updateOpBusy("正在拉取", info.label)
         },

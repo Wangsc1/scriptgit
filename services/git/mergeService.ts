@@ -1,4 +1,5 @@
 import { createHttpTransport } from "../gitCore"
+import { cleanupOriginAfterMissingTarget } from "./remoteService"
 import { getAuth, resolveAuthor } from "../authStore"
 import {
   buildConflictFilesFromErrorData,
@@ -288,18 +289,25 @@ export async function pullInternal(
   const remoteBranch = target.remoteBranch
   const trackRef = `refs/remotes/${pullRemote}/${remoteBranch}`
 
-  await git.fetch({
-    fs,
-    dir,
-    gitdir,
-    http,
-    onAuth: () => (auth ? auth : { username: "anonymous", password: "" }),
-    remote: pullRemote,
-    ref: remoteBranch,
-    singleBranch: false,
-    tags: false,
-    onProgress: createGitOnProgress(options),
-  })
+  try {
+    await git.fetch({
+      fs,
+      dir,
+      gitdir,
+      http,
+      onAuth: () => (auth ? auth : { username: "anonymous", password: "" }),
+      remote: pullRemote,
+      ref: remoteBranch,
+      singleBranch: false,
+      tags: false,
+      // singleBranch=false 本就抓取全部分支元数据；手动拉取仅在同一次请求中追加 prune。
+      prune: pullRemote === "origin" && options?.pruneOriginBranches === true,
+      onProgress: createGitOnProgress(options),
+    })
+  } catch (error: any) {
+    await cleanupOriginAfterMissingTarget(bookmarkName, pullRemote, error, options)
+    throw error
+  }
   checkRemoteCancelled(options)
   await emitRemoteProgress(options, "Merging")
   const resultBase = {

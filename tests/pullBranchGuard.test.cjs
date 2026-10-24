@@ -12,7 +12,7 @@ function reset(){configWrites=0;fetches=[];headReads=0;ctx={git:engine,fs:{...fs
 global.FileManager={appGroupDocumentsDirectory:tmp}
 const remote=load('utils/remote.ts'),branch=load('utils/branch.ts')
 const runtime=load('services/git/runtime.ts',{scripting:ui,'../gitCore':{},'../repoStore':{},'../../utils/branch':branch,'../../utils/stash':{},'./matrixScanService':{}})
-const service=load('services/git/mergeService.ts',{
+const service=load('services/git/mergeService.ts',{'./remoteService':{cleanupOriginAfterMissingTarget:async()=>{}},
  '../gitCore':{createHttpTransport:()=>({})},'../authStore':{getAuth:()=>null,resolveAuthor:async()=>({name:'Test',email:'test@example.invalid'})},
  '../../utils/mergeConflict':{},'../../utils/branchMerge':load('utils/branchMerge.ts',{'./remote':remote}),'../../utils/remote':remote,
  '../../utils/remoteProgress':{checkRemoteCancelled(){},emitRemoteProgress:async()=>{},createGitOnProgress(){}},

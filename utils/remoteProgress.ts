@@ -30,6 +30,8 @@ export interface RemoteOpOptions {
     info: RemoteProgressInfo
   ) => void | Promise<void>
   cancelToken?: RemoteCancelToken
+  /** 仅用户手动拉取传入：同一次抓取带 prune，只清理 refs/remotes/origin/* 的远端已删除记录。 */
+  pruneOriginBranches?: boolean
 }
 
 /** 取消错误 code，与 MergeConflictError 一样挂在 Error 上 */

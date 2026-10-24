@@ -1,5 +1,6 @@
 import { createHttpTransport } from "../gitCore"
 import { getAuth } from "../authStore"
+import { cleanupOriginAfterMissingTarget } from "./remoteService"
 import { findRepo, updateBranchLastPulledAt } from "../repoStore"
 import { getCtx, resolveGitdir, resolveCurrentBranch, type GitContext } from "./runtime"
 import { parseUpstreamConfig, upstreamMergeBranch } from "../../utils/remote"
@@ -56,12 +57,20 @@ export async function autoPullInternal(bookmarkName: string, options?: AutoPullO
     checkRemoteCancelled(options)
     const auth = getAuth()
     const { git, fs, dir, gitdir } = ctx
-    const fetched = await git.fetch({
-      fs, dir, gitdir, http: createHttpTransport(auth?.username, auth?.password),
-      onAuth: () => auth || { username: "anonymous", password: "" },
-      remote: before.remote, ref: before.remoteBranch, singleBranch: true, tags: false,
-      onProgress: createGitOnProgress(options),
-    })
+    // 仅用户手动拉取（页面显式传入）才同一次抓取全部 origin 分支并 prune；后台/默认路径保持单分支。
+    const syncOrigin = options?.pruneOriginBranches === true && before.remote === "origin"
+    let fetched: Awaited<ReturnType<typeof git.fetch>>
+    try {
+      fetched = await git.fetch({
+        fs, dir, gitdir, http: createHttpTransport(auth?.username, auth?.password),
+        onAuth: () => auth || { username: "anonymous", password: "" },
+        remote: before.remote, ref: before.remoteBranch, singleBranch: !syncOrigin, prune: syncOrigin, tags: false,
+        onProgress: createGitOnProgress(options),
+      })
+    } catch (error: any) {
+      await cleanupOriginAfterMissingTarget(bookmarkName, before.remote, error, options)
+      throw error
+    }
     checkRemoteCancelled(options)
     const current = findRepo(bookmarkName)
     // 旧注册记录可能在解析工作目录时补齐 repoId，不将该兼容迁移误判为重新注册。

@@ -233,6 +233,23 @@ export async function syncOriginBranchesInternal(
   return true
 }
 
+/** 拉取目标分支已在远端删除时抓取会先失败（保持原错误）；此时仍尽力清理 origin 陈旧记录。
+ * 清理失败或被取消一律忽略，调用方继续抛出原错误。 */
+export async function cleanupOriginAfterMissingTarget(
+  bookmarkName: string,
+  remote: string,
+  error: any,
+  options?: RemoteOpOptions
+): Promise<void> {
+  if (remote !== "origin" || !options?.pruneOriginBranches || error?.code !== "NotFoundError") return
+  if (options.cancelToken?.isCancelled) return
+  try {
+    await syncOriginBranchesInternal(bookmarkName, options, 60)
+  } catch (_e) {
+    // 清理是附带动作，不覆盖拉取错误
+  }
+}
+
 export async function cloneInternal(
   url: string,
   dir: string,

@@ -217,7 +217,7 @@ export function RepoListPage() {
       try {
         await yieldForUi()
         if (!alive.current || !listRepos().some(item => item.bookmarkName === repo.bookmarkName)) return
-        const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true })
+        const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true, pruneOriginBranches: true })
         if (!alive.current) return
         refreshRepo(repo)
         showAlert(result.status === "skipped" ? "未拉取" : "拉取完成", `${repo.name}：${result.reason}`)
@@ -252,7 +252,7 @@ export function RepoListPage() {
         setBatchProgress({ completed, total: targets.length + 1, current: `正在拉取 ${repo.name}` })
         await yieldForUi()
         try {
-          const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true })
+          const result = await autoPullFastForward(repo.bookmarkName, { includeAllSources: true, pruneOriginBranches: true })
           if (result.status === "updated") updated++
           else if (result.status === "unchanged") unchanged++
           else notes.push(`${repo.name}：${result.reason}`)
