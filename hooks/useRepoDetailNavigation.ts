@@ -17,7 +17,6 @@ export type RepoDetailPageKey =
   | "compare"
   | "rollback"
   | "githubWork"
-  | "animationDiagnostics"
 
 export function useRepoDetailNavigation() {
   const [page, setPage] = useState<RepoDetailPageKey | null>(null)

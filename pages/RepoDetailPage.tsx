@@ -320,10 +320,8 @@ export function RepoDetailPage({
       }}
       refreshable={handleRefresh}
       toolbar={{
-        topBarTrailing: (
-          <Menu title="更多" systemImage="ellipsis.circle">
-            <Button title="文件夹动画诊断" systemImage="folder" action={() => nav.openPage("animationDiagnostics", { skipReload: true })} />
-            {data.githubFullName ? <>
+        topBarTrailing: data.githubFullName ? (
+          <Menu title="GitHub" systemImage="ellipsis.circle">
             <Button title="Edit Remote Files" systemImage="doc.text" action={() => nav.openGitHubWorkPage(3)} />
             <Button
               title="Issues"
@@ -340,17 +338,16 @@ export function RepoDetailPage({
               systemImage="hammer.fill"
               action={() => nav.openGitHubWorkPage(2)}
             />
-            </> : null}
           </Menu>
-        ),
+        ) : undefined,
       }}
       navigationDestination={{
         isPresented: nav.isPresented,
         onChanged: (presented: boolean) => {
           if (!presented) {
             nav.closeAll()
-            // 纯假数据诊断返回不读取真实仓库。
-            if (nav.page !== "animationDiagnostics") data.loadMergeState()
+            // 从冲突页返回时刷新合并状态
+            data.loadMergeState()
           }
         },
         content: (
@@ -358,7 +355,6 @@ export function RepoDetailPage({
             bookmarkName={bookmarkName}
             displayName={data.displayName}
             showUpload={nav.page === "upload"}
-            showAnimationDiagnostics={nav.page === "animationDiagnostics"}
             showRemotes={nav.page === "remotes"}
             showConflicts={nav.page === "conflicts"}
             showCompare={nav.page === "compare"}

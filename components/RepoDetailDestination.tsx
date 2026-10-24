@@ -1,5 +1,4 @@
 import { Text } from "scripting"
-import { FolderAnimationDiagnosticsPage } from "../pages/FolderAnimationDiagnosticsPage"
 import type { CommitEntry, RepoMeta } from "../types/git"
 import { UploadGitHubPage } from "../pages/UploadGitHubPage"
 import { CommitDetailPage } from "../pages/CommitDetailPage"
@@ -15,7 +14,6 @@ export function RepoDetailDestination({
   bookmarkName,
   displayName,
   showUpload,
-  showAnimationDiagnostics,
   showRemotes,
   showConflicts,
   showCompare,
@@ -33,7 +31,6 @@ export function RepoDetailDestination({
   bookmarkName: string
   displayName: string
   showUpload: boolean
-  showAnimationDiagnostics?: boolean
   showRemotes: boolean
   showConflicts: boolean
   showCompare: boolean
@@ -48,7 +45,6 @@ export function RepoDetailDestination({
   onConflictsChanged: (reason?: "updated" | "completed") => void
   onRollbackSelect: (entry: CommitEntry, branch: string) => void
 }) {
-  if (showAnimationDiagnostics) return <FolderAnimationDiagnosticsPage />
   if (showUpload) {
     return (
       <UploadGitHubPage
