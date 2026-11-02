@@ -55,15 +55,18 @@ export function RepoDetailPage({
 }) {
   const [localFile, setLocalFile] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
   const localSession = useRef(0)
+  const activeLocal = useRef<number | null>(null)
+  const localAlive = useRef(true)
   const [localImage, setLocalImage] = useState<{ file: LocalWorktreeFile; id: number } | null>(null)
   const activeImage = useRef<number | null>(null)
-  useEffect(() => () => { activeImage.current = null }, [])
+  useEffect(() => () => { localAlive.current = false; activeLocal.current = null; activeImage.current = null }, [])
   function closeLocalImage(id: number) {
     if (activeImage.current !== id) return
     activeImage.current = null
     setLocalImage(null)
   }
   function openLocalFile(file: LocalWorktreeFile) {
+    if (!localAlive.current || nav.isPresented || activeLocal.current !== null || activeImage.current !== null) return
     const id = ++localSession.current
     if (file.previewDataUrl || file.previewImage) {
       activeImage.current = id
@@ -71,7 +74,9 @@ export function RepoDetailPage({
     } else {
       activeImage.current = null
       setLocalImage(null)
+      activeLocal.current = id
       setLocalFile({ file, id })
+      nav.openPage("localEditor", { skipReload: true })
     }
   }
   const [alertState, setAlertState] = useState<AlertState>(null)
@@ -267,18 +272,8 @@ export function RepoDetailPage({
   return (
     <List
       fullScreenCover={[{
-        isPresented: localFile !== null,
-        // 与远端编辑器一致：由稳定 List 承载，不由条件 Tab 下的 Section 承载。
-        // 全屏不使用交互式下拉关闭；关闭按钮检查未保存草稿。
-        onChanged: () => {},
-        content: localFile ? <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file} initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
-          onClose={() => setLocalFile(null)} onReload={openLocalFile} onChanged={async () => {
-            try { await data.refreshChangesAndSnapshot() }
-            catch (error: any) { showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning"); throw error }
-          }} /> : <Text>加载中…</Text>,
-      }, {
         // Same presentation family as the existing diff/GitHub image viewers
-        // (fullScreenCover), separate from the editor entry: the system owns the
+        // (fullScreenCover), independent of the pushed editor: the system owns the
         // modal dismissal motion; no custom drag/edge gesture is installed.
         isPresented: localImage !== null,
         onChanged: (presented: boolean) => { if (!presented && localImage) closeLocalImage(localImage.id) },
@@ -344,13 +339,38 @@ export function RepoDetailPage({
       navigationDestination={{
         isPresented: nav.isPresented,
         onChanged: (presented: boolean) => {
-          if (!presented) {
-            nav.closeAll()
+          if (!presented && nav.page !== "localEditor") {
+            if (nav.closeAll(nav.destinationId) === false) return
             // 从冲突页返回时刷新合并状态
             data.loadMergeState()
           }
+          // Editor hides the system back button. Only its save-first onClose pops;
+          // never discard a live draft in an unguarded native dismissal callback.
         },
-        content: (
+        content: nav.page === "localEditor" && localFile ? (
+          <LocalFileEditor key={`${localFile.file.path}:${localFile.id}`} bookmarkName={bookmarkName} file={localFile.file}
+            initialHasChanges={data.changes.some(change => change.filepath === localFile.file.path)}
+            onClose={() => {
+              if (!localAlive.current || activeLocal.current !== localFile.id) return
+              activeLocal.current = null
+              setLocalFile(null)
+              nav.closePage("localEditor")
+            }}
+            onReload={file => {
+              if (!localAlive.current || activeLocal.current !== localFile.id) return
+              const id = ++localSession.current
+              activeLocal.current = id
+              setLocalFile({ file, id }) // Replace editor only, never pop/push the destination.
+            }}
+            onChanged={async () => {
+              if (!localAlive.current) return
+              try { await data.refreshChangesAndSnapshot() }
+              catch (error: any) {
+                if (localAlive.current) showToast(`文件已保存，但状态刷新失败：${String(error?.message || error)}`, "warning")
+                throw error
+              }
+            }} />
+        ) : (
           <RepoDetailDestination
             bookmarkName={bookmarkName}
             displayName={data.displayName}

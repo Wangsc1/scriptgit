@@ -677,13 +677,13 @@ async function main(){
   const failed=mount(Editor,props);assert.match(text(failed),/编辑器初始化失败.*native init rejected/);assert.equal(all(failed.tree).filter(n=>n.type==='LocalCodeEditor').length,0);await node(failed,'Button','返回').props.action();failed.unmount()
   const binary=mount(Editor,{...props,file:{...file,text:null,readOnlyReason:'binary'}});assert.equal(all(binary.tree).filter(n=>n.type==='LocalCodeEditor').length,0);assert.doesNotMatch(text(binary),/初始化失败/);binary.unmount();global.EditorController=Native
  })
- const bar=h=>{h.render();assert.equal(h.tree.type,'NavigationStack');return h.tree.children[0].props.toolbar}
+ const bar=h=>{h.render();assert.equal(h.tree.type,'VStack');assert.equal(h.tree.props.navigationBarBackButtonHidden,true);return h.tree.props.toolbar}
  const back=h=>bar(h).topBarLeading.props.action(),refresh=h=>bar(h).topBarTrailing.props.action()
  await test('toolbar text/no stale controls; back with no change leaves without write; binary back does not save',async()=>{
   await disk('embyicon.json','initial');const file=await service.readLocalWorktreeFile('repo','embyicon.json');let closed=0,changed=0;const before=writes
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++})
-  assert.equal(h.tree.children[0].props.navigationTitle,'embyicon.json');assert.equal(bar(h).topBarLeading.props.title,'返回');assert.equal(bar(h).topBarTrailing.props.title,'刷新');const body=h.tree.children[0].children;assert.equal(all(body).some(n=>n.type==='List'),false);assert.equal(all(body).some(n=>n.type==='Button'),false)
-  assert.doesNotMatch(text(h),/保存|关闭|删除文件|重新加载文件|下拉刷新|修改仅保存到本地工作区/);assert.equal(all(h.tree).filter(n=>n.type==='Text'&&n.children.includes('embyicon.json')).length,0);assert.equal(h.tree.children[0].children.at(-1).props.refreshable,undefined)
+  assert.equal(h.tree.props.navigationTitle,'embyicon.json');assert.equal(bar(h).topBarLeading.props.title,'返回');assert.equal(bar(h).topBarTrailing.props.title,'刷新');const body=h.tree.children;assert.equal(all(body).some(n=>n.type==='List'),false);assert.equal(all(body).some(n=>n.type==='Button'),false)
+  assert.doesNotMatch(text(h),/保存|关闭|删除文件|重新加载文件|下拉刷新|修改仅保存到本地工作区/);assert.equal(all(h.tree).filter(n=>n.type==='Text'&&n.children.includes('embyicon.json')).length,0);assert.equal(h.tree.children.at(-1).props.refreshable,undefined)
   await back(h);assert.equal(closed,1);assert.equal(writes,before);assert.equal(changed,0);h.unmount()
   await disk('ro.bin',Buffer.from([0,255]));const bin=await service.readLocalWorktreeFile('repo','ro.bin'),r=mount(Editor,{bookmarkName:'repo',file:bin,onClose:()=>closed++,onReload(){},onChanged:()=>changed++});await back(r);assert.equal(closed,2);assert.equal(writes,before);r.unmount()
  })

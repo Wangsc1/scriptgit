@@ -2,13 +2,13 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
 const root=path.resolve(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,f),'utf8')
 const files=[];(function walk(d){for(const n of fs.readdirSync(path.join(root,d))){const r=d+'/'+n;if(fs.statSync(path.join(root,r)).isDirectory())walk(r);else if(r.endsWith('.tsx'))files.push(r)}})('pages');files.push(...fs.readdirSync(path.join(root,'components')).filter(n=>n.endsWith('.tsx')).map(n=>'components/'+n),'index.tsx')
-// 1) Only the busy clone page suppresses the system back button; pushed pages have no custom gesture overrides.
-const hidden=files.filter(f=>/navigationBarBackButtonHidden/.test(read(f)));assert.deepEqual(hidden,['pages/ClonePage.tsx']);assert.match(read('pages/ClonePage.tsx'),/navigationBarBackButtonHidden=\{cloning\}/)
+// 1) Busy clone and the save-protected local editor suppress default back.
+const hidden=files.filter(f=>/navigationBarBackButtonHidden/.test(read(f)));assert.deepEqual(hidden,['pages/ClonePage.tsx','pages/LocalFileEditor.tsx']);assert.match(read('pages/ClonePage.tsx'),/navigationBarBackButtonHidden=\{cloning\}/)
 for(const f of files){
  assert.doesNotMatch(read(f),/highPriorityGesture|interactiveDismissDisabled/,f)
  if(f!=='pages/LocalFileEditor.tsx')assert.doesNotMatch(read(f),/DragGesture|simultaneousGesture/,f)
 }
-// The full-screen local editor intentionally adds a simultaneous edge swipe only
+// The pushed local editor intentionally adds a simultaneous edge swipe only
 // to its diff ScrollView. It uses the same save-first back path, not a direct close.
 const ts=require('typescript'),ast=ts.createSourceFile('LocalFileEditor.tsx',read('pages/LocalFileEditor.tsx'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
 const gestures=[]
@@ -19,11 +19,11 @@ assert.match(gestures[0].getText(ast),/startLocation\.x <= 24[\s\S]*translation\
 assert.doesNotMatch(gestures[0].getText(ast),/onClose|dismiss|Script\.exit/)
 // 2) Root list/detail/sub pages use native NavigationStack/NavigationLink/navigationDestination, so system edge-swipe is retained.
 assert.match(read('index.tsx'),/<NavigationStack>\s*<RepoListPage \/>/);for(const f of ['pages/RepoListPage.tsx','pages/RepoDetailPage.tsx','pages/GitHubWorkPage.tsx','pages/ActionsPage.tsx'])assert.match(read(f),/navigationDestination/,f)
-// 3) Editor/image are full-screen covers with explicit buttons; editor back is the only editor exit and always uses the save-first path.
+// 3) Editor is a native pushed destination with guarded back; images keep their cover.
 const detail=read('pages/RepoDetailPage.tsx'),editor=read('pages/LocalFileEditor.tsx')
-assert.match(detail,/fullScreenCover=\{\[?\{[\s\S]*?onChanged: \(\) => \{\}/);assert.match(editor,/topBarLeading: <Button title="返回" action=\{back\}/);assert.equal((editor.match(/onClose\(\)/g)||[]).length,1);assert.match(editor,/async function back\(\)[\s\S]*saveLocalWorktreeFile[\s\S]*onClose\(\)/)
-assert.doesNotMatch(editor,/navigationBarBackButtonHidden|Script\.exit|Navigation\.present/)
-console.log('PASS native push pages keep system back gesture; only busy clone page hides it; no pushed-page gesture overrides; editor diff edge swipe and toolbar both use save-first back; limits remain for covers/sheets (native swipe API unavailable, device test needed).')
+assert.match(editor,/navigationBarBackButtonHidden=\{true\}/);assert.match(editor,/topBarLeading: <Button title="返回" action=\{back\}/);assert.equal((editor.match(/onClose\(\)/g)||[]).length,1);assert.match(editor,/async function back\(\)[\s\S]*saveLocalWorktreeFile[\s\S]*onClose\(\)/)
+assert.doesNotMatch(editor,/<NavigationStack|Script\.exit|Navigation\.present/)
+console.log('PASS native push navigation; local editor hides unguarded system back and retains save-first toolbar/diff-edge back; clone busy guard unchanged; actual native gestures/animation require device testing.')
 // Root render: execute the real index.tsx View tree, not only its source text.
 ;(async()=>{
  const {load,mount,ui,deferred,tick}=require('./remoteFiles.test.cjs')
