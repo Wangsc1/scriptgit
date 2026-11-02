@@ -30,7 +30,10 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
   // Stable parent-owned native row is deliberately outside FileChangeSwitcher.
   // If a tab/child never appears it must not hide its own loading/error status.
   const reportDisplay = useMemo(() => (next: LocalEditorDisplayState) => {
-    if (alive.current) setDisplay(previous => ({ ...previous, ...next }))
+    if (alive.current) setDisplay(previous => ({ ...previous, ...next,
+      webAppearCount: (previous.webAppearCount ?? 0) + (next.webEvent === "appear" ? 1 : 0),
+      webDisappearCount: (previous.webDisappearCount ?? 0) + (next.webEvent === "disappear" ? 1 : 0),
+    }))
   }, [])
   useEffect(() => {
     if (!controller) return
@@ -170,7 +173,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
       }}>
       {controller !== null && viewKind === 0 ? <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL} padding={{ horizontal: 8, vertical: 4 }}>
-        {`代码编辑器：${editorPhase === "ready" ? "就绪" : editorPhase === "error" ? "加载失败" : editorPhase === "loading" ? "加载中" : "等待启动"} · ${display.editorVisible ? "编辑视图已出现" : "等待编辑视图"} · ${display.webVisible ? "网页已出现" : "等待网页"}${display.viewport ? ` · ${display.viewport}` : ""}${editorPhase === "error" ? `：${controller.error}` : ""}`}
+        {`代码编辑器：${editorPhase === "ready" ? "就绪" : editorPhase === "error" ? "加载失败" : editorPhase === "loading" ? "加载中" : "等待启动"} · ${display.editorVisible ? "编辑视图已出现" : "等待编辑视图"} · ${display.webVisible ? "网页已出现" : "等待网页"}（显${display.webAppearCount ?? 0}/隐${display.webDisappearCount ?? 0}）${display.viewport ? ` · ${display.viewport}` : ""}${editorPhase === "error" ? `：${controller.error}` : ""}`}
       </Text> : null}
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}

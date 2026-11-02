@@ -15,7 +15,7 @@ export interface LocalCodeEditorController {
   /** Component lifecycle only: unmount must NOT dispose the native controller. */
   readonly phase: LocalCodeEditorPhase
   readonly error: string
-  readonly webController: InstanceType<typeof WebViewController> | null
+  readonly webController: InstanceType<typeof WebViewController>
   start(): Promise<void>
   subscribe(listener: () => void): () => void
   attachBack(handler?: () => void | Promise<void>): () => void
@@ -65,10 +65,14 @@ function timed<T>(promise: Promise<T>, label: string, milliseconds = 8000): Prom
 }
 function detail(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
-/** Synchronous creation, asynchronous initialization only when the component starts. */
+/** Prepare one native controller synchronously inside the parent's useMemo factory.
+ * Official embedded WebView example binds a stable controller in the FIRST render:
+ * https://scriptingapp.github.io/guide/Views/WebView.md
+ * Loading is separate; LocalCodeEditor calls start only from WebView.onAppear.
+ * No native object is constructed at module evaluation time. */
 export function createLocalCodeEditorController(options: {content: string; ext: string; readOnly: boolean}): LocalCodeEditorController {
   let draft = options.content, phase: LocalCodeEditorPhase = "idle", error = ""
-  let web: InstanceType<typeof WebViewController> | null = null
+  const web = new WebViewController()
   let starting: Promise<void> | null = null, everActivated = false, activationVerified = false, revision = -1
   let back: (() => void | Promise<void>) | undefined, backBusy = false
   let dark: boolean | undefined
@@ -95,7 +99,7 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
     return snapshot
   }
   async function evaluate<T>(source: string): Promise<T> {
-    if (!alive() || !web) throw new Error("本地编辑器已关闭或尚未初始化")
+    if (!alive()) throw new Error("本地编辑器已关闭或尚未初始化")
     const value = await timed(web.evaluateJavaScript<T>(source), "读取本地编辑器")
     if (!alive()) throw new Error("本地编辑器已关闭")
     return value
@@ -133,10 +137,12 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
     async start() {
       if (!alive()) return
       if (starting) return starting
-      phase = "loading"; publish()
-      starting = (async () => {
+      // Publish only after assigning starting, so reentrant appearances/listeners
+      // cannot launch a second load while handling the initial loading update.
+      starting = Promise.resolve().then(async () => {
+        if (!alive()) return
         try {
-          web = new WebViewController()
+          phase = "loading"; publish()
           // WKWebView may give loadHTML documents an applewebdata: origin.
           // Rejecting that internal navigation can leave loadHTML pending forever.
           // Keep external requests blocked; CSP independently disallows resources.
@@ -190,7 +196,7 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
           if (error) throw new Error(error)
           phase = "ready"; error = ""; publish()
         } catch (cause) { fail(cause) }
-      })()
+      })
       return starting
     },
     async getContent() {
@@ -218,8 +224,7 @@ export function createLocalCodeEditorController(options: {content: string; ext: 
     dispose() {
       if (!alive()) return
       phase = "disposed"; back = undefined; controller.onContentChanged = undefined; listeners.clear()
-      const resource = web; web = null
-      resource?.dispose()
+      web.dispose()
     },
   }
   return controller

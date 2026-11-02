@@ -45,7 +45,7 @@ if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
     })
     await test('synchronous factory, visible lifecycle, pre-ready draft',async()=>{
       const count=instances.length,c=service.createLocalCodeEditorController({content:'草稿',ext:'ts',readOnly:false})
-      assert.equal(instances.length,count);assert.equal(c.phase,'idle');assert.equal(await c.getContent(),'草稿')
+      assert.equal(instances.length,count+1);assert.equal(c.webController,instances.at(-1));assert.equal(c.webController.html,undefined);assert.equal(c.phase,'idle');assert.equal(await c.getContent(),'草稿')
       let events=0;const off=c.subscribe(()=>events++);await c.start();assert.equal(c.phase,'ready');assert.ok(events>=3)
       assert.equal(await c.getContent(),'草稿');assert.equal(await c.webController.shouldAllowRequest({url:'https://example.com'}),false)
       assert.equal(await c.webController.shouldAllowRequest({url:'about:blank'}),true)
@@ -53,6 +53,15 @@ if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
       assert.equal(c.webController.baseURL,'about:blank')
       for(const url of ['http://example.com','file:///etc/passwd','javascript:alert(1)','about:blank.evil'])assert.equal(await c.webController.shouldAllowRequest({url}),false)
       off();c.dispose();assert.equal(c.phase,'disposed');await assert.rejects(c.getContent(),/关闭/)
+    })
+    await test('synchronous native identity, reentrant start and repeated start load once; dispose-before-start does not load',async()=>{
+      const c=service.createLocalCodeEditorController({content:'稳定原文',ext:'json',readOnly:false}),native=c.webController
+      let loads=0;const load=native.loadHTML.bind(native);native.loadHTML=async(...args)=>{loads++;return load(...args)}
+      c.subscribe(()=>{if(c.phase==='loading')void c.start()})
+      await Promise.all([c.start(),c.start(),c.start()]);assert.equal(loads,1);assert.equal(c.webController,native);assert.equal(await c.getContent(),'稳定原文')
+      c.dispose();assert.equal(native.disposed,true)
+      const dormant=service.createLocalCodeEditorController({content:'未显示',ext:'txt',readOnly:false}),n=dormant.webController
+      const pending=dormant.start();dormant.dispose();await pending;assert.equal(n.html,undefined);assert.equal(dormant.phase,'disposed')
     })
     await test('getContent directly reads newest browser draft even without bridge; stale messages rejected',async()=>{
       const c=service.createLocalCodeEditorController({content:'初始',ext:'json',readOnly:false});await c.start();const w=c.webController
@@ -104,13 +113,13 @@ if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
       const {LocalCodeEditor}=load('components/LocalCodeEditor.tsx',{scripting:ui})
       const c=service.createLocalCodeEditorController({content:'persistent',ext:'tsx',readOnly:false});const observations=[]
       function mount(){const h={cursor:0,slots:[],effects:[],cleanups:[],render(){active=h;h.cursor=0;h.tree=LocalCodeEditor({controller:c,onBack:()=>{},onDisplayStateChange:value=>observations.push(value)});h.effects.splice(0).forEach(f=>{const cleanup=f();if(cleanup)h.cleanups.push(cleanup)});return h.tree},unmount(){h.unmounted=true;h.cleanups.forEach(f=>f())}};h.render();return h}
-      const first=mount();assert.equal(first.tree.children[0].children[0].type,'ProgressView');first.tree.props.onAppear();await tick();await tick();first.render()
-      assert.equal(c.phase,'ready');assert.ok(observations.some(value=>value.editorVisible));const native=first.tree.children.find(n=>n.type==='WebView');native.props.onAppear();await new Promise(resolve=>setTimeout(resolve,330));assert.ok(observations.some(value=>value.viewport==='390×700'));assert.ok(!JSON.stringify(observations).includes('persistent'),'no file text in diagnostics')
+      const first=mount();const firstWeb=first.tree.children[0];assert.equal(firstWeb.type,'WebView');assert.equal(firstWeb.props.controller,c.webController);assert.equal(firstWeb.props.key,'local-code-webview');assert.equal(c.webController.html,undefined);first.tree.props.onAppear();await tick();first.render();assert.equal(c.phase,'idle','effect and root appearance must not load an offscreen browser');assert.equal(c.webController.html,undefined);assert.equal(first.tree.children[0].props.controller,firstWeb.props.controller);firstWeb.props.onAppear();await tick();await tick();first.render()
+      assert.equal(c.phase,'ready');assert.ok(observations.some(value=>value.editorVisible));const native=first.tree.children.find(n=>n.type==='WebView');assert.equal(native.props.controller,firstWeb.props.controller);native.props.onAppear();await new Promise(resolve=>setTimeout(resolve,330));assert.ok(observations.some(value=>value.viewport==='390×700'));assert.ok(!JSON.stringify(observations).includes('persistent'),'no file text in diagnostics')
       const w=c.webController;assert.equal(w.calls.some(code=>code.includes('.setTheme(')),false,'global hook must not override WebView appearance');first.unmount();w.text='unmounted latest';w.revision=2;w.handlers.localCodeEditorChange({content:w.text,revision:2})
       const second=mount();assert.equal(c.webController,w);assert.equal(c.content,'unmounted latest');assert.equal(w.disposed,undefined)
       assert.deepEqual(second.tree.props.background,{light:'white',dark:'#242424'});assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,'infinity')
       assert.ok(second.tree.children.some(n=>n.type==='WebView'));assert.equal(second.tree.children.find(n=>n.type==='WebView').props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.children.some(n=>n.type==='Editor'),false)
-      second.tree.props.onAppear();second.unmount();const before=observations.length;await new Promise(resolve=>setTimeout(resolve,330));assert.equal(observations.length,before,'cancel delayed viewport observations after detach');c.dispose();assert.equal(w.disposed,true)
+      second.tree.props.onAppear();second.tree.children[0].props.onAppear();second.unmount();const before=observations.length;await new Promise(resolve=>setTimeout(resolve,330));assert.equal(observations.length,before,'cancel delayed viewport observations after detach');c.dispose();assert.equal(w.disposed,true)
     })
     console.log('PASS all local editor controller/component tests')
   }
