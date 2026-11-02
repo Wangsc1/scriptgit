@@ -16,7 +16,7 @@ const {LocalFileEditor}=load('pages/LocalFileEditor.tsx',{
  '../services/localCodeEditor':{createLocalCodeEditorController:options=>{const c=new global.EditorController(options);c.getContent=async()=>{c.reads=(c.reads||0)+1;if(c.nativeError)throw Error(c.nativeError);c.content=c.latestNative??c.content;return c.content};return c}},
  '../components/DiffViewer':{DiffViewer:'DiffViewer'},'../components/FileChangeSwitcher':{FileChangeSwitcher:'FileChangeSwitcher'},'../utils/editorDiff':{editorDiff:(...args)=>{diffCalls++;return editorDiff(...args)}},
 })
-function open(text=versions.current,initialHasChanges=true){return mount(LocalFileEditor,{initialHasChanges,bookmarkName:'repo',file:{path:'test.json',text},onClose:()=>closed++,onChanged:()=>{},onReload(){}})}
+function open(text=versions.current,initialHasChanges=true){const h=mount(LocalFileEditor,{initialHasChanges,bookmarkName:'repo',file:{path:'test.json',text},onClose:()=>closed++,onChanged:()=>{},onReload(){}});assert.equal(find(h,'TextField').props.value,text);all(h.tree).find(n=>n.props.title==='代码编辑').props.action();h.render();return h}
 function find(h,type){h.render();return all(h.tree).find(n=>n.type===type)}
 async function main(){
  const pause=()=>new Promise(r=>setTimeout(r,10))
@@ -24,7 +24,7 @@ async function main(){
  assert.equal(h.tree.children[0].props.fullScreenCover,undefined)
  await pause();let bar=find(h,'FileChangeSwitcher');assert.equal(bar.props.selection.value,0)
  assert.equal(versionCalls,0);assert.equal(diffCalls,0);assert.equal(h.tree.children[0].props.safeAreaInset,undefined)
- assert.equal(h.tree.children[0].props.frame.maxHeight,Infinity)
+ assert.equal(h.tree.children[0].props.frame.maxHeight,'infinity')
  assert.equal(h.tree.props.preferredColorScheme,undefined);assert.deepEqual(h.tree.props.background,{light:'white',dark:'#242424'})
  assert.deepEqual(h.tree.children[0].props.background,{light:'white',dark:'#242424'});assert.equal(h.tree.children[0].props.ignoresSafeArea.edges,'bottom')
  assert.deepEqual(h.tree.children[0].props.toolbarBackground,{style:{light:'white',dark:'#242424'},bars:['navigationBar']})

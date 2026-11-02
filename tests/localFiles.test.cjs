@@ -670,7 +670,7 @@ async function main(){
   await disk('lifecycle.txt','draft');const file=await service.readLocalWorktreeFile('repo','lifecycle.txt');let closed=0
   const props={bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged(){}}
   const before=controllers.length,h=mount(Editor,props),controller=controllers.at(-1)
-  h.render();h.render();assert.equal(controllers.length,before+1);assert.equal(controller.disposed,undefined);assert.equal(node(h,'LocalCodeEditor').props.controller,controller)
+  h.render();h.render();assert.equal(controllers.length,before+1);assert.equal(controller.disposed,undefined);assert.equal(node(h,'TextField').props.value,controller.content);assert.equal(all(h.tree).some(n=>n.type==='LocalCodeEditor'),false)
   await node(h,'Button','返回').props.action();assert.equal(closed,1);assert.equal(controller.disposed,undefined);h.unmount();assert.equal(controller.disposed,true)
   const reopened=mount(Editor,props);assert.notEqual(controllers.at(-1),controller);reopened.unmount()
   const Native=global.EditorController;global.EditorController=class{constructor(){throw Error('native init rejected')}}
@@ -682,7 +682,7 @@ async function main(){
  await test('toolbar text/no stale controls; back with no change leaves without write; binary back does not save',async()=>{
   await disk('embyicon.json','initial');const file=await service.readLocalWorktreeFile('repo','embyicon.json');let closed=0,changed=0;const before=writes
   const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged:()=>changed++})
-  assert.equal(h.tree.children[0].props.navigationTitle,'embyicon.json');assert.equal(bar(h).topBarLeading.props.title,'返回');assert.equal(bar(h).topBarTrailing.props.title,'刷新');const body=h.tree.children[0].children;assert.equal(all(body).some(n=>n.type==='List'),false);assert.equal(all(body).some(n=>n.type==='Button'),false)
+  assert.equal(h.tree.children[0].props.navigationTitle,'embyicon.json');assert.equal(bar(h).topBarLeading.props.title,'返回');assert.equal(bar(h).topBarTrailing.props.title,'刷新');const body=h.tree.children[0].children;assert.equal(all(body).some(n=>n.type==='List'),false);assert.deepEqual(all(body).filter(n=>n.type==='Button').map(n=>n.props.title),['代码编辑'])
   assert.doesNotMatch(text(h),/保存|关闭|删除文件|重新加载文件|下拉刷新|修改仅保存到本地工作区/);assert.equal(all(h.tree).filter(n=>n.type==='Text'&&n.children.includes('embyicon.json')).length,0);assert.equal(h.tree.children[0].children.at(-1).props.refreshable,undefined)
   await back(h);assert.equal(closed,1);assert.equal(writes,before);assert.equal(changed,0);h.unmount()
   await disk('ro.bin',Buffer.from([0,255]));const bin=await service.readLocalWorktreeFile('repo','ro.bin'),r=mount(Editor,{bookmarkName:'repo',file:bin,onClose:()=>closed++,onReload(){},onChanged:()=>changed++});await back(r);assert.equal(closed,2);assert.equal(writes,before);r.unmount()
@@ -733,6 +733,33 @@ async function main(){
   FileManager.readAsData=async p=>{if(p.endsWith('/broken-editor.json')){entered.resolve();await gate.promise}return nativeRead(p)}
   const pending=refresh(h);await entered.promise;h.unmount();gate.resolve();await pending;FileManager.readAsData=nativeRead
   assert.equal(reloaded,1);assert.equal(h.lateWrites,0);assert.equal(c.disposed,true)
+ })
+ await test('native multiline body is the default; actual value/edit/save, native diff, code switching latest draft and explicit discard recovery',async()=>{
+  const original='{\r\n  "标题": "中文😀<tag>&", "icons": [1,2]\r\n}\r\n'
+  await disk('native-body.json',original);const file=await service.readLocalWorktreeFile('repo','native-body.json'),start=writes
+  let closed=0;const h=mount(Editor,{bookmarkName:'repo',file,onClose:()=>closed++,onReload(){},onChanged(){}},{effectUpdates:true})
+  const field=()=>node(h,'TextField'),button=title=>all(h.render()).find(n=>n.type==='Button'&&n.props.title===title)
+  let c=controllers.at(-1)
+  assert.equal(field().props.value,original);assert.equal(field().props.axis,'vertical');assert.deepEqual(field().props.lineLimit,{min:12,max:24});assert.equal(field().props.frame.minHeight,240)
+  assert.equal(all(h.tree).some(n=>n.type==='LocalCodeEditor'||n.type==='FileChangeSwitcher'||n.type==='WebView'),false,'default path has no WebView/TabView dependency')
+  assert.match(text(h),/已读取.*字符.*原生文本/)
+  const nativeDraft=original+'// 原始字符不格式化\n';field().props.onChanged(nativeDraft);assert.equal(field().props.value,nativeDraft);assert.equal(c.content,nativeDraft)
+  assert.ok(button('改动项'));assert.equal(all(h.tree).some(n=>n.type==='FileChangeSwitcher'),false)
+  button('改动项').props.action();h.render();assert.ok(button('原内容'));button('原内容').props.action();assert.equal(field().props.value,nativeDraft)
+  const detachedField=field();await button('代码编辑').props.action();h.render();assert.equal(node(h,'LocalCodeEditor').props.controller,c)
+  detachedField.props.onChanged('stale native callback');assert.equal(c.content,nativeDraft)
+  c.getContent=async()=>{c.content='最新代码草稿\r\n';return c.content}
+  await button('文本编辑').props.action();h.render();assert.equal(field().props.value,'最新代码草稿\r\n');assert.equal(c.disposed,true);assert.equal(writes,start)
+  c=controllers.at(-1);await button('代码编辑').props.action();h.render();c.getContent=async()=>{throw Error('bridge unreadable')}
+  confirm=false;await button('文本编辑').props.action();h.render();assert.ok(button('文本编辑'));assert.equal(c.disposed,undefined);assert.match(confirmations.at(-1).title,/无法读取代码草稿/)
+  confirm=true;await button('文本编辑').props.action();h.render();assert.equal(field().props.value,original);assert.equal(c.disposed,true);assert.equal(writes,start)
+  const final=original+'追加原样';field().props.onChanged(final);await back(h);assert.equal(closed,1);assert.equal(fs.readFileSync(dir+'/native-body.json','utf8'),final);h.unmount()
+  for(const value of ['', 'x'.repeat(512*1024)]){
+   await disk('native-boundary.txt',value);const f=await service.readLocalWorktreeFile('repo','native-boundary.txt'),v=mount(Editor,{bookmarkName:'repo',file:f,onClose(){},onReload(){},onChanged(){}})
+   assert.equal(node(v,'TextField').props.value,value);assert.equal(all(v.tree).some(n=>n.type==='LocalCodeEditor'),false);v.unmount()
+  }
+  await disk('native-too-large.txt','x'.repeat(512*1024+1));const tooLarge=await service.readLocalWorktreeFile('repo','native-too-large.txt'),v=mount(Editor,{bookmarkName:'repo',file:tooLarge,onClose(){},onReload(){},onChanged(){}})
+  assert.equal(all(v.tree).some(n=>n.type==='TextField'),false);assert.match(text(v),/512 KiB/);v.unmount()
  })
  await test('native write errors keep draft; retry only writes after success',async()=>{
   await disk('io-error.txt','old');const file=await service.readLocalWorktreeFile('repo','io-error.txt');let changed=0,closed=0

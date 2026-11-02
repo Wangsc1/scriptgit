@@ -30,6 +30,23 @@ async function main(){
  const file={path:'file.txt',text:'draft',version:{}}
  tab().props.onOpenLocalFile(file);h.render();let cover=h.tree.props.fullScreenCover[0]
  assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'LocalFileEditor');assert.equal(cover.content.props.file,file)
+ // Follow the REAL parent fullScreenCover element through the real local page.
+ // No WebViewController export is available here: default native text must render
+ // without constructing a browser or mounting LocalCodeEditor/FileChangeSwitcher.
+ const actualController=load('services/localCodeEditor.ts',{'../vendor/local-code-editor-bundle':load('vendor/local-code-editor-bundle.ts')})
+ let savedText,editorClosed=0
+ const NativePage=load('pages/LocalFileEditor.tsx',{scripting:ui,'../constants/colors':{},'../services/gitService':{saveLocalWorktreeFile:async(_,base,value)=>{savedText=value;return {...base,text:value}},readLocalWorktreeFile:async()=>file},'../services/diffService':{},'../components/DiffViewer':{DiffViewer:'DiffViewer'},'../components/FileChangeSwitcher':{FileChangeSwitcher:'FileChangeSwitcher'},'../components/LocalCodeEditor':{LocalCodeEditor:'LocalCodeEditor'},'../services/localCodeEditor':actualController,'../utils/editorDiff':{}}).LocalFileEditor
+ const ActualDetail=load('pages/RepoDetailPage.tsx',{...mocks,'./LocalFileEditor':{LocalFileEditor:NativePage}}).RepoDetailPage
+ const actual=mount(ActualDetail,{bookmarkName:'repo',name:'test'})
+ all(actual.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(file);actual.render()
+ const actualCover=actual.tree.props.fullScreenCover[0];assert.equal(actualCover.content.type,NativePage)
+ const editor=mount(actualCover.content.type,actualCover.content.props)
+ const nativeField=()=>{editor.render();return all(editor.tree).find(n=>n.type==='TextField')}
+ assert.equal(nativeField().props.value,'draft');assert.equal(nativeField().props.axis,'vertical')
+ assert.equal(all(editor.tree).some(n=>['LocalCodeEditor','FileChangeSwitcher','WebView'].includes(n.type)),false)
+ nativeField().props.onChanged('原生 JSON 中文');assert.equal(nativeField().props.value,'原生 JSON 中文')
+ await editor.tree.children[0].props.toolbar.topBarLeading.props.action();assert.equal(savedText,'原生 JSON 中文');actual.render();assert.equal(actual.tree.props.fullScreenCover[0].isPresented,false)
+ editor.unmount();actual.unmount()
  // Tabs retain the original stable List presentation owner.
  data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,true)
  await cover.content.props.onChanged('file.txt',false);assert.equal(refreshed,1)
