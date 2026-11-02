@@ -48,3 +48,13 @@ export async function readMetadataBatched(
   }
   return result
 }
+
+/** Same leaf-only empty-directory display count for homepage and file list.
+ * Nonempty untracked folders are already represented by files; parent containers
+ * are not counted twice. This is display state, never a Git change.
+ */
+export function countNewDirectories(entries: { files: string[]; directories: string[]; untrackedDirectories: string[] }): number {
+  const fileParents = changedDirectoryPaths(entries.files)
+  const directoryParents = changedDirectoryPaths(entries.directories)
+  return entries.untrackedDirectories.filter(path => !fileParents.has(path) && !directoryParents.has(path)).length
+}

@@ -2,7 +2,7 @@ import { StandardFolderRow, visibleTreeRows, treeRowIndent } from "../components
 import { Button, Menu, Spacer, Section, Text, HStack, VStack, Image, useRef, useState, useEffect, useMemo } from "scripting"
 import { NameInputSheet } from "../components/NameInputSheet"
 import { buildFileTree, type FileTreeNode } from "../utils/fileTree"
-import { changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
+import { countNewDirectories, changedDirectoryPaths, expandedFilePaths, readMetadataBatched } from "../utils/fileListPerformance"
 import { formatBytes, formatDate } from "../utils/format"
 import { resolveWorkdir } from "../services/repoStore"
 import { knownLocalRenameHints, moveLocalWorktreeFile, importLocalWorktreeDirectory, importLocalWorktreeFiles, copyLocalWorktreeDirectory, renameLocalWorktreeDirectory, readLocalWorktreeFile, openLocalWorktreeFile, copyLocalWorktreeFile, renameLocalWorktreeFile, deleteLocalWorktreeDirectory, deleteLocalWorktreeFile, type LocalWorktreeFile } from "../services/gitService"
@@ -107,7 +107,8 @@ function FileTreeNodeView({ node, depth, copyLink, moveTo, open, removed, busy, 
     </> }} trailingSwipeActions={{ allowsFullSwipe: false, actions: folderActions }}
     label={<HStack alignment="center" spacing={10}>
       <Image systemName="folder" foregroundStyle={folderBadge ? folderBadge.color as any : COLOR_SECONDARY_LABEL} /><Text font="body" foregroundStyle={COLOR_LABEL}>{node.name}</Text>
-      {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text> : null}
+      {folderBadge ? <Text font="caption2" foregroundStyle={folderBadge.color as any}>{folderBadge.text}</Text>
+        : directoryRestorePaths.has(node.path) ? <Text font="caption2" foregroundStyle={COLOR_ORANGE}>含新增目录</Text> : null}
     </HStack>} />
 }
 
@@ -177,6 +178,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     for (const path of worktreeEntries?.untrackedDirectories || []) added.add(path)
     return new Set([...added].filter(path => !existing.has(path) && !other.has(path) && !activeRenames.some(entry => entry.directory && path.startsWith(entry.path + "/"))))
   }, [files, changes, displayChanges, activeCopies, sessionCreatedDirectories, worktreeEntries, activeRenames])
+  const newDirectoryCount = useMemo(() => worktreeEntries ? countNewDirectories(worktreeEntries) : 0, [worktreeEntries])
   const directoryRestorePaths = useMemo(() => new Set([...addedDirectories, ...changedDirectoryPaths([...addedDirectories])]), [addedDirectories])
   const [added, setAdded] = useState<string[]>([])
   const fileSignature = [...new Set([...files, ...(worktreeEntries?.files || []), ...changes.map(c => c.filepath), ...added])].filter(path => !hiddenRenameSource(path)).join("\0")
@@ -522,7 +524,7 @@ export function FilesTab({ files, worktreeEntries, loading, bookmarkName, change
     onChanged: (presented: boolean) => { if (!presented) cancelDirectoryForm() },
     content: directoryForm ? <NameInputSheet key={`${directoryForm.kind}-${directoryForm.path}`} title={directoryForm.kind === "copy" ? "复制文件夹到当前目录" : "重命名文件夹"} initialName={(directoryForm.path.split("/").pop() || "") + (directoryForm.kind === "copy" ? " 副本" : "")} message="包含全部子目录内容；仅修改本地工作区，不覆盖同名目标，不暂存、提交或推送。" busy={busy} error={directoryError} onCancel={cancelDirectoryForm} onConfirm={confirmDirectory} /> : <Text />,
   }} header={<HStack frame={{ maxWidth: Infinity }}>
-    <Text>仓库文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}</Text><Spacer />
+    <Text>仓库文件{visibleFiles.length > 0 ? `（${visibleFiles.length}）` : ""}{newDirectoryCount > 0 ? ` · ${newDirectoryCount} 新增目录` : ""}</Text><Spacer />
     <Menu label={<Image systemName="plus" />} disabled={additionDisabled}>
       <Section header={<Text>添加到仓库</Text>}>
         <Button title="创建文件" systemImage="doc.text" disabled={additionDisabled} action={() => requestAddition("file")} />

@@ -2,21 +2,13 @@ import { resolveRepoPathsReadOnly } from "../repoStore"
 import { createFS, loadGitEngine } from "../gitCore"
 import { runStatusRead, statusRevision, canPublishStatus } from "./statusScanService"
 import { setLruEntry } from "../../utils/lru"
-import { changedDirectoryPaths } from "../../utils/fileListPerformance"
+import { changedDirectoryPaths, countNewDirectories } from "../../utils/fileListPerformance"
 
 export type WorktreeEntries = { files: string[]; directories: string[]; untrackedDirectories: string[] }
 const INVENTORY_CONCURRENCY = 16
 const directoryCounts = new Map<string, { revision: number; count: number }>()
 
-/** Count only untracked leaf directories not already represented by visible files.
- * Parent containers and directories containing untracked Git files are not counted twice.
- * This is display state, never a FileChange or a request to stage/commit/stash.
- */
-export function countNewDirectories(entries: WorktreeEntries): number {
-  const fileParents = changedDirectoryPaths(entries.files)
-  const directoryParents = changedDirectoryPaths(entries.directories)
-  return entries.untrackedDirectories.filter(path => !fileParents.has(path) && !directoryParents.has(path)).length
-}
+export { countNewDirectories } from "../../utils/fileListPerformance"
 
 /** Caller already holds runStatusRead; avoids nested coordinator reads. */
 export async function readNewDirectoryCount(bookmarkName: string, reuse = false): Promise<number> {

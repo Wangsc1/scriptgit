@@ -76,6 +76,58 @@ async function main(){
   const fresh=mount(hook,{bookmarkName:'repo',name:'Repo',showToast(){}});await fresh.tree.loadTrackedFiles();fresh.render();assert.equal(scans,4);assert.ok(fresh.tree.worktreeEntries.directories.includes('Imported Empty'));fresh.unmount()
   let release,entered=false;const gate=new Promise(r=>release=r),writer=coordinator.mutate(gitdir,()=>gate);const pending=scan.getWorktreeEntries('repo').then(()=>entered=true);await tick();assert.equal(entered,false);release();await writer;await pending;assert.equal(entered,true)
  })
+ await test('home snapshot 1 empty nested directory matches actual detail header and collapsed ancestor; initial load/pull refresh/delete use live inventory',async()=>{
+  // Isolate exactly the reported shape in this disposable Git repo: a clean tracked
+  // parent and ONE untracked empty descendant. Git statusMatrix has no file delta.
+  cmd('reset','-q','HEAD','--','index-only')
+  for(const p of ['nested','untracked','Imported Empty','index-only','linked-file','linked-folder','nested-repo'])fs.rmSync(dir+'/'+p,{recursive:true,force:true})
+  fs.mkdirSync(dir+'/tracked/new-empty')
+  const ctx={git,fs:readonlyFs,dir,gitdir},runtime={getCtx:async()=>ctx,resolveGitdir:()=>gitdir,readSymbolicHeadBranch:async()=> 'master'}
+  const perf={measureOperation:async(_,fn)=>fn()}
+  let persisted,cache,scans=0
+  const statusIO={runStatusRead:(_,task)=>coordinator.read(gitdir,task),statusRevision:()=>coordinator.revision(gitdir),canPublishStatus:()=>true,
+    scanStatusMatrix:async()=>(await git.statusMatrix(ctx)).filter(row=>!row[0].startsWith('metadata-storage/')),rememberChangesCount(){},cacheRepoChanges(){},getCachedRepoChanges(){},
+    validatedChangesCount:(_,n)=>n,cacheRepoStatus:(_,status)=>{cache=status},getCachedRepoStatus:()=>cache}
+  const queries=load('services/git/statusQueryService.ts',{'./localRenameHistory':{validatedLocalRenames:async()=>[]},'../../utils/history':{},'../../utils/lru':load('utils/lru.ts'),'../../utils/performance':perf,'./runtime':runtime,'./statusScanService':statusIO})
+  const fullStore={...store,findRepo:()=>({name:'Repo'}),getRepoLastPulledAt:()=>null,writeSnapshot:async(_,value)=>{persisted=value}}
+  const internalStatus=load('services/git/repoStatusService.ts',{'../../utils/gitSync':{},'./commitTraversal':{},'../../utils/performance':perf,'../repoStore':fullStore,'./runtime':runtime,'./statusQueryService':queries,'./statusScanService':statusIO})
+  const statuses=load('services/git/repoStatusReadService.ts',{scripting:{Widget:{reloadAll(){}}},'../../utils/performance':perf,'../repoStore':fullStore,'./mergeConflictService':{getMergeConflictState:async()=>null},'./repoStatusService':internalStatus,'./worktreeTreeService':scan,'./statusScanService':statusIO})
+  const home=await statuses.getRepoListStatus('repo');assert.equal(home.newDirectories,1);assert.equal(home.uncommitted,0);assert.equal(persisted.newDirectories,1)
+  const services={getTrackedFiles:async()=>git.listFiles({...ctx,ref:'HEAD'}),getWorktreeEntries:async()=>{scans++;return scan.getWorktreeEntries('repo')},getChanges:queries.getChanges,getRepoListStatus:statuses.getRepoListStatus,
+    isInitialized:async()=>true,hasHeadCommit:queries.hasHeadCommit,getManagedBranches:async()=>({locals:['master'],remotes:[],remoteNames:[],current:'master'}),listRemotes:async()=>[],getBranchUpstream:async()=>null,getMergeConflictState:async()=>null,statusRevision:()=>coordinator.revision(gitdir)}
+  const hook=load('hooks/useRepoDetailData.ts',{scripting:ui,'../services/gitService':services,'../services/repoStore':fullStore,'../utils/format':{},'../utils/github':{},'../utils/statusFreshness':load('utils/statusFreshness.ts')}).useRepoDetailData
+  const data=mount(hook,{bookmarkName:'repo',name:'Repo',showToast(message){throw Error(message)}})
+  await data.tree.loadAll('详情首次进入');data.render();assert.equal(scans,1);assert.equal(data.tree.loading,false)
+  const viewProps={...props,files:data.tree.trackedFiles,changes:data.tree.changes,worktreeEntries:data.tree.worktreeEntries}
+  const view=mount(FilesTab,viewProps,{effectUpdates:true})
+  const nodes=()=>{view.render();return all(expand(view.tree))}
+  const row=path=>nodes().find(n=>isFolderRow(n)&&n.props.accessibilityLabel==='文件夹 '+path)
+  const texts=n=>all(n).filter(n=>n.type==='Text').flatMap(n=>n.children).join(' ')
+  const header=()=>texts(view.tree.props.header)
+  assert.match(header(),/1 新增目录/)
+  assert.match(texts(row('tracked')),/含新增目录/);assert.doesNotMatch(texts(row('tracked')),/ 已修改| 新增 /)
+  assert.equal(row('tracked/new-empty'),undefined,'initially hidden by user-collapsed ancestor, not lost')
+  row('tracked').props.action();assert.match(texts(row('tracked/new-empty')),/新增/)
+  // Nonempty untracked folders show 新增 but do not double-count their files as empty dirs.
+  write('tracked/new-content/file','bytes');fs.mkdirSync(dir+'/ignored/empty',{recursive:true})
+  async function refresh(){await data.tree.loadAll('详情下拉');data.render();Object.assign(viewProps,{files:data.tree.trackedFiles,changes:data.tree.changes,worktreeEntries:data.tree.worktreeEntries});nodes()}
+  await refresh();assert.equal(scans,2);assert.equal(persisted.newDirectories,1);assert.match(header(),/1 新增目录/)
+  assert.match(texts(row('tracked/new-content')),/新增/);assert.equal(row('ignored'),undefined);assert.ok(!data.tree.worktreeEntries.untrackedDirectories.includes('tracked'))
+  assert.ok(row('tracked/new-empty'),'pull refresh retains expanded Set')
+  fs.rmdirSync(dir+'/tracked/new-empty');await refresh();assert.equal(scans,3);assert.equal(persisted.newDirectories,0);assert.doesNotMatch(header(),/新增目录/);assert.equal(row('tracked/new-empty'),undefined)
+  fs.rmSync(dir+'/tracked/new-content',{recursive:true});await refresh();assert.equal(persisted.newDirectories,0);assert.doesNotMatch(texts(row('tracked')),/新增|已修改/)
+  // A staged file already establishes its directory in index; only its new empty
+  // child contributes to the separate empty-directory count, not the parent.
+  write('staged-dir/file','staged');cmd('add','staged-dir/file');fs.mkdirSync(dir+'/staged-dir/empty')
+  await refresh();assert.equal(persisted.newDirectories,1)
+  assert.ok(!data.tree.worktreeEntries.untrackedDirectories.includes('staged-dir'))
+  assert.ok(data.tree.worktreeEntries.untrackedDirectories.includes('staged-dir/empty'))
+  fs.rmdirSync(dir+'/staged-dir/empty');await refresh();assert.equal(persisted.newDirectories,0)
+  // Root-level empty directories also have matching counts and exact 新增 badges.
+  fs.mkdirSync(dir+'/root-empty');await refresh();assert.equal(persisted.newDirectories,1);assert.match(texts(row('root-empty')),/新增/)
+  fs.rmdirSync(dir+'/root-empty');await refresh();assert.equal(persisted.newDirectories,0);assert.equal(row('root-empty'),undefined)
+  view.unmount();data.unmount()
+ })
  console.log(groups+' disk tree/production FilesTab/detail-hook groups passed; temporary FS cleaned; phone app-temp origin/content not assumed.')
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>fs.rmSync(tmp,{recursive:true,force:true}))

@@ -56,7 +56,7 @@ async function main(){try{
   return {data,sync}
  },{},{effectUpdates:true})
  const hostNow=()=>{host.render();return host.tree}
- const tabProps={files:[],worktreeEntries:{files:[],directories:[]},changes:[],loading:false,bookmarkName:'repo',onOpen(){},onStage(){},onRestore(){},mergeInProgress:false,creationActive:false,onCreateEntry(){},onCopyLink(){}}
+ const tabProps={files:[],worktreeEntries:{files:[],directories:[],untrackedDirectories:[]},changes:[],loading:false,bookmarkName:'repo',onOpen(){},onStage(){},onRestore(){},mergeInProgress:false,creationActive:false,onCreateEntry(){},onCopyLink(){}}
  const tab=mount(FilesTab,tabProps)
  function feed(){const {data,sync}=hostNow();Object.assign(tabProps,{files:data.trackedFiles,worktreeEntries:data.worktreeEntries,changes:data.changes,onWorktreeChanged:data.refreshChangesAndSnapshot,onPush:sync.handlePush})}
  const labels=()=>{feed();tab.render();const flat=n=>n==null||n===false?'':typeof n==='object'?(Array.isArray(n)?n:[n.props?.header,n.props?.footer,n.props?.label,...(n.children||[])]).map(flat).join(' '):String(n);const t=flat(expand(tab.tree));return {mod:(t.match(/已修改/g)||[]).length,add:(t.match(/新增/g)||[]).length,del:(t.match(/已删除/g)||[]).length}}
