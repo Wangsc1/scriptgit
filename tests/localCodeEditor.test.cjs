@@ -24,6 +24,7 @@ if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
     async evaluateJavaScript(code){
       this.calls.push(code)
       if(mode.evalError)throw Error('read failed')
+      if(code.includes('width: window.innerWidth'))return {width:390,height:700}
       if(code.includes('__localCodeEditorBootstrap')){if(mode.bootstrapWait){mode.bootstrapWait=false;return null}return mode.bootstrapError?{ready:false,error:'bootstrap exploded'}:{ready:true,error:''}}
       if(code.includes('.activate(')){if(mode.activateWait)await mode.activateWait.promise;this.text=mode.activationMismatch?'':JSON.parse(code.match(/activate\((.*)\)$/s)[1]);return {content:this.text,revision:this.revision}}
       if(code.includes('.replace(')){this.text=JSON.parse(code.match(/replace\((.*)\)$/s)[1]);return {content:this.text,revision:++this.revision}}
@@ -98,16 +99,18 @@ if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
       global.__jsx=(type,props,...children)=>({type,props:props||{},children:children.flat().filter(Boolean)})
       const ui={VStack:'VStack',Text:'Text',ProgressView:'ProgressView',WebView:'WebView',useColorScheme:()=> 'dark',
         useState:initial=>{const h=active,i=h.cursor++;if(!(i in h.slots))h.slots[i]=initial;return [h.slots[i],v=>{assert.ok(!h.unmounted,'no late React update');h.slots[i]=typeof v==='function'?v(h.slots[i]):v}]},
+        useRef:initial=>{const h=active,i=h.cursor++;return h.slots[i]||(h.slots[i]={current:initial})},
         useEffect:(fn,deps)=>{const h=active,i=h.cursor++;if(!(i in h.slots)){h.slots[i]=deps;h.effects.push(fn)}}}
       const {LocalCodeEditor}=load('components/LocalCodeEditor.tsx',{scripting:ui})
-      const c=service.createLocalCodeEditorController({content:'persistent',ext:'tsx',readOnly:false})
-      function mount(){const h={cursor:0,slots:[],effects:[],cleanups:[],render(){active=h;h.cursor=0;h.tree=LocalCodeEditor({controller:c,onBack:()=>{}});h.effects.splice(0).forEach(f=>{const cleanup=f();if(cleanup)h.cleanups.push(cleanup)});return h.tree},unmount(){h.unmounted=true;h.cleanups.forEach(f=>f())}};h.render();return h}
-      const first=mount();assert.equal(first.tree.children[0].children[0].type,'ProgressView');await c.start();first.render()
+      const c=service.createLocalCodeEditorController({content:'persistent',ext:'tsx',readOnly:false});const observations=[]
+      function mount(){const h={cursor:0,slots:[],effects:[],cleanups:[],render(){active=h;h.cursor=0;h.tree=LocalCodeEditor({controller:c,onBack:()=>{},onDisplayStateChange:value=>observations.push(value)});h.effects.splice(0).forEach(f=>{const cleanup=f();if(cleanup)h.cleanups.push(cleanup)});return h.tree},unmount(){h.unmounted=true;h.cleanups.forEach(f=>f())}};h.render();return h}
+      const first=mount();assert.equal(first.tree.children[0].children[0].type,'ProgressView');first.tree.props.onAppear();await tick();await tick();first.render()
+      assert.equal(c.phase,'ready');assert.ok(observations.some(value=>value.editorVisible));const native=first.tree.children.find(n=>n.type==='WebView');native.props.onAppear();await new Promise(resolve=>setTimeout(resolve,330));assert.ok(observations.some(value=>value.viewport==='390×700'));assert.ok(!JSON.stringify(observations).includes('persistent'),'no file text in diagnostics')
       const w=c.webController;assert.equal(w.calls.some(code=>code.includes('.setTheme(')),false,'global hook must not override WebView appearance');first.unmount();w.text='unmounted latest';w.revision=2;w.handlers.localCodeEditorChange({content:w.text,revision:2})
       const second=mount();assert.equal(c.webController,w);assert.equal(c.content,'unmounted latest');assert.equal(w.disposed,undefined)
       assert.deepEqual(second.tree.props.background,{light:'white',dark:'#242424'});assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,'infinity')
       assert.ok(second.tree.children.some(n=>n.type==='WebView'));assert.equal(second.tree.children.find(n=>n.type==='WebView').props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.children.some(n=>n.type==='Editor'),false)
-      second.unmount();c.dispose();assert.equal(w.disposed,true)
+      second.tree.props.onAppear();second.unmount();const before=observations.length;await new Promise(resolve=>setTimeout(resolve,330));assert.equal(observations.length,before,'cancel delayed viewport observations after detach');c.dispose();assert.equal(w.disposed,true)
     })
     console.log('PASS all local editor controller/component tests')
   }

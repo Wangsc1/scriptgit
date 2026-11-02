@@ -30,23 +30,55 @@ async function main(){
  const file={path:'file.txt',text:'draft',version:{}}
  tab().props.onOpenLocalFile(file);h.render();let cover=h.tree.props.fullScreenCover[0]
  assert.equal(cover.isPresented,true);assert.equal(cover.content.type,'LocalFileEditor');assert.equal(cover.content.props.file,file)
- // Follow the REAL parent fullScreenCover element through the real local page.
- // No WebViewController export is available here: default native text must render
- // without constructing a browser or mounting LocalCodeEditor/FileChangeSwitcher.
- const actualController=load('services/localCodeEditor.ts',{'../vendor/local-code-editor-bundle':load('vendor/local-code-editor-bundle.ts')})
- let savedText,editorClosed=0
- const NativePage=load('pages/LocalFileEditor.tsx',{scripting:ui,'../constants/colors':{},'../services/gitService':{saveLocalWorktreeFile:async(_,base,value)=>{savedText=value;return {...base,text:value}},readLocalWorktreeFile:async()=>file},'../services/diffService':{},'../components/DiffViewer':{DiffViewer:'DiffViewer'},'../components/FileChangeSwitcher':{FileChangeSwitcher:'FileChangeSwitcher'},'../components/LocalCodeEditor':{LocalCodeEditor:'LocalCodeEditor'},'../services/localCodeEditor':actualController,'../utils/editorDiff':{}}).LocalFileEditor
- const ActualDetail=load('pages/RepoDetailPage.tsx',{...mocks,'./LocalFileEditor':{LocalFileEditor:NativePage}}).RepoDetailPage
+ // Follow the real parent cover -> LocalFileEditor -> bottom TabView ->
+ // LocalCodeEditor. This exercises JS/native lifecycle callbacks, NOT UIKit layout.
+ const actualService=load('services/localCodeEditor.ts',{'../vendor/local-code-editor-bundle':load('vendor/local-code-editor-bundle.ts')})
+ let gate=deferred(),savedText;const browsers=[]
+ global.WebViewController=class {
+  constructor(){this.handlers={};this.revision=0;this.content='';this.loads=0;browsers.push(this)}
+  async addScriptMessageHandler(name,callback){this.handlers[name]=callback}
+  async loadHTML(html){this.html=html;this.loads++;if(gate)await gate.promise;return true}
+  async evaluateJavaScript(code){
+   if(code.includes('__localCodeEditorBootstrap'))return {ready:true,error:''}
+   if(code.includes('.activate(')){this.content=JSON.parse(code.match(/activate\((.*)\)$/s)[1]);return {content:this.content,revision:this.revision}}
+   if(code.includes('width: window.innerWidth'))return {width:390,height:700}
+   if(code.includes('.prepareRead('))return false
+   if(code.includes('.read('))return {content:this.content,revision:this.revision}
+   return true
+  }
+  dispose(){this.disposed=true}
+ }
+ const color=load('constants/colors.ts')
+ const ActualCode=load('components/LocalCodeEditor.tsx',{scripting:ui}).LocalCodeEditor
+ const tabUI=new Proxy(ui,{get:(target,key)=>key==='ImageRenderer'?{toUIImage:async()=>({withTintColor:()=>({original:true})})}:target[key]})
+ const ActualSwitcher=load('components/FileChangeSwitcher.tsx',{scripting:tabUI,'../constants/colors':color}).FileChangeSwitcher
+ const ActualPage=load('pages/LocalFileEditor.tsx',{scripting:ui,'../constants/colors':color,'../services/gitService':{saveLocalWorktreeFile:async(_,base,value)=>{savedText=value;return {...base,text:value}},readLocalWorktreeFile:async()=>({...file,text:'disk refresh'})},'../services/diffService':{},'../components/DiffViewer':{DiffViewer:'DiffViewer'},'../components/FileChangeSwitcher':{FileChangeSwitcher:ActualSwitcher},'../components/LocalCodeEditor':{LocalCodeEditor:ActualCode},'../services/localCodeEditor':actualService,'../utils/editorDiff':{}}).LocalFileEditor
+ const ActualDetail=load('pages/RepoDetailPage.tsx',{...mocks,'./LocalFileEditor':{LocalFileEditor:ActualPage}}).RepoDetailPage
+ data.changes=[{filepath:'file.txt'}]
  const actual=mount(ActualDetail,{bookmarkName:'repo',name:'test'})
  all(actual.tree).find(n=>n.type==='RepoDetailTabContent').props.onOpenLocalFile(file);actual.render()
- const actualCover=actual.tree.props.fullScreenCover[0];assert.equal(actualCover.content.type,NativePage)
+ const actualCover=actual.tree.props.fullScreenCover[0];assert.equal(actualCover.content.type,ActualPage)
  const editor=mount(actualCover.content.type,actualCover.content.props)
- const nativeField=()=>{editor.render();return all(editor.tree).find(n=>n.type==='TextField')}
- assert.equal(nativeField().props.value,'draft');assert.equal(nativeField().props.axis,'vertical')
- assert.equal(all(editor.tree).some(n=>['LocalCodeEditor','FileChangeSwitcher','WebView'].includes(n.type)),false)
- nativeField().props.onChanged('原生 JSON 中文');assert.equal(nativeField().props.value,'原生 JSON 中文')
- await editor.tree.children[0].props.toolbar.topBarLeading.props.action();assert.equal(savedText,'原生 JSON 中文');actual.render();assert.equal(actual.tree.props.fullScreenCover[0].isPresented,false)
- editor.unmount();actual.unmount()
+ const switchNode=all(editor.tree).find(n=>n.type===ActualSwitcher);assert.ok(switchNode,'modified/untracked text immediately uses the original bottom switcher')
+ assert.equal(all(editor.tree).some(n=>n.type==='TextField'||['代码编辑','文本编辑'].includes(n.props.title)),false)
+ const bar=mount(switchNode.type,switchNode.props);assert.equal(bar.tree.type,'TabView');assert.equal(bar.tree.props.tabIndex,0)
+ assert.equal(bar.tree.children[0].props.tag,0);assert.equal(bar.tree.children[1].props.tag,1)
+ assert.deepEqual(bar.tree.children.map(n=>all(n.props.tabItem).find(x=>x.type==='Text').children.join('')),['原内容','改动项'])
+ const codeNode=bar.tree.children[0].children[0];assert.equal(codeNode.type,ActualCode)
+ const body=mount(codeNode.type,codeNode.props);body.tree.props.onAppear();await tick();body.render();editor.render()
+ assert.equal(browsers.length,1);const browser=browsers[0]
+ const webNode=all(body.tree).find(n=>n.type==='WebView');assert.equal(webNode.props.controller,browser);webNode.props.onAppear()
+ assert.ok(all(editor.tree).some(n=>n.type==='Text'&&n.children.join('').includes('加载中')),'parent has its own status OUTSIDE TabView')
+ gate.resolve();gate=null;await tick();await tick();body.render();editor.render()
+ assert.equal(codeNode.props.controller.phase,'ready');assert.equal(browser.content,'draft');assert.equal(browser.loads,1)
+ assert.ok(all(editor.tree).some(n=>n.type==='Text'&&n.children.join('').includes('就绪')))
+ const diagText=()=>all(editor.render()).filter(n=>n.type==='Text').map(n=>n.children.join('')).join(' ')
+ assert.ok(diagText().includes('网页已出现'));browser.handlers.localCodeEditorError('controlled native integration failure');assert.ok(diagText().includes('加载失败'));assert.ok(diagText().includes('controlled native integration failure'))
+ body.tree.props.onAppear();webNode.props.onAppear();await tick();assert.equal(browser.loads,1,'repeated native appearances never reload or replace a draft')
+ browser.content='最后中文草稿\r\n';browser.revision=2
+ await editor.tree.children[0].props.toolbar.topBarLeading.props.action();assert.equal(savedText,'最后中文草稿\r\n');actual.render();assert.equal(actual.tree.props.fullScreenCover[0].isPresented,false)
+ body.unmount();bar.unmount();editor.unmount();assert.equal(browser.disposed,true);actual.unmount()
+ data.changes=[]
  // Tabs retain the original stable List presentation owner.
  data.tab=0;h.render();assert.equal(h.tree.props.fullScreenCover[0].isPresented,true)
  await cover.content.props.onChanged('file.txt',false);assert.equal(refreshed,1)
