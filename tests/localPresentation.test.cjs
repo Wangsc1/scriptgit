@@ -65,25 +65,23 @@ async function main(){
  assert.equal(bar.tree.children[0].props.tag,0);assert.equal(bar.tree.children[1].props.tag,1)
  assert.deepEqual(bar.tree.children.map(n=>all(n.props.tabItem).find(x=>x.type==='Text').children.join('')),['原内容','改动项'])
  const codeNode=bar.tree.children[0].children[0];assert.equal(codeNode.type,ActualCode)
- let body=mount(codeNode.type,codeNode.props);body.tree.props.onAppear();await tick();body.render();editor.render()
+ let body=mount(codeNode.type,codeNode.props);body.tree.props.onAppear?.();await tick();body.render();editor.render()
  assert.equal(browsers.length,1);const browser=browsers[0]
  let webNode=all(body.tree).find(n=>n.type==='WebView');assert.equal(webNode.props.controller,browser);assert.equal(browser.loads,0);assert.equal(codeNode.props.controller.phase,'idle');browser.bound=true;webNode.props.onAppear();await tick();body.render();editor.render()
- assert.ok(all(editor.tree).some(n=>n.type==='Text'&&n.children.join('').includes('加载中')),'parent has its own status OUTSIDE TabView')
+ assert.ok(all(body.tree).some(n=>n.type==='Text'&&n.children.join('').includes('正在加载本地编辑器')))
  gate.resolve();gate=null;await tick();await tick();body.render();editor.render()
  assert.equal(codeNode.props.controller.phase,'ready');assert.equal(browser.content,'draft');assert.equal(browser.loads,1)
- assert.ok(all(editor.tree).some(n=>n.type==='Text'&&n.children.join('').includes('就绪')))
- const diagText=()=>all(editor.render()).filter(n=>n.type==='Text').map(n=>n.children.join('')).join(' ')
- assert.ok(diagText().includes('网页已出现'));assert.ok(diagText().includes('显1/隐0'));
+ assert.equal(all(editor.tree).some(n=>n.type==='Text'&&n.children.join('').includes('代码编辑器：')),false,'no temporary status row')
  browser.content='未保存中文草稿';browser.revision=1;browser.handlers.localCodeEditorChange({content:browser.content,revision:1})
  for(let i=0;i<2;i++){
-  webNode.props.onDisappear();body.tree.props.onDisappear();body.unmount();bar.tree.props.onTabIndexChanged(1);bar.render();assert.equal(bar.tree.props.tabIndex,1)
+  webNode.props.onDisappear?.();body.tree.props.onDisappear?.();body.unmount();bar.tree.props.onTabIndexChanged(1);bar.render();assert.equal(bar.tree.props.tabIndex,1)
   bar.tree.props.onTabIndexChanged(0);bar.render();assert.equal(bar.tree.props.tabIndex,0)
   const returning=bar.tree.children[0].children[0];assert.equal(returning.props.controller,codeNode.props.controller)
-  body=mount(returning.type,returning.props);assert.equal(body.tree.children[0].props.controller,browser);body.tree.props.onAppear();webNode=body.tree.children[0];webNode.props.onAppear();await tick()
+  body=mount(returning.type,returning.props);assert.equal(body.tree.children[0].props.controller,browser);body.tree.props.onAppear?.();webNode=body.tree.children[0];webNode.props.onAppear();await tick()
   assert.equal(browser.loads,1);assert.equal(codeNode.props.controller.content,'未保存中文草稿');assert.equal(browser.content,'未保存中文草稿');assert.equal(browser.disposed,undefined)
  }
- assert.ok(diagText().includes('显3/隐2'));webNode.props.onDisappear();assert.ok(diagText().includes('等待网页'));assert.ok(diagText().includes('显3/隐3'));browser.handlers.localCodeEditorError('controlled native integration failure');assert.ok(diagText().includes('加载失败'));assert.ok(diagText().includes('controlled native integration failure'))
- body.tree.props.onAppear();webNode.props.onAppear();await tick();assert.equal(browser.loads,1,'repeated native appearances never reload or replace a draft')
+ browser.handlers.localCodeEditorError('controlled native integration failure');body.render();assert.ok(all(body.tree).some(n=>n.type==='Text'&&n.children.join('').includes('controlled native integration failure')),'real error remains visible')
+ body.tree.props.onAppear?.();webNode.props.onAppear();await tick();assert.equal(browser.loads,1,'repeated native appearances never reload or replace a draft')
  browser.content='最后中文草稿\r\n';browser.revision=2
  await editor.tree.children[0].props.toolbar.topBarLeading.props.action();assert.equal(savedText,'最后中文草稿\r\n');actual.render();assert.equal(actual.tree.props.fullScreenCover[0].isPresented,false)
  body.unmount();bar.unmount();editor.unmount();assert.equal(browser.disposed,true);actual.unmount()

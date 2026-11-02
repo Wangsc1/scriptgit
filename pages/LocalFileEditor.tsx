@@ -5,7 +5,7 @@ import { getFileVersions, type FileVersions, type FileDiff } from "../services/d
 
 import { DiffViewer } from "../components/DiffViewer"
 import { FileChangeSwitcher } from "../components/FileChangeSwitcher"
-import { LocalCodeEditor, type LocalEditorDisplayState } from "../components/LocalCodeEditor"
+import { LocalCodeEditor } from "../components/LocalCodeEditor"
 import { createLocalCodeEditorController } from "../services/localCodeEditor"
 import { editorDiff } from "../utils/editorDiff"
 
@@ -25,23 +25,6 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     catch (e: any) { return { controller: null, error: "编辑器初始化失败：" + String(e?.message || e) } }
   }, [])
   const controller = editor.controller
-  const [display, setDisplay] = useState<LocalEditorDisplayState>({})
-  const [editorPhase, setEditorPhase] = useState(controller?.phase ?? "idle")
-  // Stable parent-owned native row is deliberately outside FileChangeSwitcher.
-  // If a tab/child never appears it must not hide its own loading/error status.
-  const reportDisplay = useMemo(() => (next: LocalEditorDisplayState) => {
-    if (alive.current) setDisplay(previous => ({ ...previous, ...next,
-      webAppearCount: (previous.webAppearCount ?? 0) + (next.webEvent === "appear" ? 1 : 0),
-      webDisappearCount: (previous.webDisappearCount ?? 0) + (next.webEvent === "disappear" ? 1 : 0),
-    }))
-  }, [])
-  useEffect(() => {
-    if (!controller) return
-    const update = () => { if (alive.current) setEditorPhase(controller.phase) }
-    const unsubscribe = controller.subscribe(update)
-    update() // Child effects may start loading before this parent effect subscribes.
-    return unsubscribe
-  }, [controller])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   // 首屏只使用已读取快照；数量统计延后加载，不阻塞编辑器呈现。
@@ -172,14 +155,11 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
         topBarLeading: <Button title="返回" action={back} disabled={busy} />,
         topBarTrailing: <Button title="刷新" action={reload} disabled={busy} />,
       }}>
-      {controller !== null && viewKind === 0 ? <Text font="caption" foregroundStyle={COLOR_SECONDARY_LABEL} padding={{ horizontal: 8, vertical: 4 }}>
-        {`代码编辑器：${editorPhase === "ready" ? "就绪" : editorPhase === "error" ? "加载失败" : editorPhase === "loading" ? "加载中" : "等待启动"} · ${display.editorVisible ? "编辑视图已出现" : "等待编辑视图"} · ${display.webVisible ? "网页已出现" : "等待网页"}（显${display.webAppearCount ?? 0}/隐${display.webDisappearCount ?? 0}）${display.viewport ? ` · ${display.viewport}` : ""}${editorPhase === "error" ? `：${controller.error}` : ""}`}
-      </Text> : null}
       {file.readOnlyReason ? <Text>{file.readOnlyReason}</Text> : null}
       {editor.error ? <Text foregroundStyle="red">{editor.error}</Text> : null}
       {status ? <Text font="caption">{status}</Text> : null}
       {hasChanges && controller !== null && !file.readOnlyReason ? <FileChangeSwitcher selection={selection} disabled={busy} stats={diff ? { added, deleted } : null}
-        content={<LocalCodeEditor controller={controller} onBack={back} onDisplayStateChange={reportDisplay} />}
+        content={<LocalCodeEditor controller={controller} onBack={back} />}
         changes={viewKind === 1 ? <ScrollView frame={{ maxWidth: Infinity, maxHeight: Infinity }}
           background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}
           simultaneousGesture={DragGesture({ minDistance: 20, coordinateSpace: "local" }).onEnded(details => {
@@ -196,7 +176,7 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
               </>}
           </VStack>
         </ScrollView> : <Text />}
-      /> : controller !== null ? <LocalCodeEditor controller={controller} onBack={back} onDisplayStateChange={reportDisplay} /> :
+      /> : controller !== null ? <LocalCodeEditor controller={controller} onBack={back} /> :
         (file.readOnlyReason || editor.error) ? null : <Text foregroundStyle={COLOR_SECONDARY_LABEL}>无法编辑此文件</Text>}
     </VStack>
   </NavigationStack>
