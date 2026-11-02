@@ -56,6 +56,18 @@ async function main(){
   const matrix=await git.statusMatrix({fs,dir});assert.deepEqual(matrix.find(r=>r[0]==='a.txt'),['a.txt',1,2,1]);const changes=await service.getChanges('repo');assert.equal(changes.find(c=>c.filepath==='a.txt').status,'*modified');assert.equal(changes.find(c=>c.filepath==='a.txt').staged,false)
   await disk('new-untracked.txt','new');const tracked=await load('services/git/statusQueryService.ts').getTrackedFiles('repo');assert.ok(!tracked.includes('new-untracked.txt'));assert.ok(tracked.includes('a.txt'))
  })
+ await test('read failure or incomplete cloud bytes never become an empty editable file; missing and true empty remain distinct',async()=>{
+  await disk('cloud.json','{"中文":"keep original"}');const read=FileManager.readAsData,start=writes
+  try {
+   FileManager.readAsData=async p=>p.endsWith('/cloud.json')?new Data(Buffer.alloc(0)):read(p)
+   await assert.rejects(service.readLocalWorktreeFile('repo','cloud.json'),/尚未完整读取/)
+   FileManager.readAsData=async()=>{throw Error('provider unavailable')}
+   await assert.rejects(service.readLocalWorktreeFile('repo','cloud.json'),/provider unavailable/)
+  } finally {FileManager.readAsData=read}
+  assert.equal(writes,start);assert.equal(fs.readFileSync(dir+'/cloud.json','utf8'),'{"中文":"keep original"}')
+  await assert.rejects(service.readLocalWorktreeFile('repo','missing.json'),/不存在/)
+  await disk('empty.json','');assert.equal((await service.readLocalWorktreeFile('repo','empty.json')).text,'')
+ })
  await test('real binary/invalid UTF8/large text readonly; single binary deletion yields real Git D without staging',async()=>{
   let image=await service.readLocalWorktreeFile('repo','image.bin');assert.equal(image.text,null);await assert.rejects(service.saveLocalWorktreeFile('repo',image,'bad'),/只读|UTF-8/)
   await disk('invalid.bin',Buffer.from([0xc3,0x28]));assert.equal((await service.readLocalWorktreeFile('repo','invalid.bin')).text,null)
@@ -709,6 +721,18 @@ async function main(){
   global.Dialog.confirm=async input=>{confirmations.push(input);return true};const read=FileManager.readAsData;FileManager.readAsData=async()=>{throw Error('reload denied')};await refresh(r);FileManager.readAsData=read
   assert.match(text(r),/reload denied/);assert.equal(c.content,'draft');assert.equal(c.disposed,undefined);assert.equal(reloaded,1);global.Dialog.confirm=async()=>{throw Error('confirm failed')};await refresh(r);assert.match(text(r),/confirm failed/);assert.equal(c.content,'draft');assert.equal(bar(r).topBarTrailing.props.disabled,false)
   r.unmount();assert.equal(c.disposed,true);global.Dialog.confirm=async input=>{confirmations.push(input);return confirm}
+ })
+ await test('failed WebView read blocks auto-save/back but refresh can recover only after consent; stale reload completion ignored after unmount',async()=>{
+  await disk('broken-editor.json','{"original":true}');const file=await service.readLocalWorktreeFile('repo','broken-editor.json'),start=writes
+  let closed=0,reloaded=0;const props={bookmarkName:'repo',file,onClose:()=>closed++,onReload:f=>{assert.equal(f.text,file.text);reloaded++},onChanged(){}}
+  const h=mount(Editor,props),c=controllers.at(-1);c.content='';c.getContent=async()=>{throw Error('bridge crashed')}
+  await back(h);assert.equal(closed,0);assert.equal(writes,start);assert.match(text(h),/bridge crashed.*未返回/)
+  confirm=false;await refresh(h);assert.equal(reloaded,0);assert.match(confirmations.at(-1).title,/读取失败/)
+  confirm=true;await refresh(h);assert.equal(reloaded,1);assert.equal(writes,start);assert.equal(fs.readFileSync(dir+'/broken-editor.json','utf8'),file.text)
+  const nativeRead=FileManager.readAsData,gate=deferred(),entered=deferred()
+  FileManager.readAsData=async p=>{if(p.endsWith('/broken-editor.json')){entered.resolve();await gate.promise}return nativeRead(p)}
+  const pending=refresh(h);await entered.promise;h.unmount();gate.resolve();await pending;FileManager.readAsData=nativeRead
+  assert.equal(reloaded,1);assert.equal(h.lateWrites,0);assert.equal(c.disposed,true)
  })
  await test('native write errors keep draft; retry only writes after success',async()=>{
   await disk('io-error.txt','old');const file=await service.readLocalWorktreeFile('repo','io-error.txt');let changed=0,closed=0

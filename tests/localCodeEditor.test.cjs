@@ -11,8 +11,8 @@ function load(file, mocks = {}) {
 }
 const bundle = load('vendor/local-code-editor-bundle.ts')
 const service = load('services/localCodeEditor.ts', {'../vendor/local-code-editor-bundle':bundle})
-if (process.argv[2] === '--html') {
-  process.stdout.write(service.localCodeEditorHTML({content:process.argv[4] ?? 'const 中文 = 1\n', ext:process.argv[3] || 'tsx', readOnly:process.argv[5] === 'true'}))
+if (process.argv[2] === '--html' || process.argv[2] === '--html-stdin') {
+  process.stdout.write(service.localCodeEditorHTML({content:process.argv[2] === '--html-stdin' ? fs.readFileSync(0,'utf8') : process.argv[4] ?? 'const 中文 = 1\n', ext:process.argv[3] || 'tsx', readOnly:process.argv[5] === 'true'}))
 } else {
   const tick = () => new Promise(r=>setImmediate(r))
   const deferred = () => {let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}}
@@ -24,7 +24,8 @@ if (process.argv[2] === '--html') {
     async evaluateJavaScript(code){
       this.calls.push(code)
       if(mode.evalError)throw Error('read failed')
-      if(code.includes('.activate(')){this.text=JSON.parse(code.match(/activate\((.*)\)$/s)[1]);return {content:this.text,revision:this.revision}}
+      if(code.includes('__localCodeEditorBootstrap')){if(mode.bootstrapWait){mode.bootstrapWait=false;return null}return mode.bootstrapError?{ready:false,error:'bootstrap exploded'}:{ready:true,error:''}}
+      if(code.includes('.activate(')){if(mode.activateWait)await mode.activateWait.promise;this.text=mode.activationMismatch?'':JSON.parse(code.match(/activate\((.*)\)$/s)[1]);return {content:this.text,revision:this.revision}}
       if(code.includes('.replace(')){this.text=JSON.parse(code.match(/replace\((.*)\)$/s)[1]);return {content:this.text,revision:++this.revision}}
       if(code.includes('.prepareRead('))return !!mode.composing
       if(code.includes('.read('))return mode.invalid ? null : {content:this.text,revision:this.revision,composing:!!mode.composing}
@@ -83,6 +84,15 @@ if (process.argv[2] === '--html') {
       mode.handlerWait=deferred();const d=service.createLocalCodeEditorController({content:'pending',ext:'md',readOnly:false});const p=d.start();const native=d.webController;d.dispose();mode.handlerWait.resolve();await p
       assert.equal(d.phase,'disposed');assert.equal(native.html,undefined)
     })
+    await test('ready acknowledgement race, explicit bootstrap error, activation mismatch and old callbacks cannot blank original',async()=>{
+      mode.bootstrapWait=true;const c=service.createLocalCodeEditorController({content:'{"中文":"原文"}',ext:'json',readOnly:false})
+      const pending=c.start();await tick();assert.equal(c.phase,'loading');assert.ok(!c.webController.calls.some(code=>code.includes('.activate(')))
+      await pending;assert.equal(c.phase,'ready');assert.equal(await c.getContent(),'{"中文":"原文"}');c.dispose()
+      mode={bootstrapError:true};const failed=service.createLocalCodeEditorController({content:'keep',ext:'json',readOnly:false});await failed.start();assert.equal(failed.phase,'error');assert.match(failed.error,/bootstrap exploded/);assert.equal(await failed.getContent(),'keep');failed.dispose()
+      mode={activationMismatch:true};const bad=service.createLocalCodeEditorController({content:'nonempty',ext:'json',readOnly:false});await bad.start();assert.equal(bad.phase,'error');assert.equal(bad.content,'nonempty');await assert.rejects(bad.getContent(),/原文不一致/);bad.dispose()
+      mode={activateWait:deferred()};const race=service.createLocalCodeEditorController({content:'before',ext:'json',readOnly:false});const starting=race.start();await tick();race.content='newer setter';mode.activateWait.resolve();await starting;assert.equal(await race.getContent(),'newer setter');race.dispose()
+      mode={loadWait:deferred()};const stale=service.createLocalCodeEditorController({content:'old',ext:'txt',readOnly:false});const loading=stale.start();await tick();const old=stale.webController;stale.dispose();mode.loadWait.resolve();await loading;old.handlers.localCodeEditorError('late error');old.handlers.localCodeEditorChange({content:'',revision:999});assert.equal(stale.content,'old');assert.equal(stale.phase,'disposed')
+    })
     await test('component fills space; unmount/remount retains WebView/controller and detaches callbacks',async()=>{
       let active
       global.__jsx=(type,props,...children)=>({type,props:props||{},children:children.flat().filter(Boolean)})
@@ -95,7 +105,7 @@ if (process.argv[2] === '--html') {
       const first=mount();assert.equal(first.tree.children[0].children[0].type,'ProgressView');await c.start();first.render()
       const w=c.webController;assert.equal(w.calls.some(code=>code.includes('.setTheme(')),false,'global hook must not override WebView appearance');first.unmount();w.text='unmounted latest';w.revision=2;w.handlers.localCodeEditorChange({content:w.text,revision:2})
       const second=mount();assert.equal(c.webController,w);assert.equal(c.content,'unmounted latest');assert.equal(w.disposed,undefined)
-      assert.deepEqual(second.tree.props.background,{light:'white',dark:'#242424'});assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,Infinity)
+      assert.deepEqual(second.tree.props.background,{light:'white',dark:'#242424'});assert.equal(second.tree.props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.props.frame.maxHeight,'infinity')
       assert.ok(second.tree.children.some(n=>n.type==='WebView'));assert.equal(second.tree.children.find(n=>n.type==='WebView').props.ignoresSafeArea.edges,'bottom');assert.equal(second.tree.children.some(n=>n.type==='Editor'),false)
       second.unmount();c.dispose();assert.equal(w.disposed,true)
     })

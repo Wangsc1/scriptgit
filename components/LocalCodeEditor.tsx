@@ -17,7 +17,7 @@ export function LocalCodeEditor({ controller, onBack }: {
   // WebKit's media query follows the actual presented WebView appearance.
   // Do not overwrite it with the process-global useColorScheme() value.
 
-  return <VStack spacing={0} frame={{ maxWidth: Infinity, maxHeight: Infinity }}
+  return <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity", minHeight: 1 }}
     background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }}>
     {controller.phase === "idle" || controller.phase === "loading" ? <VStack spacing={6} padding={12}>
       <ProgressView /><Text font="caption">正在加载本地编辑器…</Text>
@@ -26,7 +26,7 @@ export function LocalCodeEditor({ controller, onBack }: {
       {controller.error}
     </Text> : null}
     {controller.webController ? <WebView controller={controller.webController}
-      frame={{ maxWidth: Infinity, maxHeight: Infinity }}
+      frame={{ maxWidth: "infinity", maxHeight: "infinity", minHeight: 1 }}
       background={{ light: "white", dark: "#242424" }} ignoresSafeArea={{ regions: "container", edges: "bottom" }} /> : null}
   </VStack>
 }

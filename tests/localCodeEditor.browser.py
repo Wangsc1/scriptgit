@@ -9,18 +9,19 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 def html(ext="tsx", content="const 中文: number = 1\n", readonly=False):
     return subprocess.check_output([
-        "node", "tests/localCodeEditor.test.cjs", "--html", ext, content,
+        "node", "tests/localCodeEditor.test.cjs", "--html-stdin", ext, "unused",
         "true" if readonly else "false",
-    ], cwd=ROOT, text=True)
+    ], input=content, cwd=ROOT, text=True)
 
-BOOT = """window.events=[];window.backs=0;window.webkit={messageHandlers:{
+BOOT = """window.events=[];window.backs=0;window.errors=[];window.webkit={messageHandlers:{
+localCodeEditorError:{postMessage:v=>{errors.push(v);return Promise.resolve()}},
 localCodeEditorChange:{postMessage:v=>{events.push(v);return Promise.resolve()}},
 localCodeEditorBack:{postMessage:()=>{backs++;return Promise.resolve()}}
 }}"""
 
 def open_editor(page, ext, content, readonly=False):
     page.set_content(html(ext, content, readonly).replace("<script>", "<script>" + BOOT + ";", 1))
-    page.wait_for_function("!!window.__localCodeEditor")
+    page.wait_for_function("() => !!window.__localCodeEditor")
     page.evaluate("content => window.__localCodeEditor.activate(content)", content)
 
 def read(page):
@@ -108,4 +109,41 @@ with sync_playwright() as p:
             assert actual==expected,(scheme,selector,actual)
     assert requests == [], requests
     print("PASS soft wrapping, scrolling, dark #242424 / light white backgrounds and zero requests")
+    # Exercise the shipped bundle, not a CodeMirror mock, with actual nonempty JSON.
+    for content in ['{"标题":"中文😀","special":"<tag>&"}\r\n', '', '{"icons":"' + '图标a'*50000 + '"}']:
+        open_editor(page, "json", content)
+        assert read(page)["content"] == content
+        assert page.locator(".cm-content").is_visible()
+        assert page.locator(".cm-editor").bounding_box()["height"] > 500
+        assert page.locator("#editor-status").is_hidden()
+        if content:
+            assert page.locator(".cm-line").first.inner_text()
+    print("PASS nonempty JSON/Chinese/CRLF, empty file and 350KiB single-line JSON visibly render; original text unchanged")
+
+    content='{"original":"不可丢失</script>中文"}'
+    # Force a real synchronous bundle dependency failure: old HTML had a blank #editor.
+    broken=html("json",content).replace("<script>","<script>"+BOOT+";window.__originalMatchMedia=window.matchMedia;window.matchMedia=()=>{throw Error('forced bootstrap failure')};",1)
+    page.set_content(broken)
+    assert page.locator("#editor-fallback").is_visible()
+    assert page.locator("#editor-fallback").input_value()==content
+    assert page.locator("#editor-fallback").get_attribute("readonly") is not None
+    assert "forced bootstrap failure" in page.locator("#editor-status").inner_text()
+    assert page.evaluate("window.__localCodeEditorBootstrap.ready") is False
+    assert page.evaluate("errors[0]")=="forced bootstrap failure"
+    # Syntax failure is not caught by try/catch in that script; the earlier error listener still catches it.
+    page.set_content(html("json",content).replace("<script>try{","<script>var = ;try{",1))
+    assert page.locator("#editor-fallback").input_value()==content
+    assert page.locator("#editor-status").is_visible()
+    print("PASS actual bundle startup exception AND syntax exception show exact read-only original plus explicit recovery error")
+
+    page.evaluate("window.matchMedia=window.__originalMatchMedia")
+    delayed=html("json",content).replace("<script>try{","<script>setTimeout(function(){try{",1).replace("</script></body>","},150);</script></body>",1)
+    page.set_content(delayed)
+    assert page.locator("#editor-status").is_visible()
+    assert page.evaluate("window.__localCodeEditorBootstrap.ready") is False
+    page.wait_for_function("() => window.__localCodeEditorBootstrap.ready")
+    assert read(page)["content"]==content
+    assert page.locator("#editor-status").is_hidden()
+    print("PASS delayed real bundle remains visibly loading then becomes ready without empty activation")
+    assert requests == []
     browser.close()

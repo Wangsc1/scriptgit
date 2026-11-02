@@ -59,6 +59,7 @@ export async function readLocalFileInternal(bookmarkName: string, path: string):
   const checked = await safeFile(bookmarkName, path)
   const after = await FileManager.stat(absolute)
   if (checked.root !== root || after.size !== stat.size || after.modificationDate !== stat.modificationDate) throw new Error("读取期间文件已变化，请重新打开")
+  if (data.size !== after.size) throw new Error("文件内容尚未完整读取（可能尚未从 iCloud 下载），请下载后重试；未将读取失败视为空文件")
   version.bytes = data.toBase64String()
   const text = data.toRawString("utf-8")
   const roundTrip = text === null ? null : Data.fromRawString(text, "utf-8")

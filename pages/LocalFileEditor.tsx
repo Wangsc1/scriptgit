@@ -121,8 +121,19 @@ export function LocalFileEditor({ bookmarkName, file, initialHasChanges = false,
     if (lock.current) return
     lock.current = true; setBusy(true); setStatus("")
     try {
-      if (controller !== null) await controller.getContent()
-      if (!await discard("刷新并放弃草稿？")) return
+      let confirmedRecovery = false
+      if (controller !== null) {
+        try { await controller.getContent() }
+        catch (cause: any) {
+          if (!alive.current) return
+          confirmedRecovery = await Dialog.confirm({ title: "编辑器读取失败，重新加载？",
+            message: String(cause?.message || cause) + "\n将重新读取磁盘原文；编辑器内尚未读取到的修改可能丢失。不会把空白内容写入文件。",
+            confirmLabel: "重新加载", cancelLabel: "取消" }) === true
+          if (!confirmedRecovery || !alive.current) return
+        }
+      }
+      if (!confirmedRecovery && !await discard("刷新并放弃草稿？")) return
+      if (!alive.current) return
       const latest = await readLocalWorktreeFile(bookmarkName, file.path)
       if (alive.current) onReload(latest)
     } catch (e: any) {
